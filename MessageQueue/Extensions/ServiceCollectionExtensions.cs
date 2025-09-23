@@ -17,22 +17,22 @@ public static class ServiceCollectionExtensions
 
         return providerType switch
         {
-            MessageQueueProvider.RabbitMQ => services.AddSingleton<IMessageQueue<T>>(_ =>
-                new RabbitMQMessageQueue<T>(CreateRabbitMQConfig(configuration, configurationSection))),
+            MessageQueueProvider.RabbitMq => services.AddSingleton<IMessageQueue<T>>(_ =>
+                new RabbitMqMessageQueue<T>(CreateRabbitMqConfig(configuration, configurationSection))),
             MessageQueueProvider.AzureServiceBus => services.AddSingleton<IMessageQueue<T>>(_ =>
                 new AzureServiceBusMessageQueue<T>(CreateAzureServiceBusConfig(configuration, configurationSection))),
             _ => throw new NotSupportedException($"Provider '{providerType}' is not supported")
         };
     }
 
-    private static RabbitMQConfig CreateRabbitMQConfig(IConfiguration configuration, string section)
+    static RabbitMqConfig CreateRabbitMqConfig(IConfiguration configuration, string section)
     {
-        var config = new RabbitMQConfig();
+        var config = new RabbitMqConfig();
         configuration.GetSection(section).Bind(config);
         return config;
     }
 
-    private static AzureServiceBusConfig CreateAzureServiceBusConfig(IConfiguration configuration, string section)
+    static AzureServiceBusConfig CreateAzureServiceBusConfig(IConfiguration configuration, string section)
     {
         var config = new AzureServiceBusConfig();
         configuration.GetSection(section).Bind(config);

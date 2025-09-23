@@ -7,20 +7,20 @@ using RabbitMQ.Client.Events;
 
 namespace AgentReview.MessageQueue.RabbitMQ;
 
-public class RabbitMQMessageQueue<T> : IMessageQueue<T>, IDisposable where T : class
+public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : class
 {
-    private readonly RabbitMQConfig _config;
-    private readonly IConnection _connection;
-    private readonly IModel _channel;
-    private readonly string _queueName;
-    private readonly string _deadLetterQueueName;
-    private EventingBasicConsumer? _consumer;
+    readonly RabbitMqConfig config;
+    readonly IConnection connection;
+    readonly IModel channel;
+    readonly string queueName;
+    readonly string deadLetterQueueName;
+    EventingBasicConsumer? consumer;
 
-    public RabbitMQMessageQueue(RabbitMQConfig config)
+    public RabbitMqMessageQueue(RabbitMqConfig config)
     {
-        _config = config;
-        _queueName = config.QueueName;
-        _deadLetterQueueName = string.IsNullOrEmpty(config.DeadLetterQueueName) 
+        this.config = config;
+        queueName = config.QueueName;
+        deadLetterQueueName = string.IsNullOrEmpty(config.DeadLetterQueueName) 
             ? $"{config.QueueName}.deadletter" 
             : config.DeadLetterQueueName;
         
@@ -29,17 +29,17 @@ public class RabbitMQMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
             var factory = new ConnectionFactory 
             { 
                 Uri = new Uri(config.ConnectionString),
-                RequestedHeartbeat = _config.HeartbeatInterval,
-                NetworkRecoveryInterval = _config.NetworkRecoveryInterval,
+                RequestedHeartbeat = this.config.HeartbeatInterval,
+                NetworkRecoveryInterval = this.config.NetworkRecoveryInterval,
                 AutomaticRecoveryEnabled = true
             };
             
-            _connection = factory.CreateConnection();
-            _channel = _connection.CreateModel();
+            connection = factory.CreateConnection();
+            channel = connection.CreateModel();
             
-            if (_config.EnablePublisherConfirms)
+            if (this.config.EnablePublisherConfirms)
             {
-                _channel.ConfirmSelect();
+                channel.ConfirmSelect();
             }
             
             DeclareQueues();
@@ -50,38 +50,38 @@ public class RabbitMQMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
         }
     }
 
-    private void DeclareQueues()
+    void DeclareQueues()
     {
         var deadLetterArgs = new Dictionary<string, object>();
         var queueArgs = new Dictionary<string, object>();
         
-        if (_config.UseQuorumQueues)
+        if (config.UseQuorumQueues)
         {
             queueArgs.Add("x-queue-type", "quorum");
-            queueArgs.Add("x-quorum-initial-group-size", _config.QuorumInitialGroupSize);
+            queueArgs.Add("x-quorum-initial-group-size", config.QuorumInitialGroupSize);
         }
         
-        if (_config.EnableDeadLetterQueue)
+        if (config.EnableDeadLetterQueue)
         {
             var deadLetterQueueArgs = new Dictionary<string, object>();
             
-            if (_config.UseQuorumQueues)
+            if (config.UseQuorumQueues)
             {
                 deadLetterQueueArgs.Add("x-queue-type", "quorum");
-                deadLetterQueueArgs.Add("x-quorum-initial-group-size", _config.QuorumInitialGroupSize);
+                deadLetterQueueArgs.Add("x-quorum-initial-group-size", config.QuorumInitialGroupSize);
             }
             
-            _channel.QueueDeclare(
-                queue: _deadLetterQueueName,
+            channel.QueueDeclare(
+                queue: deadLetterQueueName,
                 durable: true,
                 exclusive: false,
                 autoDelete: false,
                 arguments: deadLetterQueueArgs);
             
             deadLetterArgs.Add("x-dead-letter-exchange", "");
-            deadLetterArgs.Add("x-dead-letter-routing-key", _deadLetterQueueName);
+            deadLetterArgs.Add("x-dead-letter-routing-key", deadLetterQueueName);
             
-            if (_config.UseQuorumQueues)
+            if (config.UseQuorumQueues)
             {
                 deadLetterArgs.Add("x-overflow", "reject-publish");
             }
@@ -92,8 +92,8 @@ public class RabbitMQMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
             queueArgs[key] = value;
         }
 
-        _channel.QueueDeclare(
-            queue: _queueName,
+        channel.QueueDeclare(
+            queue: queueName,
             durable: true,
             exclusive: false,
             autoDelete: false,
@@ -107,25 +107,25 @@ public class RabbitMQMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
             var json = JsonSerializer.Serialize(message);
             var body = Encoding.UTF8.GetBytes(json);
             
-            var properties = _channel.CreateBasicProperties();
+            var properties = channel.CreateBasicProperties();
             properties.Persistent = true;
             properties.MessageId = Guid.NewGuid().ToString();
             properties.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             
-            if (_config.UseQuorumQueues)
+            if (config.UseQuorumQueues)
             {
                 properties.DeliveryMode = 2;
             }
             
-            _channel.BasicPublish(
+            channel.BasicPublish(
                 exchange: "",
-                routingKey: _queueName,
+                routingKey: queueName,
                 basicProperties: properties,
                 body: body);
             
-            if (_config.EnablePublisherConfirms)
+            if (config.EnablePublisherConfirms)
             {
-                _channel.WaitForConfirmsOrDie(TimeSpan.FromSeconds(5));
+                channel.WaitForConfirmsOrDie(TimeSpan.FromSeconds(5));
             }
             
             return Task.CompletedTask;
@@ -148,14 +148,14 @@ public class RabbitMQMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
     {
         try
         {
-            _consumer = new EventingBasicConsumer(_channel);
+            consumer = new EventingBasicConsumer(channel);
             
-            if (_config.UseQuorumQueues)
+            if (config.UseQuorumQueues)
             {
-                _channel.BasicQos(prefetchSize: 0, prefetchCount: (ushort)_config.PrefetchCount, global: false);
+                channel.BasicQos(prefetchSize: 0, prefetchCount: (ushort)config.PrefetchCount, global: false);
             }
 
-            _consumer.Received += async (model, ea) =>
+            consumer.Received += async (model, ea) =>
             {
                 var body = ea.Body.ToArray();
                 var json = Encoding.UTF8.GetString(body);
@@ -168,25 +168,25 @@ public class RabbitMQMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
                         var success = await handler(message);
                         if (success)
                         {
-                            _channel.BasicAck(ea.DeliveryTag, false);
+                            channel.BasicAck(ea.DeliveryTag, false);
                         }
                         else
                         {
-                            _channel.BasicNack(ea.DeliveryTag, false, false);
+                            channel.BasicNack(ea.DeliveryTag, false, false);
                         }
                     }
                     else
                     {
-                        _channel.BasicNack(ea.DeliveryTag, false, false);
+                        channel.BasicNack(ea.DeliveryTag, false, false);
                     }
                 }
                 catch (Exception)
                 {
-                    _channel.BasicNack(ea.DeliveryTag, false, false);
+                    channel.BasicNack(ea.DeliveryTag, false, false);
                 }
             };
 
-            _channel.BasicConsume(queue: _queueName, autoAck: false, consumer: _consumer);
+            channel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
             
             return Task.CompletedTask;
         }
@@ -198,17 +198,17 @@ public class RabbitMQMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
 
     public Task UnsubscribeAsync(CancellationToken cancellationToken = default)
     {
-        if (_consumer != null)
+        if (consumer != null)
         {
-            _channel.BasicCancel(_consumer.ConsumerTags.FirstOrDefault() ?? "");
+            channel.BasicCancel(consumer.ConsumerTags.FirstOrDefault() ?? "");
         }
         return Task.CompletedTask;
     }
 
     public void Dispose()
     {
-        _consumer = null;
-        _channel?.Dispose();
-        _connection?.Dispose();
+        consumer = null;
+        channel?.Dispose();
+        connection?.Dispose();
     }
 }

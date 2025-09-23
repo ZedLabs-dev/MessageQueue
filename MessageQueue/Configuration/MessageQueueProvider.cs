@@ -2,6 +2,6 @@ namespace AgentReview.MessageQueue.Configuration;
 
 public enum MessageQueueProvider
 {
-    RabbitMQ,
+    RabbitMq,
     AzureServiceBus
 }

@@ -8,36 +8,36 @@ namespace AgentReview.MessageQueue.AzureServiceBus;
 
 public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable where T : class
 {
-    private readonly AzureServiceBusConfig _config;
-    private readonly ServiceBusClient _client;
-    private readonly ServiceBusSender _sender;
-    private readonly ServiceBusProcessor _processor;
-    private readonly string _queueName;
-    private readonly string _deadLetterQueueName;
+    readonly AzureServiceBusConfig config;
+    readonly ServiceBusClient client;
+    readonly ServiceBusSender sender;
+    readonly ServiceBusProcessor processor;
+    readonly string queueName;
+    readonly string deadLetterQueueName;
 
     public AzureServiceBusMessageQueue(AzureServiceBusConfig config)
     {
-        _config = config;
-        _queueName = config.QueueName;
-        _deadLetterQueueName = string.IsNullOrEmpty(config.DeadLetterQueueName) 
+        this.config = config;
+        queueName = config.QueueName;
+        deadLetterQueueName = string.IsNullOrEmpty(config.DeadLetterQueueName) 
             ? $"{config.QueueName}.deadletter" 
             : config.DeadLetterQueueName;
         
         try
         {
-            _client = new ServiceBusClient(config.ConnectionString);
-            _sender = _client.CreateSender(_queueName);
+            client = new ServiceBusClient(config.ConnectionString);
+            sender = client.CreateSender(queueName);
             
             var processorOptions = new ServiceBusProcessorOptions
             {
                 AutoCompleteMessages = false,
-                MaxConcurrentCalls = _config.MaxConcurrentCalls,
-                PrefetchCount = _config.PrefetchCount,
+                MaxConcurrentCalls = this.config.MaxConcurrentCalls,
+                PrefetchCount = this.config.PrefetchCount,
                 ReceiveMode = ServiceBusReceiveMode.PeekLock,
-                MaxAutoLockRenewalDuration = _config.MaxAutoLockRenewalDuration
+                MaxAutoLockRenewalDuration = this.config.MaxAutoLockRenewalDuration
             };
             
-            _processor = _client.CreateProcessor(_queueName, processorOptions);
+            processor = client.CreateProcessor(queueName, processorOptions);
         }
         catch (Exception ex)
         {
@@ -56,14 +56,14 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
             {
                 MessageId = Guid.NewGuid().ToString(),
                 ContentType = "application/json",
-                TimeToLive = _config.MessageTimeToLive,
+                TimeToLive = config.MessageTimeToLive,
                 Subject = typeof(T).Name
             };
             
             serviceBusMessage.ApplicationProperties.Add("MessageType", typeof(T).Name);
             serviceBusMessage.ApplicationProperties.Add("PublishedAt", DateTimeOffset.UtcNow.ToString("O"));
             
-            await _sender.SendMessageAsync(serviceBusMessage, cancellationToken);
+            await sender.SendMessageAsync(serviceBusMessage, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -77,15 +77,15 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         {
             var messageList = messages.ToList();
             
-            if (_config.EnableBatchedOperations && messageList.Count > 1)
+            if (config.EnableBatchedOperations && messageList.Count > 1)
             {
                 var batches = messageList
                     .Select(CreateServiceBusMessage)
-                    .Chunk(_config.MaxBatchSize);
+                    .Chunk(config.MaxBatchSize);
 
                 foreach (var batch in batches)
                 {
-                    await _sender.SendMessagesAsync(batch, cancellationToken);
+                    await sender.SendMessagesAsync(batch, cancellationToken);
                 }
             }
             else
@@ -102,7 +102,7 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         }
     }
 
-    private ServiceBusMessage CreateServiceBusMessage(T message)
+    ServiceBusMessage CreateServiceBusMessage(T message)
     {
         var json = JsonSerializer.Serialize(message);
         var body = Encoding.UTF8.GetBytes(json);
@@ -111,7 +111,7 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         {
             MessageId = Guid.NewGuid().ToString(),
             ContentType = "application/json",
-            TimeToLive = _config.MessageTimeToLive,
+            TimeToLive = config.MessageTimeToLive,
             Subject = typeof(T).Name
         };
         
@@ -125,7 +125,7 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
     {
         try
         {
-            _processor.ProcessMessageAsync += async args =>
+            processor.ProcessMessageAsync += async args =>
             {
                 var body = args.Message.Body.ToArray();
                 var json = Encoding.UTF8.GetString(body);
@@ -159,12 +159,12 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
                 }
             };
             
-            _processor.ProcessErrorAsync += args =>
+            processor.ProcessErrorAsync += args =>
             {
                 return Task.CompletedTask;
             };
             
-            await _processor.StartProcessingAsync(cancellationToken);
+            await processor.StartProcessingAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -172,10 +172,10 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         }
     }
 
-    private async Task HandleRetry(ProcessMessageEventArgs args, int deliveryCount, 
+    async Task HandleRetry(ProcessMessageEventArgs args, int deliveryCount, 
         CancellationToken cancellationToken, Exception? exception = null)
     {
-        if (deliveryCount >= _config.RetryAttempts)
+        if (deliveryCount >= config.RetryAttempts)
         {
             var reason = exception?.GetType().Name ?? "Processing failed";
             var description = exception?.Message ?? "Message processing failed after maximum retry attempts";
@@ -184,7 +184,7 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         }
         else
         {
-            var delay = TimeSpan.FromSeconds(Math.Pow(2, deliveryCount - 1) * _config.RetryDelay.TotalSeconds);
+            var delay = TimeSpan.FromSeconds(Math.Pow(2, deliveryCount - 1) * config.RetryDelay.TotalSeconds);
             
             var properties = new Dictionary<string, object>
             {
@@ -199,22 +199,22 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
 
     public async Task UnsubscribeAsync(CancellationToken cancellationToken = default)
     {
-        if (_processor.IsProcessing)
+        if (processor.IsProcessing)
         {
-            await _processor.StopProcessingAsync(cancellationToken);
+            await processor.StopProcessingAsync(cancellationToken);
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_processor.IsProcessing)
+        if (processor.IsProcessing)
         {
-            await _processor.StopProcessingAsync();
+            await processor.StopProcessingAsync();
         }
         
-        await _processor.DisposeAsync();
-        await _sender.DisposeAsync();
-        await _client.DisposeAsync();
+        await processor.DisposeAsync();
+        await sender.DisposeAsync();
+        await client.DisposeAsync();
     }
 
     public void Dispose()

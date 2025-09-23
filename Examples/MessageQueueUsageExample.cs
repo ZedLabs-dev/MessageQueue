@@ -19,13 +19,13 @@ public class MessageQueueUsageExample
 
 public class OrderService
 {
-    private readonly IMessageQueue<OrderCreated> _messageQueue;
-    private readonly ILogger<OrderService> _logger;
+    readonly IMessageQueue<OrderCreated> messageQueue;
+    readonly ILogger<OrderService> logger;
 
     public OrderService(IMessageQueue<OrderCreated> messageQueue, ILogger<OrderService> logger)
     {
-        _messageQueue = messageQueue;
-        _logger = logger;
+        this.messageQueue = messageQueue;
+        this.logger = logger;
     }
 
     public async Task CreateOrderAsync(string customerId, decimal amount)
@@ -33,8 +33,8 @@ public class OrderService
         var orderId = Guid.NewGuid().ToString();
         var orderCreated = new OrderCreated(orderId, customerId, amount, DateTime.UtcNow);
         
-        await _messageQueue.PublishAsync(orderCreated);
+        await messageQueue.PublishAsync(orderCreated);
         
-        _logger.LogInformation("Published OrderCreated event for order {OrderId}", orderId);
+        logger.LogInformation("Published OrderCreated event for order {OrderId}", orderId);
     }
 }

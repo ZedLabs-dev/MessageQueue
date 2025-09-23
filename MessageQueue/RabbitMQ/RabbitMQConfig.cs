@@ -2,9 +2,9 @@ using AgentReview.MessageQueue.Configuration;
 
 namespace AgentReview.MessageQueue.RabbitMQ;
 
-public record RabbitMQConfig : MessageQueueConfig
+public record RabbitMqConfig : MessageQueueConfig
 {
-    public override MessageQueueProvider Provider => MessageQueueProvider.RabbitMQ;
+    public override MessageQueueProvider Provider => MessageQueueProvider.RabbitMq;
     public bool UseQuorumQueues { get; set; } = true;
     public int QuorumInitialGroupSize { get; set; } = 3;
     public bool EnablePublisherConfirms { get; set; } = true;
