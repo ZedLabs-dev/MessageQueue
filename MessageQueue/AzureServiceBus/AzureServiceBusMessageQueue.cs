@@ -8,14 +8,14 @@ namespace AgentReview.MessageQueue.AzureServiceBus;
 
 public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable where T : class
 {
-    readonly AzureServiceBusConfig config;
+    readonly AzureServiceBusConfig? config;
     readonly ServiceBusClient client;
     readonly ServiceBusSender sender;
     readonly ServiceBusProcessor processor;
     readonly string queueName;
     readonly string deadLetterQueueName;
 
-    public AzureServiceBusMessageQueue(AzureServiceBusConfig config)
+    public AzureServiceBusMessageQueue(AzureServiceBusConfig? config)
     {
         this.config = config;
         queueName = config.QueueName;

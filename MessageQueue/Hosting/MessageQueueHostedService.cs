@@ -1,8 +1,5 @@
 using AgentReview.MessageQueue.Abstractions;
 using AgentReview.MessageQueue.Processing;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace AgentReview.MessageQueue.Hosting;
 

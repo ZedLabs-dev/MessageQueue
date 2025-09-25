@@ -23,7 +23,6 @@ public class OrderCreatedProcessor : IMessageProcessor<OrderCreated>
     {
         try
         {
-            // Process the order
             await ProcessOrderLogic(message);
             return MessageResult.Acknowledge;
         }
@@ -39,7 +38,6 @@ public class OrderCreatedProcessor : IMessageProcessor<OrderCreated>
 
     async Task ProcessOrderLogic(OrderCreated order)
     {
-        // Implementation here
         await Task.Delay(100);
     }
 }

@@ -1,5 +1,4 @@
 using AgentReview.MessageQueue.Abstractions;
-using AgentReview.MessageQueue.Configuration;
 using AgentReview.MessageQueue.Extensions;
 using AgentReview.MessageQueue.Hosting;
 
@@ -9,7 +8,6 @@ public class MessageQueueUsageExample
 {
     public static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
-        // Automatically reads from configuration and instantiates correct provider
         services.AddMessageQueue<OrderCreated>(configuration);
         
         services.AddMessageProcessor<OrderCreated, OrderCreatedProcessor>();
