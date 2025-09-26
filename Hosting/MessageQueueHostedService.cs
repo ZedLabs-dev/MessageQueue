@@ -1,7 +1,10 @@
-using AgentReview.MessageQueue.Abstractions;
-using AgentReview.MessageQueue.Processing;
+using ESE.MessageQueue.Abstractions;
+using ESE.MessageQueue.Processing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
-namespace AgentReview.MessageQueue.Hosting;
+namespace ESE.MessageQueue.Hosting;
 
 public class MessageQueueHostedService<T> : BackgroundService where T : class
 {

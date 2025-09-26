@@ -1,4 +1,4 @@
-namespace AgentReview.MessageQueue.Exceptions;
+namespace ESE.MessageQueue.Exceptions;
 
 public class MessageQueueException : Exception
 {

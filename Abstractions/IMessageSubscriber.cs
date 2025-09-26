@@ -1,4 +1,4 @@
-namespace AgentReview.MessageQueue.Abstractions;
+namespace ESE.MessageQueue.Abstractions;
 
 public interface IMessageSubscriber<T> where T : class
 {

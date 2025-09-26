@@ -1,6 +1,6 @@
-using AgentReview.MessageQueue.Configuration;
+using ESE.MessageQueue.Configuration;
 
-namespace AgentReview.MessageQueue.AzureServiceBus;
+namespace ESE.MessageQueue.AzureServiceBus;
 
 public record AzureServiceBusConfig : MessageQueueConfig
 {

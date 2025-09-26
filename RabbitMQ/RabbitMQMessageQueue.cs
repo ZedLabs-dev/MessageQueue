@@ -1,11 +1,11 @@
 using System.Text;
 using System.Text.Json;
-using AgentReview.MessageQueue.Abstractions;
-using AgentReview.MessageQueue.Exceptions;
+using ESE.MessageQueue.Abstractions;
+using ESE.MessageQueue.Exceptions;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
-namespace AgentReview.MessageQueue.RabbitMQ;
+namespace ESE.MessageQueue.RabbitMQ;
 
 public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : class
 {

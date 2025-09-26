@@ -1,4 +1,4 @@
-namespace AgentReview.MessageQueue.Configuration;
+namespace ESE.MessageQueue.Configuration;
 
 public abstract record MessageQueueConfig
 {

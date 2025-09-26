@@ -1,6 +1,6 @@
-using AgentReview.MessageQueue.Abstractions;
+using ESE.MessageQueue.Abstractions;
 
-namespace AgentReview.MessageQueue.Processing;
+namespace ESE.MessageQueue.Processing;
 
 public interface IMessageProcessor<T> where T : class
 {

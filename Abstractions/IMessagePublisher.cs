@@ -1,4 +1,4 @@
-namespace AgentReview.MessageQueue.Abstractions;
+namespace ESE.MessageQueue.Abstractions;
 
 public interface IMessagePublisher<T> where T : class
 {

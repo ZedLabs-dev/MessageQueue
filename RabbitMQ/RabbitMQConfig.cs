@@ -1,6 +1,6 @@
-using AgentReview.MessageQueue.Configuration;
+using ESE.MessageQueue.Configuration;
 
-namespace AgentReview.MessageQueue.RabbitMQ;
+namespace ESE.MessageQueue.RabbitMQ;
 
 public record RabbitMqConfig : MessageQueueConfig
 {

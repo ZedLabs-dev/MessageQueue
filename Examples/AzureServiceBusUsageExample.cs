@@ -1,9 +1,11 @@
-using AgentReview.MessageQueue.Abstractions;
-using AgentReview.MessageQueue.Extensions;
-using AgentReview.MessageQueue.Hosting;
-using AgentReview.MessageQueue.Processing;
+using ESE.MessageQueue.Abstractions;
+using ESE.MessageQueue.Extensions;
+using ESE.MessageQueue.Hosting;
+using ESE.MessageQueue.Processing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace AgentReview.Examples;
+namespace ESE.MessageQueue.Examples;
 
 public class AzureServiceBusUsageExample
 {

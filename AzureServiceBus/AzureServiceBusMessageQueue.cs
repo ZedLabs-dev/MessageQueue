@@ -1,10 +1,10 @@
 using System.Text;
 using System.Text.Json;
-using AgentReview.MessageQueue.Abstractions;
-using AgentReview.MessageQueue.Exceptions;
 using Azure.Messaging.ServiceBus;
+using ESE.MessageQueue.Abstractions;
+using ESE.MessageQueue.Exceptions;
 
-namespace AgentReview.MessageQueue.AzureServiceBus;
+namespace ESE.MessageQueue.AzureServiceBus;
 
 public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable where T : class
 {

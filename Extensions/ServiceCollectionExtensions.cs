@@ -1,10 +1,12 @@
-using AgentReview.MessageQueue.Abstractions;
-using AgentReview.MessageQueue.AzureServiceBus;
-using AgentReview.MessageQueue.Configuration;
-using AgentReview.MessageQueue.Processing;
-using AgentReview.MessageQueue.RabbitMQ;
+using ESE.MessageQueue.Abstractions;
+using ESE.MessageQueue.AzureServiceBus;
+using ESE.MessageQueue.Configuration;
+using ESE.MessageQueue.Processing;
+using ESE.MessageQueue.RabbitMQ;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace AgentReview.MessageQueue.Extensions;
+namespace ESE.MessageQueue.Extensions;
 
 public static class ServiceCollectionExtensions
 {
