@@ -1,8 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MessageQueue", "MessageQueue.csproj", "{DB7C789D-9DF9-4D13-87BA-B9126D0F04E1}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MessageQueue.Tests", "MessageQueue.Tests\MessageQueue.Tests.csproj", "{39B945E9-4EDD-4BAF-9037-451AB3C69F94}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MessageQueue", "MessageQueue\MessageQueue.csproj", "{A77E5851-F372-4939-B9E9-9B9439350034}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -18,5 +18,9 @@ Global
 		{39B945E9-4EDD-4BAF-9037-451AB3C69F94}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{39B945E9-4EDD-4BAF-9037-451AB3C69F94}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{39B945E9-4EDD-4BAF-9037-451AB3C69F94}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A77E5851-F372-4939-B9E9-9B9439350034}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A77E5851-F372-4939-B9E9-9B9439350034}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A77E5851-F372-4939-B9E9-9B9439350034}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A77E5851-F372-4939-B9E9-9B9439350034}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

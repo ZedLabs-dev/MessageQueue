@@ -29,6 +29,7 @@ public class RabbitMqMessageQueueTests
         }
         catch (Exception)
         {
+            // ignored
         }
     }
 
