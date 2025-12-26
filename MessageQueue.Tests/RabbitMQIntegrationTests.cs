@@ -1,5 +1,6 @@
 using ESE.MessageQueue.Exceptions;
 using ESE.MessageQueue.RabbitMQ;
+using FluentAssertions;
 using RabbitMQ.Client;
 
 namespace ESE.MessageQueue.Tests;
@@ -7,9 +8,9 @@ namespace ESE.MessageQueue.Tests;
 [Collection("RabbitMQ Integration")]
 public class RabbitMqIntegrationTests : IDisposable
 {
-    readonly RabbitMqMessageQueue<TestMessage> queue = null!;
+    readonly RabbitMqMessageQueue<TestMessage>? queue;
     readonly RabbitMqConfig config;
-        
+
     public RabbitMqIntegrationTests()
     {
         config = new RabbitMqConfig
@@ -31,7 +32,7 @@ public class RabbitMqIntegrationTests : IDisposable
             Skip.If(true, "RabbitMQ is not available for integration testing");
         }
     }
-    
+
     public void Dispose()
     {
         try
@@ -48,7 +49,7 @@ public class RabbitMqIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task PublishAndSubscribe_ShouldProcessMessage()
+    public async Task When_Publishing_And_Subscribing()
     {
         if (queue == null) return;
 
@@ -60,20 +61,17 @@ public class RabbitMqIntegrationTests : IDisposable
             receivedMessages.Add(msg);
             return Task.FromResult(true);
         });
-
         await Task.Delay(100);
-
         await queue.PublishAsync(message);
-
         await Task.Delay(500);
 
-        Assert.Single(receivedMessages);
-        Assert.Equal(message.Id, receivedMessages[0].Id);
-        Assert.Equal(message.Content, receivedMessages[0].Content);
+        receivedMessages.Should().ContainSingle("it should receive the published message");
+        receivedMessages[0].Id.Should().Be(message.Id, "it should receive the correct message id");
+        receivedMessages[0].Content.Should().Be(message.Content, "it should receive the correct message content");
     }
 
     [Fact]
-    public async Task PublishMultiple_ShouldProcessAllMessages()
+    public async Task When_Publishing_Multiple_Messages()
     {
         if (queue == null) return;
 
@@ -90,19 +88,18 @@ public class RabbitMqIntegrationTests : IDisposable
             receivedMessages.Add(msg);
             return Task.FromResult(true);
         });
-
         await Task.Delay(100);
         await queue.PublishAsync(messages);
         await Task.Delay(1000);
 
-        Assert.Equal(3, receivedMessages.Count);
-        Assert.Contains(receivedMessages, m => m.Id == "msg-1");
-        Assert.Contains(receivedMessages, m => m.Id == "msg-2");
-        Assert.Contains(receivedMessages, m => m.Id == "msg-3");
+        receivedMessages.Should().HaveCount(3, "it should receive all published messages");
+        receivedMessages.Should().Contain(m => m.Id == "msg-1", "it should receive message 1");
+        receivedMessages.Should().Contain(m => m.Id == "msg-2", "it should receive message 2");
+        receivedMessages.Should().Contain(m => m.Id == "msg-3", "it should receive message 3");
     }
 
     [Fact]
-    public async Task QuorumQueue_PublishAndSubscribe_ShouldProcessMessage()
+    public async Task When_Using_Quorum_Queue()
     {
         if (queue == null) return;
 
@@ -114,14 +111,11 @@ public class RabbitMqIntegrationTests : IDisposable
             receivedMessages.Add(msg);
             return Task.FromResult(true);
         });
-
         await Task.Delay(100);
         await queue.PublishAsync(message);
         await Task.Delay(500);
 
-        Assert.Single(receivedMessages);
-        Assert.Equal(message.Id, receivedMessages[0].Id);
+        receivedMessages.Should().ContainSingle("it should receive the message via quorum queue");
+        receivedMessages[0].Id.Should().Be(message.Id, "it should receive the correct message");
     }
-
-
 }

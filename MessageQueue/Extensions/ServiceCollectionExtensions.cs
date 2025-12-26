@@ -34,7 +34,7 @@ public static class ServiceCollectionExtensions
         return config;
     }
 
-    static AzureServiceBusConfig? CreateAzureServiceBusConfig(IConfiguration configuration, string section)
+    static AzureServiceBusConfig CreateAzureServiceBusConfig(IConfiguration configuration, string section)
     {
         var config = new AzureServiceBusConfig();
         configuration.GetSection(section).Bind(config);

@@ -1,69 +1,69 @@
+using FluentAssertions;
+
 namespace ESE.MessageQueue.Tests;
 
 public class MessageQueueTests
 {
     readonly TestMessage testMessage = new("test-id", "test-content");
 
-    readonly List<TestMessage> testMessages = new()
-    {
+    readonly List<TestMessage> testMessages =
+    [
         new("id-1", "content-1"),
         new("id-2", "content-2")
-    };
+    ];
 
     [Fact]
-    public async Task PublishAsync_SingleMessage_ShouldSucceed()
+    public async Task When_Publishing_Single_Message()
     {
         var queue = new MockMessageQueue<TestMessage>();
-        
+
         await queue.PublishAsync(testMessage);
-        
-        Assert.Single(queue.PublishedMessages);
-        Assert.Equal(testMessage, queue.PublishedMessages.First());
+
+        queue.PublishedMessages.Should().ContainSingle("it should store exactly one message");
+        queue.PublishedMessages.First().Should().Be(testMessage, "it should store the published message");
     }
 
     [Fact]
-    public async Task PublishAsync_MultipleMessages_ShouldSucceed()
+    public async Task When_Publishing_Multiple_Messages()
     {
         var queue = new MockMessageQueue<TestMessage>();
-        
+
         await queue.PublishAsync(testMessages);
-        
-        Assert.Equal(2, queue.PublishedMessages.Count);
+
+        queue.PublishedMessages.Should().HaveCount(2, "it should store all published messages");
     }
 
     [Fact]
-    public async Task SubscribeAsync_WithHandler_ShouldProcessMessages()
+    public async Task When_Subscribed_And_Message_Received()
     {
         var queue = new MockMessageQueue<TestMessage>();
         var processedMessages = new List<TestMessage>();
-        
+
         await queue.SubscribeAsync(message =>
         {
             processedMessages.Add(message);
             return Task.FromResult(true);
         });
-        
         await queue.SimulateMessageReceived(testMessage);
-        
-        Assert.Single(processedMessages);
-        Assert.Equal(testMessage, processedMessages.First());
+
+        processedMessages.Should().ContainSingle("it should process the received message");
+        processedMessages.First().Should().Be(testMessage, "it should process the correct message");
     }
 
     [Fact]
-    public async Task UnsubscribeAsync_ShouldStopProcessing()
+    public async Task When_Unsubscribed()
     {
         var queue = new MockMessageQueue<TestMessage>();
         var processedMessages = new List<TestMessage>();
-        
+
         await queue.SubscribeAsync(message =>
         {
             processedMessages.Add(message);
             return Task.FromResult(true);
         });
-        
         await queue.UnsubscribeAsync();
         await queue.SimulateMessageReceived(testMessage);
-        
-        Assert.Empty(processedMessages);
+
+        processedMessages.Should().BeEmpty("it should not process messages after unsubscribing");
     }
 }

@@ -1,11 +1,12 @@
 using ESE.MessageQueue.AzureServiceBus;
 using ESE.MessageQueue.Exceptions;
+using FluentAssertions;
 
 namespace ESE.MessageQueue.Tests;
 
 public class AzureServiceBusMessageQueueTests
 {
-    readonly AzureServiceBusConfig? config = new()
+    readonly AzureServiceBusConfig config = new()
     {
         ConnectionString = "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=test-key",
         QueueName = "test-queue",
@@ -17,18 +18,18 @@ public class AzureServiceBusMessageQueueTests
     };
 
     [Fact]
-    public void Constructor_InvalidConnectionString_ShouldThrowMessageQueueException()
+    public void When_ConnectionString_Is_Invalid()
     {
         var invalidConfig = config with { ConnectionString = "invalid-connection-string" };
-        
-        var exception = Assert.Throws<MessageQueueException>(() => 
-            new AzureServiceBusMessageQueue<TestMessage>(invalidConfig));
-        
-        Assert.Contains("Failed to initialize Azure Service Bus connection", exception.Message);
+
+        var action = () => new AzureServiceBusMessageQueue<TestMessage>(invalidConfig);
+
+        action.Should().Throw<MessageQueueException>("it should fail when connection string is invalid")
+            .WithMessage("*Failed to initialize Azure Service Bus connection*");
     }
 
     [Fact]
-    public void Constructor_ValidConfig_ShouldCreateInstance()
+    public void When_Config_Is_Valid()
     {
         if (!IsAzureServiceBusAvailable())
         {
@@ -36,13 +37,13 @@ public class AzureServiceBusMessageQueueTests
             return;
         }
 
-        var exception = Record.Exception(() => new AzureServiceBusMessageQueue<TestMessage>(config));
-        
-        Assert.Null(exception);
+        var action = () => new AzureServiceBusMessageQueue<TestMessage>(config);
+
+        action.Should().NotThrow("it should create instance with valid configuration");
     }
 
     [Fact]
-    public async Task PublishAsync_SingleMessage_ShouldNotThrow()
+    public async Task When_Publishing_Single_Message()
     {
         if (!IsAzureServiceBusAvailable())
         {
@@ -52,14 +53,14 @@ public class AzureServiceBusMessageQueueTests
 
         using var queue = new AzureServiceBusMessageQueue<TestMessage>(config);
         var message = new TestMessage("test-id", "test-content");
-        
-        var exception = await Record.ExceptionAsync(() => queue.PublishAsync(message));
-        
-        Assert.Null(exception);
+
+        var action = () => queue.PublishAsync(message);
+
+        await action.Should().NotThrowAsync("it should publish message without error");
     }
 
     [Fact]
-    public async Task PublishAsync_MultipleMessages_ShouldNotThrow()
+    public async Task When_Publishing_Multiple_Messages()
     {
         if (!IsAzureServiceBusAvailable())
         {
@@ -73,14 +74,14 @@ public class AzureServiceBusMessageQueueTests
             new TestMessage("test-id-1", "test-content-1"),
             new TestMessage("test-id-2", "test-content-2")
         };
-        
-        var exception = await Record.ExceptionAsync(() => queue.PublishAsync(messages));
-        
-        Assert.Null(exception);
+
+        var action = () => queue.PublishAsync(messages);
+
+        await action.Should().NotThrowAsync("it should publish multiple messages without error");
     }
 
     [Fact]
-    public async Task SubscribeAsync_WithHandler_ShouldNotThrow()
+    public async Task When_Subscribing_With_Handler()
     {
         if (!IsAzureServiceBusAvailable())
         {
@@ -89,14 +90,13 @@ public class AzureServiceBusMessageQueueTests
         }
 
         using var queue = new AzureServiceBusMessageQueue<TestMessage>(config);
-        
-        var exception = await Record.ExceptionAsync(() => 
-            queue.SubscribeAsync(msg => Task.FromResult(true)));
-        
-        Assert.Null(exception);
+
+        var action = () => queue.SubscribeAsync(msg => Task.FromResult(true));
+
+        await action.Should().NotThrowAsync("it should subscribe without error");
     }
 
-    bool IsAzureServiceBusAvailable()
+    static bool IsAzureServiceBusAvailable()
     {
         return Environment.GetEnvironmentVariable("AZURE_SERVICEBUS_CONNECTION_STRING") != null;
     }
