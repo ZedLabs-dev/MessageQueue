@@ -1,7 +1,6 @@
-using System.Text;
-using System.Text.Json;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Exceptions;
+using ESE.MessageQueue.Serialization;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -104,30 +103,30 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
     {
         try
         {
-            var json = JsonSerializer.Serialize(message);
-            var body = Encoding.UTF8.GetBytes(json);
-            
+            var body = MessageSerializer.Serialize(message, config.SerializationFormat);
+
             var properties = channel.CreateBasicProperties();
             properties.Persistent = true;
             properties.MessageId = Guid.NewGuid().ToString();
             properties.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-            
+            properties.ContentType = MessageSerializer.GetContentType(config.SerializationFormat);
+
             if (config.UseQuorumQueues)
             {
                 properties.DeliveryMode = 2;
             }
-            
+
             channel.BasicPublish(
                 exchange: "",
                 routingKey: queueName,
                 basicProperties: properties,
                 body: body);
-            
+
             if (config.EnablePublisherConfirms)
             {
                 channel.WaitForConfirmsOrDie(TimeSpan.FromSeconds(5));
             }
-            
+
             return Task.CompletedTask;
         }
         catch (Exception ex)
@@ -149,7 +148,7 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
         try
         {
             consumer = new EventingBasicConsumer(channel);
-            
+
             if (config.UseQuorumQueues)
             {
                 channel.BasicQos(prefetchSize: 0, prefetchCount: (ushort)config.PrefetchCount, global: false);
@@ -158,11 +157,10 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
             consumer.Received += async (model, ea) =>
             {
                 var body = ea.Body.ToArray();
-                var json = Encoding.UTF8.GetString(body);
-                
+
                 try
                 {
-                    var message = JsonSerializer.Deserialize<T>(json);
+                    var message = MessageSerializer.Deserialize<T>(body, config.SerializationFormat);
                     if (message != null)
                     {
                         var success = await handler(message);
@@ -187,7 +185,7 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
             };
 
             channel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
-            
+
             return Task.CompletedTask;
         }
         catch (Exception ex)

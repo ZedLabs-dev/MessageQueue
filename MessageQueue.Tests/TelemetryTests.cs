@@ -11,9 +11,11 @@ using ESE.MessageQueue.Testing;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Logging;
 
 namespace ESE.MessageQueue.Tests;
+
+// Public record for MessagePack tests (MessagePack requires public types)
+public record PublicTestMessage(string Id, string Name, int Value);
 
 public class TelemetryTests
 {
@@ -269,110 +271,132 @@ public class OpenTelemetryProviderTests
     }
 }
 
-public class JsonMessageSerializerTests
+public class MessageSerializerTests
 {
     record TestMessage(string Id, string Name, int Value);
 
     [Fact]
-    public void When_Serializing_Message_Returns_Bytes()
+    public void When_Serializing_With_Json()
     {
-        var serializer = new JsonMessageSerializer();
         var message = new TestMessage("123", "Test", 42);
 
-        var bytes = serializer.Serialize(message);
+        var bytes = MessageSerializer.Serialize(message, SerializationFormat.Json);
 
         bytes.Should().NotBeEmpty("it should produce serialized bytes");
     }
 
     [Fact]
-    public void When_Deserializing_Message_Returns_Object()
+    public void When_Deserializing_With_Json()
     {
-        var serializer = new JsonMessageSerializer();
         var original = new TestMessage("123", "Test", 42);
-        var bytes = serializer.Serialize(original);
+        var bytes = MessageSerializer.Serialize(original, SerializationFormat.Json);
 
-        var result = serializer.Deserialize<TestMessage>(bytes);
+        var result = MessageSerializer.Deserialize<TestMessage>(bytes, SerializationFormat.Json);
 
         result.Should().NotBeNull("it should deserialize the message");
-        result!.Id.Should().Be("123");
-        result.Name.Should().Be("Test");
-        result.Value.Should().Be(42);
+        result!.Id.Should().Be("123", "it should preserve the Id");
+        result.Name.Should().Be("Test", "it should preserve the Name");
+        result.Value.Should().Be(42, "it should preserve the Value");
     }
 
     [Fact]
-    public void When_Using_Custom_Options_Respects_Settings()
+    public void When_Getting_ContentType_For_Json()
     {
-        var options = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = null, // PascalCase
-            WriteIndented = true
-        };
-        var serializer = new JsonMessageSerializer(options);
-        var message = new TestMessage("123", "Test", 42);
+        var contentType = MessageSerializer.GetContentType(SerializationFormat.Json);
 
-        var bytes = serializer.Serialize(message);
-        var json = System.Text.Encoding.UTF8.GetString(bytes);
-
-        json.Should().Contain("\"Id\"", "it should use PascalCase");
-        json.Should().Contain("\n", "it should be indented");
+        contentType.Should().Be("application/json", "it should return the JSON content type");
     }
 
     [Fact]
-    public void ContentType_Returns_ApplicationJson()
+    public void When_Deserializing_Invalid_Json()
     {
-        var serializer = new JsonMessageSerializer();
-
-        serializer.ContentType.Should().Be("application/json");
-    }
-
-    [Fact]
-    public void When_Deserializing_Invalid_Json_Returns_Null_Or_Throws()
-    {
-        var serializer = new JsonMessageSerializer();
         var invalidBytes = System.Text.Encoding.UTF8.GetBytes("not valid json");
 
-        var act = () => serializer.Deserialize<TestMessage>(invalidBytes);
+        var act = () => MessageSerializer.Deserialize<TestMessage>(invalidBytes, SerializationFormat.Json);
 
         act.Should().Throw<JsonException>("it should throw on invalid JSON");
+    }
+
+    [Fact]
+    public void When_Serializing_With_MessagePack()
+    {
+        var message = new PublicTestMessage("123", "Test", 42);
+
+        var bytes = MessageSerializer.Serialize(message, SerializationFormat.MessagePack);
+
+        bytes.Should().NotBeEmpty("it should produce serialized bytes");
+    }
+
+    [Fact]
+    public void When_Deserializing_With_MessagePack()
+    {
+        var original = new PublicTestMessage("123", "Test", 42);
+        var bytes = MessageSerializer.Serialize(original, SerializationFormat.MessagePack);
+
+        var result = MessageSerializer.Deserialize<PublicTestMessage>(bytes, SerializationFormat.MessagePack);
+
+        result.Should().NotBeNull("it should deserialize the message");
+        result!.Id.Should().Be("123", "it should preserve the Id");
+        result.Name.Should().Be("Test", "it should preserve the Name");
+        result.Value.Should().Be(42, "it should preserve the Value");
+    }
+
+    [Fact]
+    public void When_Getting_ContentType_For_MessagePack()
+    {
+        var contentType = MessageSerializer.GetContentType(SerializationFormat.MessagePack);
+
+        contentType.Should().Be("application/x-msgpack", "it should return the MessagePack content type");
+    }
+
+    [Fact]
+    public void When_Comparing_MessagePack_To_Json_Size()
+    {
+        var message = new PublicTestMessage("123", "Test", 42);
+
+        var jsonBytes = MessageSerializer.Serialize(message, SerializationFormat.Json);
+        var msgpackBytes = MessageSerializer.Serialize(message, SerializationFormat.MessagePack);
+
+        msgpackBytes.Length.Should().BeLessThan(jsonBytes.Length, "it should produce smaller payloads than JSON");
     }
 }
 
 public class RetryPolicyTests
 {
     [Fact]
-    public void Default_Policy_Has_Expected_Values()
+    public void When_Using_Default_Policy()
     {
         var policy = RetryPolicy.Default;
 
-        policy.Strategy.Should().Be(RetryStrategy.Exponential);
-        policy.MaxAttempts.Should().Be(3);
-        policy.InitialDelay.Should().Be(TimeSpan.FromSeconds(1));
-        policy.BackoffMultiplier.Should().Be(2.0);
-        policy.UseJitter.Should().BeTrue();
+        policy.Strategy.Should().Be(RetryStrategy.Exponential, "it should use exponential backoff");
+        policy.MaxAttempts.Should().Be(3, "it should allow 3 attempts");
+        policy.InitialDelay.Should().Be(TimeSpan.FromSeconds(1), "it should start with 1 second delay");
+        policy.BackoffMultiplier.Should().Be(2.0, "it should double the delay each time");
+        policy.UseJitter.Should().BeTrue("it should add jitter by default");
     }
 
     [Fact]
-    public void None_Policy_Has_Zero_Attempts()
+    public void When_Using_None_Policy()
     {
         var policy = RetryPolicy.None;
 
-        policy.MaxAttempts.Should().Be(0);
+        policy.MaxAttempts.Should().Be(0, "it should not retry");
     }
 
     [Fact]
-    public void Aggressive_Policy_Has_More_Attempts()
+    public void When_Using_Aggressive_Policy()
     {
         var policy = RetryPolicy.Aggressive;
 
-        policy.MaxAttempts.Should().Be(5);
-        policy.InitialDelay.Should().BeLessThan(TimeSpan.FromSeconds(1));
+        policy.MaxAttempts.Should().Be(5, "it should allow more attempts");
+        policy.InitialDelay.Should().BeLessThan(TimeSpan.FromSeconds(1), "it should start with a shorter delay");
     }
 }
 
 public class RetryExecutorTests
 {
     [Fact]
-    public void CalculateDelay_Fixed_Returns_Same_Delay()
+    public void When_Calculating_Delay_With_Fixed_Strategy()
     {
         var policy = new RetryPolicy
         {
@@ -386,13 +410,13 @@ public class RetryExecutorTests
         var delay2 = executor.CalculateDelay(2);
         var delay3 = executor.CalculateDelay(3);
 
-        delay1.Should().Be(TimeSpan.FromSeconds(5));
-        delay2.Should().Be(TimeSpan.FromSeconds(5));
-        delay3.Should().Be(TimeSpan.FromSeconds(5));
+        delay1.Should().Be(TimeSpan.FromSeconds(5), "it should return the same delay for attempt 1");
+        delay2.Should().Be(TimeSpan.FromSeconds(5), "it should return the same delay for attempt 2");
+        delay3.Should().Be(TimeSpan.FromSeconds(5), "it should return the same delay for attempt 3");
     }
 
     [Fact]
-    public void CalculateDelay_Linear_Increases_Linearly()
+    public void When_Calculating_Delay_With_Linear_Strategy()
     {
         var policy = new RetryPolicy
         {
@@ -406,13 +430,13 @@ public class RetryExecutorTests
         var delay2 = executor.CalculateDelay(2);
         var delay3 = executor.CalculateDelay(3);
 
-        delay1.Should().Be(TimeSpan.FromSeconds(1));
-        delay2.Should().Be(TimeSpan.FromSeconds(2));
-        delay3.Should().Be(TimeSpan.FromSeconds(3));
+        delay1.Should().Be(TimeSpan.FromSeconds(1), "it should return 1 second for attempt 1");
+        delay2.Should().Be(TimeSpan.FromSeconds(2), "it should return 2 seconds for attempt 2");
+        delay3.Should().Be(TimeSpan.FromSeconds(3), "it should return 3 seconds for attempt 3");
     }
 
     [Fact]
-    public void CalculateDelay_Exponential_Doubles_Each_Time()
+    public void When_Calculating_Delay_With_Exponential_Strategy()
     {
         var policy = new RetryPolicy
         {
@@ -427,13 +451,13 @@ public class RetryExecutorTests
         var delay2 = executor.CalculateDelay(2);
         var delay3 = executor.CalculateDelay(3);
 
-        delay1.Should().Be(TimeSpan.FromSeconds(1));
-        delay2.Should().Be(TimeSpan.FromSeconds(2));
-        delay3.Should().Be(TimeSpan.FromSeconds(4));
+        delay1.Should().Be(TimeSpan.FromSeconds(1), "it should return 1 second for attempt 1");
+        delay2.Should().Be(TimeSpan.FromSeconds(2), "it should return 2 seconds for attempt 2");
+        delay3.Should().Be(TimeSpan.FromSeconds(4), "it should return 4 seconds for attempt 3");
     }
 
     [Fact]
-    public void CalculateDelay_Respects_MaxDelay()
+    public void When_Calculating_Delay_Exceeds_MaxDelay()
     {
         var policy = new RetryPolicy
         {
@@ -446,11 +470,11 @@ public class RetryExecutorTests
 
         var delay10 = executor.CalculateDelay(10);
 
-        delay10.Should().Be(TimeSpan.FromSeconds(5));
+        delay10.Should().Be(TimeSpan.FromSeconds(5), "it should cap at the max delay");
     }
 
     [Fact]
-    public void CalculateDelay_Custom_Uses_Calculator()
+    public void When_Calculating_Delay_With_Custom_Strategy()
     {
         var policy = new RetryPolicy
         {
@@ -463,23 +487,23 @@ public class RetryExecutorTests
         var delay1 = executor.CalculateDelay(1);
         var delay2 = executor.CalculateDelay(2);
 
-        delay1.Should().Be(TimeSpan.FromSeconds(10));
-        delay2.Should().Be(TimeSpan.FromSeconds(20));
+        delay1.Should().Be(TimeSpan.FromSeconds(10), "it should use the custom calculator for attempt 1");
+        delay2.Should().Be(TimeSpan.FromSeconds(20), "it should use the custom calculator for attempt 2");
     }
 
     [Fact]
-    public void ShouldRetry_Returns_False_When_MaxAttempts_Reached()
+    public void When_MaxAttempts_Is_Reached()
     {
         var policy = new RetryPolicy { MaxAttempts = 3 };
         var executor = new RetryExecutor(policy);
 
-        executor.ShouldRetry(1).Should().BeTrue();
-        executor.ShouldRetry(2).Should().BeTrue();
-        executor.ShouldRetry(3).Should().BeFalse();
+        executor.ShouldRetry(1).Should().BeTrue("it should allow retry on attempt 1");
+        executor.ShouldRetry(2).Should().BeTrue("it should allow retry on attempt 2");
+        executor.ShouldRetry(3).Should().BeFalse("it should not allow retry after max attempts");
     }
 
     [Fact]
-    public void ShouldRetry_Uses_IsRetryable_Predicate()
+    public void When_Checking_If_Exception_Is_Retryable()
     {
         var policy = new RetryPolicy
         {
@@ -488,12 +512,12 @@ public class RetryExecutorTests
         };
         var executor = new RetryExecutor(policy);
 
-        executor.ShouldRetry(1, new InvalidOperationException()).Should().BeTrue();
-        executor.ShouldRetry(1, new ArgumentException()).Should().BeFalse();
+        executor.ShouldRetry(1, new InvalidOperationException()).Should().BeTrue("it should retry InvalidOperationException");
+        executor.ShouldRetry(1, new ArgumentException()).Should().BeFalse("it should not retry ArgumentException");
     }
 
     [Fact]
-    public async Task ExecuteAsync_Retries_On_Failure()
+    public async Task When_Executing_With_Transient_Failures()
     {
         var policy = new RetryPolicy
         {
@@ -512,12 +536,12 @@ public class RetryExecutorTests
             return Task.FromResult(42);
         });
 
-        result.Should().Be(42);
-        attempts.Should().Be(3);
+        result.Should().Be(42, "it should return the result after successful retry");
+        attempts.Should().Be(3, "it should have attempted 3 times");
     }
 
     [Fact]
-    public async Task ExecuteAsync_Throws_After_MaxAttempts()
+    public async Task When_Executing_With_Permanent_Failure()
     {
         var policy = new RetryPolicy
         {
@@ -534,15 +558,15 @@ public class RetryExecutorTests
             throw new InvalidOperationException("Permanent failure");
         });
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
-        attempts.Should().Be(2);
+        await act.Should().ThrowAsync<InvalidOperationException>("it should throw after exhausting retries");
+        attempts.Should().Be(2, "it should have attempted the max number of times");
     }
 }
 
 public class HealthCheckTests
 {
     [Fact]
-    public async Task MessageQueueHealthCheck_Returns_Healthy_When_Check_Succeeds()
+    public async Task When_Health_Check_Succeeds()
     {
         var healthCheck = new MessageQueueHealthCheck("test-queue", _ => Task.FromResult(true));
         var context = new HealthCheckContext
@@ -552,12 +576,12 @@ public class HealthCheckTests
 
         var result = await healthCheck.CheckHealthAsync(context);
 
-        result.Status.Should().Be(HealthStatus.Healthy);
-        result.Description.Should().Contain("test-queue");
+        result.Status.Should().Be(HealthStatus.Healthy, "it should report healthy status");
+        result.Description.Should().Contain("test-queue", "it should include the queue name in the description");
     }
 
     [Fact]
-    public async Task MessageQueueHealthCheck_Returns_Unhealthy_When_Check_Fails()
+    public async Task When_Health_Check_Fails()
     {
         var healthCheck = new MessageQueueHealthCheck("test-queue", _ => Task.FromResult(false));
         var context = new HealthCheckContext
@@ -567,11 +591,11 @@ public class HealthCheckTests
 
         var result = await healthCheck.CheckHealthAsync(context);
 
-        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Status.Should().Be(HealthStatus.Unhealthy, "it should report unhealthy status");
     }
 
     [Fact]
-    public async Task MessageQueueHealthCheck_Returns_Unhealthy_On_Exception()
+    public async Task When_Health_Check_Throws_Exception()
     {
         var healthCheck = new MessageQueueHealthCheck("test-queue",
             _ => throw new InvalidOperationException("Connection failed"));
@@ -582,12 +606,12 @@ public class HealthCheckTests
 
         var result = await healthCheck.CheckHealthAsync(context);
 
-        result.Status.Should().Be(HealthStatus.Unhealthy);
-        result.Exception.Should().BeOfType<InvalidOperationException>();
+        result.Status.Should().Be(HealthStatus.Unhealthy, "it should report unhealthy status on exception");
+        result.Exception.Should().BeOfType<InvalidOperationException>("it should include the exception");
     }
 
     [Fact]
-    public void HealthCheckExtensions_Registers_Custom_Check()
+    public void When_Registering_Health_Check_Via_DI()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -597,7 +621,7 @@ public class HealthCheckTests
         var provider = services.BuildServiceProvider();
         var healthCheckService = provider.GetService<HealthCheckService>();
 
-        healthCheckService.Should().NotBeNull();
+        healthCheckService.Should().NotBeNull("it should register the health check service");
     }
 }
 
@@ -606,19 +630,19 @@ public class InMemoryMessageQueueTests
     record TestMessage(string Id, string Content);
 
     [Fact]
-    public async Task PublishAsync_Adds_Message_To_Queue()
+    public async Task When_Publishing_A_Single_Message()
     {
         var queue = new InMemoryMessageQueue<TestMessage>();
         var message = new TestMessage("1", "Hello");
 
         await queue.PublishAsync(message);
 
-        queue.Count.Should().Be(1);
-        queue.PublishedMessages.Should().ContainSingle().Which.Should().Be(message);
+        queue.Count.Should().Be(1, "it should add the message to the queue");
+        queue.PublishedMessages.Should().ContainSingle().Which.Should().Be(message, "it should store the published message");
     }
 
     [Fact]
-    public async Task PublishAsync_Batch_Adds_All_Messages()
+    public async Task When_Publishing_A_Batch_Of_Messages()
     {
         var queue = new InMemoryMessageQueue<TestMessage>();
         var messages = new[]
@@ -630,22 +654,22 @@ public class InMemoryMessageQueueTests
 
         await queue.PublishAsync(messages);
 
-        queue.Count.Should().Be(3);
-        queue.PublishedMessages.Should().HaveCount(3);
+        queue.Count.Should().Be(3, "it should add all messages to the queue");
+        queue.PublishedMessages.Should().HaveCount(3, "it should store all published messages");
     }
 
     [Fact]
-    public async Task SubscribeAsync_Registers_Handler()
+    public async Task When_Subscribing_To_Messages()
     {
         var queue = new InMemoryMessageQueue<TestMessage>();
 
         await queue.SubscribeAsync(_ => Task.FromResult(true));
 
-        queue.IsSubscribed.Should().BeTrue();
+        queue.IsSubscribed.Should().BeTrue("it should register the handler");
     }
 
     [Fact]
-    public async Task ProcessAllAsync_Processes_All_Messages()
+    public async Task When_Processing_All_Messages()
     {
         var queue = new InMemoryMessageQueue<TestMessage>();
         var processed = new List<TestMessage>();
@@ -661,13 +685,13 @@ public class InMemoryMessageQueueTests
 
         await queue.ProcessAllAsync();
 
-        processed.Should().HaveCount(2);
-        queue.ProcessedMessages.Should().HaveCount(2);
-        queue.Count.Should().Be(0);
+        processed.Should().HaveCount(2, "it should process all messages");
+        queue.ProcessedMessages.Should().HaveCount(2, "it should track processed messages");
+        queue.Count.Should().Be(0, "it should remove processed messages from the queue");
     }
 
     [Fact]
-    public async Task ProcessOneAsync_Processes_Single_Message()
+    public async Task When_Processing_One_Message()
     {
         var queue = new InMemoryMessageQueue<TestMessage>();
 
@@ -678,13 +702,13 @@ public class InMemoryMessageQueueTests
 
         var result = await queue.ProcessOneAsync();
 
-        result.Should().BeTrue();
-        queue.ProcessedMessages.Should().HaveCount(1);
-        queue.Count.Should().Be(1);
+        result.Should().BeTrue("it should return true on successful processing");
+        queue.ProcessedMessages.Should().HaveCount(1, "it should process only one message");
+        queue.Count.Should().Be(1, "it should leave remaining messages in the queue");
     }
 
     [Fact]
-    public async Task ProcessOneAsync_Returns_False_On_Handler_Failure()
+    public async Task When_Handler_Returns_False()
     {
         var queue = new InMemoryMessageQueue<TestMessage>();
 
@@ -694,25 +718,25 @@ public class InMemoryMessageQueueTests
 
         var result = await queue.ProcessOneAsync();
 
-        result.Should().BeFalse("handler returned false");
-        queue.ProcessedMessages.Should().BeEmpty("failed messages are not marked as processed");
+        result.Should().BeFalse("it should return false when handler fails");
+        queue.ProcessedMessages.Should().BeEmpty("it should not mark failed messages as processed");
     }
 
     [Fact]
-    public async Task Clear_Removes_All_Messages()
+    public async Task When_Clearing_The_Queue()
     {
         var queue = new InMemoryMessageQueue<TestMessage>();
         await queue.PublishAsync(new TestMessage("1", "Test"));
 
         queue.Clear();
 
-        queue.Count.Should().Be(0);
-        queue.PublishedMessages.Should().BeEmpty();
-        queue.ProcessedMessages.Should().BeEmpty();
+        queue.Count.Should().Be(0, "it should remove all messages");
+        queue.PublishedMessages.Should().BeEmpty("it should clear published messages");
+        queue.ProcessedMessages.Should().BeEmpty("it should clear processed messages");
     }
 
     [Fact]
-    public void DI_Registration_Works()
+    public void When_Registering_Via_DI()
     {
         var services = new ServiceCollection();
         services.AddInMemoryMessageQueue<TestMessage>();
@@ -722,10 +746,8 @@ public class InMemoryMessageQueueTests
         var queue = provider.GetService<IMessageQueue<TestMessage>>();
         var inMemory = provider.GetService<InMemoryMessageQueue<TestMessage>>();
 
-        queue.Should().NotBeNull();
-        inMemory.Should().NotBeNull();
-
-        // Both should be the same instance
-        queue.Should().BeSameAs(inMemory);
+        queue.Should().NotBeNull("it should register IMessageQueue");
+        inMemory.Should().NotBeNull("it should register InMemoryMessageQueue");
+        queue.Should().BeSameAs(inMemory, "it should use the same instance for both registrations");
     }
 }

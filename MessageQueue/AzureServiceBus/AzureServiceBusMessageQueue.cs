@@ -1,8 +1,7 @@
-using System.Text;
-using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Exceptions;
+using ESE.MessageQueue.Serialization;
 
 namespace ESE.MessageQueue.AzureServiceBus;
 
@@ -49,20 +48,19 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
     {
         try
         {
-            var json = JsonSerializer.Serialize(message);
-            var body = Encoding.UTF8.GetBytes(json);
-            
+            var body = MessageSerializer.Serialize(message, config.SerializationFormat);
+
             var serviceBusMessage = new ServiceBusMessage(body)
             {
                 MessageId = Guid.NewGuid().ToString(),
-                ContentType = "application/json",
+                ContentType = MessageSerializer.GetContentType(config.SerializationFormat),
                 TimeToLive = config.MessageTimeToLive,
                 Subject = typeof(T).Name
             };
-            
+
             serviceBusMessage.ApplicationProperties.Add("MessageType", typeof(T).Name);
             serviceBusMessage.ApplicationProperties.Add("PublishedAt", DateTimeOffset.UtcNow.ToString("O"));
-            
+
             await sender.SendMessageAsync(serviceBusMessage, cancellationToken);
         }
         catch (Exception ex)
@@ -104,20 +102,19 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
 
     ServiceBusMessage CreateServiceBusMessage(T message)
     {
-        var json = JsonSerializer.Serialize(message);
-        var body = Encoding.UTF8.GetBytes(json);
-        
+        var body = MessageSerializer.Serialize(message, config.SerializationFormat);
+
         var serviceBusMessage = new ServiceBusMessage(body)
         {
             MessageId = Guid.NewGuid().ToString(),
-            ContentType = "application/json",
+            ContentType = MessageSerializer.GetContentType(config.SerializationFormat),
             TimeToLive = config.MessageTimeToLive,
             Subject = typeof(T).Name
         };
-        
+
         serviceBusMessage.ApplicationProperties.Add("MessageType", typeof(T).Name);
         serviceBusMessage.ApplicationProperties.Add("PublishedAt", DateTimeOffset.UtcNow.ToString("O"));
-        
+
         return serviceBusMessage;
     }
 
@@ -128,12 +125,11 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
             processor.ProcessMessageAsync += async args =>
             {
                 var body = args.Message.Body.ToArray();
-                var json = Encoding.UTF8.GetString(body);
                 var deliveryCount = args.Message.DeliveryCount;
-                
+
                 try
                 {
-                    var message = JsonSerializer.Deserialize<T>(json);
+                    var message = MessageSerializer.Deserialize<T>(body, config.SerializationFormat);
                     if (message != null)
                     {
                         var success = await handler(message);
@@ -148,8 +144,8 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
                     }
                     else
                     {
-                        await args.DeadLetterMessageAsync(args.Message, 
-                            "Deserialization failed", "Message could not be deserialized", 
+                        await args.DeadLetterMessageAsync(args.Message,
+                            "Deserialization failed", "Message could not be deserialized",
                             cancellationToken);
                     }
                 }
@@ -158,12 +154,12 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
                     await HandleRetry(args, deliveryCount, cancellationToken, ex);
                 }
             };
-            
+
             processor.ProcessErrorAsync += args =>
             {
                 return Task.CompletedTask;
             };
-            
+
             await processor.StartProcessingAsync(cancellationToken);
         }
         catch (Exception ex)
