@@ -4,6 +4,8 @@ using ESE.MessageQueue.Configuration;
 using ESE.MessageQueue.Exceptions;
 using ESE.MessageQueue.Processing;
 using ESE.MessageQueue.RabbitMQ;
+using ESE.MessageQueue.Telemetry;
+using ESE.MessageQueue.Telemetry.OpenTelemetry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -83,5 +85,19 @@ public static class ServiceCollectionExtensions
         where TProcessor : class, IMessageProcessor<T>
     {
         return services.AddScoped<IMessageProcessor<T>, TProcessor>();
+    }
+
+    public static IServiceCollection AddMessageQueueTelemetry(
+        this IServiceCollection services,
+        string sourceName = "ESE.MessageQueue")
+    {
+        return services.AddSingleton<ITelemetryProvider>(new OpenTelemetryProvider(sourceName));
+    }
+
+    public static IServiceCollection AddMessageQueueTelemetry<TProvider>(
+        this IServiceCollection services)
+        where TProvider : class, ITelemetryProvider
+    {
+        return services.AddSingleton<ITelemetryProvider, TProvider>();
     }
 }
