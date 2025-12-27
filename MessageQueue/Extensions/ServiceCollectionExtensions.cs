@@ -4,6 +4,7 @@ using ESE.MessageQueue.Configuration;
 using ESE.MessageQueue.Exceptions;
 using ESE.MessageQueue.Processing;
 using ESE.MessageQueue.RabbitMQ;
+using ESE.MessageQueue.Serialization;
 using ESE.MessageQueue.Telemetry;
 using ESE.MessageQueue.Telemetry.OpenTelemetry;
 using Microsoft.Extensions.Configuration;
@@ -99,5 +100,25 @@ public static class ServiceCollectionExtensions
         where TProvider : class, ITelemetryProvider
     {
         return services.AddSingleton<ITelemetryProvider, TProvider>();
+    }
+
+    public static IServiceCollection AddMessageSerializer(
+        this IServiceCollection services,
+        SerializationFormat format = SerializationFormat.Json)
+    {
+        return format switch
+        {
+            SerializationFormat.Json => services.AddSingleton<IMessageSerializer, JsonMessageSerializer>(),
+            SerializationFormat.MessagePack => throw new NotSupportedException(
+                "MessagePack serialization requires the MessagePack NuGet package. Use AddMessageSerializer<TSerializer>() instead."),
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported serialization format")
+        };
+    }
+
+    public static IServiceCollection AddMessageSerializer<TSerializer>(
+        this IServiceCollection services)
+        where TSerializer : class, IMessageSerializer
+    {
+        return services.AddSingleton<IMessageSerializer, TSerializer>();
     }
 }
