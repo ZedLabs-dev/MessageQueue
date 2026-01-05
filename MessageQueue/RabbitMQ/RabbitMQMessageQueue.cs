@@ -10,38 +10,53 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
 {
     readonly RabbitMqConfig config;
     readonly IConnection connection;
-    readonly IModel channel;
+    readonly IModel consumerChannel;
+    readonly PublisherChannel[] publisherChannels;
     readonly string queueName;
+    readonly string exchangeName;
     readonly string deadLetterQueueName;
+    int nextPublisherIndex;
     EventingBasicConsumer? consumer;
 
     public RabbitMqMessageQueue(RabbitMqConfig config)
     {
         this.config = config;
         queueName = config.QueueName;
-        deadLetterQueueName = string.IsNullOrEmpty(config.DeadLetterQueueName) 
-            ? $"{config.QueueName}.deadletter" 
+        exchangeName = string.IsNullOrWhiteSpace(config.ExchangeName)
+            ? config.QueueName
+            : config.ExchangeName;
+        deadLetterQueueName = string.IsNullOrEmpty(config.DeadLetterQueueName)
+            ? $"{config.QueueName}.deadletter"
             : config.DeadLetterQueueName;
-        
+
         try
         {
-            var factory = new ConnectionFactory 
-            { 
+            var factory = new ConnectionFactory
+            {
                 Uri = new Uri(config.ConnectionString),
                 RequestedHeartbeat = this.config.HeartbeatInterval,
                 NetworkRecoveryInterval = this.config.NetworkRecoveryInterval,
                 AutomaticRecoveryEnabled = true
             };
-            
+
             connection = factory.CreateConnection();
-            channel = connection.CreateModel();
-            
-            if (this.config.EnablePublisherConfirms)
+
+            // Consumer/admin channel for queue declarations and consuming
+            consumerChannel = connection.CreateModel();
+
+            // Publisher channel pool
+            var poolSize = Math.Max(1, config.PublisherChannelPoolSize);
+            publisherChannels = new PublisherChannel[poolSize];
+            for (var i = 0; i < poolSize; i++)
             {
-                channel.ConfirmSelect();
+                publisherChannels[i] = new PublisherChannel(
+                    connection,
+                    config.EnablePublisherConfirms,
+                    config.ConfirmTimeout,
+                    config.MaxOutstandingConfirms);
             }
-            
-            DeclareQueues();
+
+            DeclareExchangeAndQueues();
         }
         catch (Exception ex)
         {
@@ -49,37 +64,45 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
         }
     }
 
-    void DeclareQueues()
+    void DeclareExchangeAndQueues()
     {
+        // Declare the exchange
+        consumerChannel.ExchangeDeclare(
+            exchange: exchangeName,
+            type: config.ExchangeType,
+            durable: true,
+            autoDelete: false,
+            arguments: null);
+
         var deadLetterArgs = new Dictionary<string, object>();
         var queueArgs = new Dictionary<string, object>();
-        
+
         if (config.UseQuorumQueues)
         {
             queueArgs.Add("x-queue-type", "quorum");
             queueArgs.Add("x-quorum-initial-group-size", config.QuorumInitialGroupSize);
         }
-        
+
         if (config.EnableDeadLetterQueue)
         {
             var deadLetterQueueArgs = new Dictionary<string, object>();
-            
+
             if (config.UseQuorumQueues)
             {
                 deadLetterQueueArgs.Add("x-queue-type", "quorum");
                 deadLetterQueueArgs.Add("x-quorum-initial-group-size", config.QuorumInitialGroupSize);
             }
-            
-            channel.QueueDeclare(
+
+            consumerChannel.QueueDeclare(
                 queue: deadLetterQueueName,
                 durable: true,
                 exclusive: false,
                 autoDelete: false,
                 arguments: deadLetterQueueArgs);
-            
+
             deadLetterArgs.Add("x-dead-letter-exchange", "");
             deadLetterArgs.Add("x-dead-letter-routing-key", deadLetterQueueName);
-            
+
             if (config.UseQuorumQueues)
             {
                 deadLetterArgs.Add("x-overflow", "reject-publish");
@@ -91,21 +114,31 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
             queueArgs[key] = value;
         }
 
-        channel.QueueDeclare(
+        consumerChannel.QueueDeclare(
             queue: queueName,
             durable: true,
             exclusive: false,
             autoDelete: false,
             arguments: queueArgs);
+
+        // Bind queue to exchange with routing key = queue name
+        consumerChannel.QueueBind(
+            queue: queueName,
+            exchange: exchangeName,
+            routingKey: queueName);
     }
 
-    public Task PublishAsync(T message, CancellationToken cancellationToken = default)
+    public async Task PublishAsync(T message, CancellationToken cancellationToken = default)
     {
         try
         {
             var body = MessageSerializer.Serialize(message, config.SerializationFormat);
 
-            var properties = channel.CreateBasicProperties();
+            // Round-robin selection of publisher channel
+            var index = Interlocked.Increment(ref nextPublisherIndex) % publisherChannels.Length;
+            var publisherChannel = publisherChannels[index];
+
+            var properties = publisherChannel.CreateBasicProperties();
             properties.Persistent = true;
             properties.MessageId = Guid.NewGuid().ToString();
             properties.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
@@ -116,18 +149,16 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
                 properties.DeliveryMode = 2;
             }
 
-            channel.BasicPublish(
-                exchange: "",
-                routingKey: queueName,
-                basicProperties: properties,
-                body: body);
-
-            if (config.EnablePublisherConfirms)
-            {
-                channel.WaitForConfirmsOrDie(TimeSpan.FromSeconds(5));
-            }
-
-            return Task.CompletedTask;
+            await publisherChannel.PublishAsync(
+                body,
+                properties,
+                exchangeName,
+                queueName,
+                cancellationToken);
+        }
+        catch (MessageQueueException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -147,11 +178,11 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
     {
         try
         {
-            consumer = new EventingBasicConsumer(channel);
+            consumer = new EventingBasicConsumer(consumerChannel);
 
             if (config.UseQuorumQueues)
             {
-                channel.BasicQos(prefetchSize: 0, prefetchCount: (ushort)config.PrefetchCount, global: false);
+                consumerChannel.BasicQos(prefetchSize: 0, prefetchCount: (ushort)config.PrefetchCount, global: false);
             }
 
             consumer.Received += async (model, ea) =>
@@ -166,25 +197,25 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
                         var success = await handler(message);
                         if (success)
                         {
-                            channel.BasicAck(ea.DeliveryTag, false);
+                            consumerChannel.BasicAck(ea.DeliveryTag, false);
                         }
                         else
                         {
-                            channel.BasicNack(ea.DeliveryTag, false, false);
+                            consumerChannel.BasicNack(ea.DeliveryTag, false, false);
                         }
                     }
                     else
                     {
-                        channel.BasicNack(ea.DeliveryTag, false, false);
+                        consumerChannel.BasicNack(ea.DeliveryTag, false, false);
                     }
                 }
                 catch (Exception)
                 {
-                    channel.BasicNack(ea.DeliveryTag, false, false);
+                    consumerChannel.BasicNack(ea.DeliveryTag, false, false);
                 }
             };
 
-            channel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
+            consumerChannel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
 
             return Task.CompletedTask;
         }
@@ -198,7 +229,7 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
     {
         if (consumer != null)
         {
-            channel.BasicCancel(consumer.ConsumerTags.FirstOrDefault() ?? "");
+            consumerChannel.BasicCancel(consumer.ConsumerTags.FirstOrDefault() ?? "");
         }
         return Task.CompletedTask;
     }
@@ -206,7 +237,13 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDisposable where T : c
     public void Dispose()
     {
         consumer = null;
-        channel?.Dispose();
+
+        foreach (var publisherChannel in publisherChannels)
+        {
+            publisherChannel.Dispose();
+        }
+
+        consumerChannel?.Dispose();
         connection?.Dispose();
     }
 }
