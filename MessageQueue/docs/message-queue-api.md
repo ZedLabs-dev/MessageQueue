@@ -301,6 +301,72 @@ Defines the outcome of message processing.
 | UseQuorumQueues | bool | No | true | Use RabbitMQ quorum queues for high availability |
 | QuorumInitialGroupSize | int | No | 3 | Initial group size for quorum queues |
 
+### RabbitMQ-Specific Configuration
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| ExchangeName | string | QueueName | Name of the exchange for publishing. Defaults to queue name. |
+| ExchangeType | string | "direct" | Type of exchange: "direct", "fanout", "topic", or "headers" |
+| EnablePublisherConfirms | bool | true | Enable async publisher confirms for delivery guarantees |
+| PublisherChannelPoolSize | int | 2 | Number of publisher channels in the pool for concurrent publishing |
+| MaxOutstandingConfirms | int | 1000 | Maximum pending confirms across all channels (backpressure) |
+| ConfirmTimeout | TimeSpan | 30 seconds | Timeout for publisher confirm acknowledgment |
+
+### Exchange-Based Publishing
+
+Configure exchange-based routing for flexible message distribution:
+
+```json
+{
+  "MessageQueue": {
+    "Provider": "RabbitMQ",
+    "ConnectionString": "amqp://admin:password123@localhost:5672/",
+    "QueueName": "order-created",
+    "ExchangeName": "order-events",
+    "ExchangeType": "topic",
+    "EnablePublisherConfirms": true,
+    "PublisherChannelPoolSize": 4,
+    "MaxOutstandingConfirms": 2000,
+    "ConfirmTimeout": "00:00:30"
+  }
+}
+```
+
+**Exchange Types:**
+- `direct`: Routes messages to queues based on exact routing key match
+- `fanout`: Broadcasts messages to all bound queues
+- `topic`: Routes messages based on routing key patterns (e.g., `order.*`)
+- `headers`: Routes based on message header attributes
+
+### High-Throughput Publishing Configuration
+
+For high-volume publishing scenarios with delivery guarantees:
+
+```csharp
+services.AddMessageQueue<OrderCreated>(options =>
+{
+    options.Provider = "RabbitMQ";
+    options.ConnectionString = "amqp://admin:password123@localhost:5672/";
+    options.QueueName = "high-volume-orders";
+
+    // Exchange configuration
+    options.ExchangeName = "order-events";
+    options.ExchangeType = "direct";
+
+    // Publisher confirms with channel pool
+    options.EnablePublisherConfirms = true;
+    options.PublisherChannelPoolSize = 4;      // 4 concurrent channels
+    options.MaxOutstandingConfirms = 4000;     // 1000 per channel
+    options.ConfirmTimeout = TimeSpan.FromSeconds(30);
+});
+```
+
+**Performance Considerations:**
+- Higher `PublisherChannelPoolSize` increases concurrent publishing capacity
+- `MaxOutstandingConfirms` provides backpressure to prevent memory exhaustion
+- Each channel can have `MaxOutstandingConfirms / PublisherChannelPoolSize` pending confirms
+- Set `EnablePublisherConfirms = false` for fire-and-forget (no delivery guarantee)
+
 ### RabbitMQ Connection String Format
 
 ```

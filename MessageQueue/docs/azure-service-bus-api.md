@@ -234,6 +234,52 @@ var processorOptions = new ServiceBusProcessorOptions
 | PrefetchCount | int | 10 | Number of messages to prefetch for performance |
 | MaxAutoLockRenewalDuration | TimeSpan | 5 minutes | Maximum duration for automatic lock renewal |
 
+### Sender Pool and Topic Publishing Settings
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| TopicName | string | null | Topic name for topic-based publishing. When set, publishes to topic instead of queue. |
+| SubscriptionName | string | null | Subscription name for receiving from a topic. Required when TopicName is set. |
+| SenderPoolSize | int | 2 | Number of sender instances in the pool for concurrent publishing |
+| MaxConcurrentSends | int | 1000 | Maximum concurrent send operations across all senders (backpressure) |
+| SendTimeout | TimeSpan | 30 seconds | Timeout for send operations |
+
+### Topic-Based Publishing
+
+Configure topic-based pub/sub messaging:
+
+```json
+{
+  "MessageQueue": {
+    "Provider": "AzureServiceBus",
+    "ConnectionString": "Endpoint=sb://your-namespace.servicebus.windows.net/;...",
+    "QueueName": "fallback-queue",
+    "TopicName": "order-events",
+    "SubscriptionName": "order-processor",
+    "SenderPoolSize": 4,
+    "MaxConcurrentSends": 2000,
+    "SendTimeout": "00:00:30"
+  }
+}
+```
+
+**Topic Publishing Benefits:**
+- Multiple subscribers can receive the same message
+- Subscription filters for message routing
+- Decouples publishers from consumers
+- Supports fan-out messaging patterns
+
+**Usage Example:**
+```csharp
+// Publisher sends to topic
+await messageQueue.PublishAsync(new OrderCreated { OrderId = "123" });
+
+// Multiple services can subscribe via different subscriptions:
+// - order-processor subscription: processes orders
+// - analytics subscription: tracks order metrics
+// - notification subscription: sends customer notifications
+```
+
 ### Performance Tuning
 
 Configure high-throughput settings in `appsettings.json`:
@@ -249,7 +295,10 @@ Configure high-throughput settings in `appsettings.json`:
     "MaxAutoLockRenewalDuration": "00:10:00",
     "EnableBatchedOperations": true,
     "MaxBatchSize": 200,
-    "BatchFlushInterval": "00:00:00.500"
+    "BatchFlushInterval": "00:00:00.500",
+    "SenderPoolSize": 4,
+    "MaxConcurrentSends": 4000,
+    "SendTimeout": "00:00:30"
   }
 }
 ```
@@ -258,6 +307,9 @@ Configure high-throughput settings in `appsettings.json`:
 - Higher `MaxConcurrentCalls` increases throughput but uses more resources
 - Higher `PrefetchCount` reduces latency but increases memory usage
 - Longer `MaxAutoLockRenewalDuration` supports longer processing times
+- Higher `SenderPoolSize` increases concurrent publishing capacity
+- `MaxConcurrentSends` provides backpressure to prevent overwhelming the service
+- Each sender can have `MaxConcurrentSends / SenderPoolSize` concurrent operations
 
 ## Error Handling and Retry Logic
 

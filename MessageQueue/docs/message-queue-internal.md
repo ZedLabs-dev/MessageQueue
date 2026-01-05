@@ -86,17 +86,135 @@ public RabbitMQMessageQueue(MessageQueueConfig config)
     _config = config;
     var factory = new ConnectionFactory { Uri = new Uri(config.ConnectionString) };
     _connection = factory.CreateConnection();
-    _channel = _connection.CreateModel();
-    
-    DeclareQueues();
+
+    // Create publisher channel pool for concurrent publishing
+    var poolSize = Math.Max(1, config.PublisherChannelPoolSize);
+    _publisherChannels = new PublisherChannel[poolSize];
+    for (var i = 0; i < poolSize; i++)
+    {
+        _publisherChannels[i] = new PublisherChannel(
+            _connection,
+            config.EnablePublisherConfirms,
+            config.ConfirmTimeout,
+            config.MaxOutstandingConfirms / poolSize);
+    }
+
+    // Separate consumer channel for subscriptions
+    _consumerChannel = _connection.CreateModel();
+
+    DeclareExchangeAndQueues();
 }
 ```
 
 **Connection Strategy:**
 - Single persistent connection per queue instance
+- **Publisher channel pool** for concurrent publishing with backpressure
+- Separate consumer channel for message consumption
 - Automatic reconnection handled by RabbitMQ client
-- Channel per queue for thread safety
 - Connection disposal in finalizer
+
+#### PublisherChannel Class (Internal)
+
+The `PublisherChannel` class manages async publisher confirms with backpressure control:
+
+```csharp
+internal sealed class PublisherChannel : IDisposable
+{
+    readonly IModel channel;
+    readonly TimeSpan confirmTimeout;
+    readonly SemaphoreSlim outstandingConfirmsSemaphore;
+    readonly ConcurrentDictionary<ulong, TaskCompletionSource<bool>> pendingConfirms;
+    readonly object publishLock;
+    readonly bool enableConfirms;
+}
+```
+
+**Purpose:**
+- Wraps a RabbitMQ channel with async publisher confirm tracking
+- Provides backpressure via `SemaphoreSlim` to limit outstanding confirms
+- Handles `BasicAcks`/`BasicNacks` events including the `Multiple` flag
+- Supports both confirmed and fire-and-forget publishing modes
+
+**Key Design Decisions:**
+- `ConcurrentDictionary` for thread-safe tracking of pending confirms by sequence number
+- `TaskCompletionSource` with `RunContinuationsAsynchronously` to avoid deadlocks
+- Lock around publish to ensure sequence number and dictionary update are atomic
+- Timeout handling with linked cancellation tokens
+- Clean shutdown that fails all pending confirms
+
+**Backpressure Mechanism:**
+```csharp
+public async Task PublishAsync(...)
+{
+    // Wait for available slot (backpressure)
+    await outstandingConfirmsSemaphore.WaitAsync(cancellationToken);
+
+    try
+    {
+        // Publish and track
+        lock (publishLock)
+        {
+            seqNo = channel.NextPublishSeqNo;
+            pendingConfirms[seqNo] = tcs;
+            channel.BasicPublish(...);
+        }
+
+        // Wait for confirm with timeout
+        var confirmed = await tcs.Task.WaitAsync(timeoutCts.Token);
+    }
+    finally
+    {
+        outstandingConfirmsSemaphore.Release();
+    }
+}
+```
+
+**Confirm Handling:**
+```csharp
+void HandleConfirmation(ulong deliveryTag, bool multiple, bool confirmed)
+{
+    if (multiple)
+    {
+        // Ack/Nack all messages up to and including deliveryTag
+        var keysToRemove = pendingConfirms.Keys.Where(k => k <= deliveryTag);
+        foreach (var key in keysToRemove)
+        {
+            if (pendingConfirms.TryRemove(key, out var tcs))
+                tcs.TrySetResult(confirmed);
+        }
+    }
+    else
+    {
+        if (pendingConfirms.TryRemove(deliveryTag, out var tcs))
+            tcs.TrySetResult(confirmed);
+    }
+}
+```
+
+#### Exchange-Based Publishing
+
+The RabbitMQ implementation now uses exchange-based publishing for flexibility:
+
+```csharp
+private void DeclareExchangeAndQueues()
+{
+    // Declare exchange (default: direct exchange named after queue)
+    var exchangeName = config.ExchangeName ?? config.QueueName;
+    var exchangeType = config.ExchangeType ?? "direct";
+
+    _channel.ExchangeDeclare(exchangeName, exchangeType, durable: true);
+
+    // Declare queue and bind to exchange
+    _channel.QueueDeclare(_queueName, durable: true, ...);
+    _channel.QueueBind(_queueName, exchangeName, routingKey: _queueName);
+}
+```
+
+**Benefits:**
+- Decouples publishers from queue names
+- Enables topic/fanout routing patterns
+- Supports multiple queues bound to same exchange
+- Allows routing key-based message filtering
 
 #### Queue Declaration Logic
 
@@ -274,12 +392,120 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 - Result mapping from enum to boolean
 - Graceful shutdown support
 
+### Azure Service Bus Implementation Deep Dive
+
+#### Sender Pool Architecture
+
+The Azure Service Bus implementation uses a sender pool pattern similar to RabbitMQ:
+
+```csharp
+public AzureServiceBusMessageQueue(AzureServiceBusConfig config)
+{
+    client = new ServiceBusClient(config.ConnectionString);
+
+    // Create sender pool for concurrent publishing
+    var poolSize = Math.Max(1, config.SenderPoolSize);
+    var maxConcurrentPerSender = Math.Max(1, config.MaxConcurrentSends / poolSize);
+    senderPool = new PublisherSender[poolSize];
+
+    for (var i = 0; i < poolSize; i++)
+    {
+        senderPool[i] = new PublisherSender(
+            client,
+            publishDestination,  // Queue or Topic name
+            maxConcurrentPerSender,
+            config.SendTimeout);
+    }
+
+    // Create processor for receiving messages
+    processor = useTopicPublishing && !string.IsNullOrEmpty(config.SubscriptionName)
+        ? client.CreateProcessor(config.TopicName, config.SubscriptionName, processorOptions)
+        : client.CreateProcessor(queueName, processorOptions);
+}
+```
+
+#### PublisherSender Class (Internal)
+
+The `PublisherSender` class wraps `ServiceBusSender` with backpressure control:
+
+```csharp
+internal sealed class PublisherSender : IAsyncDisposable
+{
+    readonly ServiceBusSender sender;
+    readonly SemaphoreSlim concurrencySemaphore;
+    readonly TimeSpan sendTimeout;
+}
+```
+
+**Purpose:**
+- Wraps Azure Service Bus sender with concurrency limiting
+- Provides backpressure via `SemaphoreSlim` to limit concurrent sends
+- Handles timeout for send operations
+- Supports both single message and batch sends
+
+**Key Design Decisions:**
+- Simpler than RabbitMQ's `PublisherChannel` because Azure Service Bus handles confirms internally
+- `SendMessageAsync` returns when the message is accepted by the broker
+- Backpressure prevents overwhelming the service with too many concurrent requests
+- Timeout handling prevents indefinite waits on network issues
+
+**Backpressure Mechanism:**
+```csharp
+public async Task SendAsync(ServiceBusMessage message, CancellationToken cancellationToken)
+{
+    // Wait for available slot (backpressure)
+    await concurrencySemaphore.WaitAsync(cancellationToken);
+
+    try
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(sendTimeout);
+
+        await sender.SendMessageAsync(message, timeoutCts.Token);
+    }
+    finally
+    {
+        concurrencySemaphore.Release();
+    }
+}
+```
+
+#### Topic-Based Publishing
+
+Azure Service Bus supports Topics/Subscriptions for pub/sub patterns:
+
+```csharp
+// Configuration
+var config = new AzureServiceBusConfig
+{
+    TopicName = "order-events",           // Publish to topic
+    SubscriptionName = "order-processor", // Receive from subscription
+    QueueName = "fallback-queue"          // Used if TopicName not set
+};
+
+// Publishing destination selection
+useTopicPublishing = !string.IsNullOrEmpty(config.TopicName);
+publishDestination = useTopicPublishing ? config.TopicName : queueName;
+
+// Processor creation for receiving
+processor = useTopicPublishing && !string.IsNullOrEmpty(config.SubscriptionName)
+    ? client.CreateProcessor(config.TopicName, config.SubscriptionName, options)
+    : client.CreateProcessor(queueName, options);
+```
+
+**Benefits:**
+- Multiple subscribers can receive the same message
+- Subscription filters for message routing
+- Decouples publishers from consumers
+- Supports fan-out messaging patterns
+
 ## Performance Optimizations
 
 ### Connection Pooling
 
-- Single connection per message queue instance
-- Channel reuse for publishing operations
+- Single `ServiceBusClient` per message queue instance
+- **Sender pool** for concurrent publishing with backpressure
+- Channel/sender reuse for publishing operations
 - Connection factory configuration for optimal settings
 
 ### Memory Management
