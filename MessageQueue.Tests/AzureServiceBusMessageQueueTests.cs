@@ -96,6 +96,55 @@ public class AzureServiceBusMessageQueueTests
         await action.Should().NotThrowAsync("it should subscribe without error");
     }
 
+    [Fact]
+    public void When_Config_Has_SenderPoolSize()
+    {
+        var poolConfig = config with { SenderPoolSize = 4 };
+
+        poolConfig.SenderPoolSize.Should().Be(4, "it should have the configured sender pool size");
+    }
+
+    [Fact]
+    public void When_Config_Has_MaxConcurrentSends()
+    {
+        var concurrentConfig = config with { MaxConcurrentSends = 500 };
+
+        concurrentConfig.MaxConcurrentSends.Should().Be(500, "it should have the configured max concurrent sends");
+    }
+
+    [Fact]
+    public void When_Config_Has_SendTimeout()
+    {
+        var timeoutConfig = config with { SendTimeout = TimeSpan.FromSeconds(60) };
+
+        timeoutConfig.SendTimeout.Should().Be(TimeSpan.FromSeconds(60), "it should have the configured send timeout");
+    }
+
+    [Fact]
+    public void When_Config_Has_TopicName()
+    {
+        var topicConfig = config with { TopicName = "test-topic", SubscriptionName = "test-subscription" };
+
+        topicConfig.TopicName.Should().Be("test-topic", "it should have the configured topic name");
+        topicConfig.SubscriptionName.Should().Be("test-subscription", "it should have the configured subscription name");
+    }
+
+    [Fact]
+    public void When_Config_Has_Default_Values()
+    {
+        var defaultConfig = new AzureServiceBusConfig
+        {
+            ConnectionString = "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=test-key",
+            QueueName = "test-queue"
+        };
+
+        defaultConfig.SenderPoolSize.Should().Be(2, "it should have default sender pool size of 2");
+        defaultConfig.MaxConcurrentSends.Should().Be(1000, "it should have default max concurrent sends of 1000");
+        defaultConfig.SendTimeout.Should().Be(TimeSpan.FromSeconds(30), "it should have default send timeout of 30 seconds");
+        defaultConfig.TopicName.Should().BeNull("it should have no topic name by default");
+        defaultConfig.SubscriptionName.Should().BeNull("it should have no subscription name by default");
+    }
+
     static bool IsAzureServiceBusAvailable()
     {
         return Environment.GetEnvironmentVariable("AZURE_SERVICEBUS_CONNECTION_STRING") != null;

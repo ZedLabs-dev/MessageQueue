@@ -9,24 +9,44 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
 {
     readonly AzureServiceBusConfig config;
     readonly ServiceBusClient client;
-    readonly ServiceBusSender sender;
+    readonly PublisherSender[] senderPool;
     readonly ServiceBusProcessor processor;
     readonly string queueName;
     readonly string deadLetterQueueName;
+    readonly string publishDestination;
+    readonly bool useTopicPublishing;
+    int senderIndex;
 
     public AzureServiceBusMessageQueue(AzureServiceBusConfig config)
     {
         this.config = config;
         queueName = config.QueueName;
-        deadLetterQueueName = string.IsNullOrEmpty(config.DeadLetterQueueName) 
-            ? $"{config.QueueName}.deadletter" 
+        deadLetterQueueName = string.IsNullOrEmpty(config.DeadLetterQueueName)
+            ? $"{config.QueueName}.deadletter"
             : config.DeadLetterQueueName;
-        
+
+        useTopicPublishing = !string.IsNullOrEmpty(config.TopicName);
+        publishDestination = useTopicPublishing ? config.TopicName! : queueName;
+
         try
         {
             client = new ServiceBusClient(config.ConnectionString);
-            sender = client.CreateSender(queueName);
-            
+
+            // Create sender pool
+            var poolSize = Math.Max(1, config.SenderPoolSize);
+            var maxConcurrentPerSender = Math.Max(1, config.MaxConcurrentSends / poolSize);
+            senderPool = new PublisherSender[poolSize];
+
+            for (var i = 0; i < poolSize; i++)
+            {
+                senderPool[i] = new PublisherSender(
+                    client,
+                    publishDestination,
+                    maxConcurrentPerSender,
+                    config.SendTimeout);
+            }
+
+            // Create processor for receiving messages
             var processorOptions = new ServiceBusProcessorOptions
             {
                 AutoCompleteMessages = false,
@@ -35,8 +55,10 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
                 ReceiveMode = ServiceBusReceiveMode.PeekLock,
                 MaxAutoLockRenewalDuration = this.config.MaxAutoLockRenewalDuration
             };
-            
-            processor = client.CreateProcessor(queueName, processorOptions);
+
+            processor = useTopicPublishing && !string.IsNullOrEmpty(config.SubscriptionName)
+                ? client.CreateProcessor(config.TopicName, config.SubscriptionName, processorOptions)
+                : client.CreateProcessor(queueName, processorOptions);
         }
         catch (Exception ex)
         {
@@ -44,24 +66,23 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         }
     }
 
+    PublisherSender GetNextSender()
+    {
+        var index = Interlocked.Increment(ref senderIndex);
+        return senderPool[index % senderPool.Length];
+    }
+
     public async Task PublishAsync(T message, CancellationToken cancellationToken = default)
     {
         try
         {
-            var body = MessageSerializer.Serialize(message, config.SerializationFormat);
-
-            var serviceBusMessage = new ServiceBusMessage(body)
-            {
-                MessageId = Guid.NewGuid().ToString(),
-                ContentType = MessageSerializer.GetContentType(config.SerializationFormat),
-                TimeToLive = config.MessageTimeToLive,
-                Subject = typeof(T).Name
-            };
-
-            serviceBusMessage.ApplicationProperties.Add("MessageType", typeof(T).Name);
-            serviceBusMessage.ApplicationProperties.Add("PublishedAt", DateTimeOffset.UtcNow.ToString("O"));
-
-            await sender.SendMessageAsync(serviceBusMessage, cancellationToken);
+            var serviceBusMessage = CreateServiceBusMessage(message);
+            var sender = GetNextSender();
+            await sender.SendAsync(serviceBusMessage, cancellationToken);
+        }
+        catch (MessageQueueException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -74,7 +95,7 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         try
         {
             var messageList = messages.ToList();
-            
+
             if (config.EnableBatchedOperations && messageList.Count > 1)
             {
                 var batches = messageList
@@ -83,7 +104,8 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
 
                 foreach (var batch in batches)
                 {
-                    await sender.SendMessagesAsync(batch, cancellationToken);
+                    var sender = GetNextSender();
+                    await sender.SendBatchAsync(batch, cancellationToken);
                 }
             }
             else
@@ -93,6 +115,10 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
                     await PublishAsync(message, cancellationToken);
                 }
             }
+        }
+        catch (MessageQueueException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -207,9 +233,14 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         {
             await processor.StopProcessingAsync();
         }
-        
+
         await processor.DisposeAsync();
-        await sender.DisposeAsync();
+
+        foreach (var sender in senderPool)
+        {
+            await sender.DisposeAsync();
+        }
+
         await client.DisposeAsync();
     }
 

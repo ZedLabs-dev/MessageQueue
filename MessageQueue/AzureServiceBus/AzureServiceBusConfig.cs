@@ -15,4 +15,9 @@ public record AzureServiceBusConfig : MessageQueueConfig
     public bool EnablePartitioning { get; set; } = false;
     public bool RequiresDuplicateDetection { get; set; } = false;
     public TimeSpan DuplicateDetectionHistoryTimeWindow { get; set; } = TimeSpan.FromMinutes(10);
+    public string? TopicName { get; set; }
+    public string? SubscriptionName { get; set; }
+    public int SenderPoolSize { get; set; } = 2;
+    public int MaxConcurrentSends { get; set; } = 1000;
+    public TimeSpan SendTimeout { get; set; } = TimeSpan.FromSeconds(30);
 }
