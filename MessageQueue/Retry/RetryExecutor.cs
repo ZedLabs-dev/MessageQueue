@@ -1,12 +1,12 @@
 namespace ESE.MessageQueue.Retry;
 
 /// <summary>
-/// Executes operations with retry logic.
+/// Computes backoff delays and retry decisions for a <see cref="RetryPolicy"/>, and runs operations with retries.
+/// Thread-safe.
 /// </summary>
 public class RetryExecutor
 {
     readonly RetryPolicy policy;
-    readonly Random random = new();
 
     public RetryExecutor(RetryPolicy policy)
     {
@@ -14,62 +14,72 @@ public class RetryExecutor
     }
 
     /// <summary>
-    /// Calculates the delay for a given attempt number.
+    /// The delay before retry number <paramref name="retryNumber"/> (1-based), clamped to [0, MaxDelay] after jitter.
     /// </summary>
-    public TimeSpan CalculateDelay(int attemptNumber)
+    public TimeSpan CalculateDelay(int retryNumber)
     {
-        if (attemptNumber < 1)
+        if (retryNumber < 1)
             return TimeSpan.Zero;
 
-        var baseDelay = policy.Strategy switch
+        var maxMs = policy.MaxDelay.TotalMilliseconds;
+        var initialMs = policy.InitialDelay.TotalMilliseconds;
+
+        // Computed in double and clamped before converting, so huge retry numbers cannot overflow.
+        var delayMs = policy.Strategy switch
         {
-            RetryStrategy.Fixed => policy.InitialDelay,
-            RetryStrategy.Linear => TimeSpan.FromTicks(policy.InitialDelay.Ticks * attemptNumber),
-            RetryStrategy.Exponential => TimeSpan.FromTicks(
-                (long)(policy.InitialDelay.Ticks * Math.Pow(policy.BackoffMultiplier, attemptNumber - 1))),
+            RetryStrategy.Fixed => initialMs,
+            RetryStrategy.Linear => initialMs * retryNumber,
+            RetryStrategy.Exponential => initialMs * Math.Pow(policy.BackoffMultiplier, retryNumber - 1),
             RetryStrategy.Custom when policy.CustomDelayCalculator != null =>
-                policy.CustomDelayCalculator(attemptNumber),
-            _ => policy.InitialDelay
+                policy.CustomDelayCalculator(retryNumber).TotalMilliseconds,
+            _ => initialMs
         };
 
-        // Cap at max delay
-        if (baseDelay > policy.MaxDelay)
-            baseDelay = policy.MaxDelay;
+        delayMs = Clamp(delayMs, maxMs);
 
-        // Add jitter if enabled
         if (policy.UseJitter && policy.JitterFactor > 0)
         {
-            var jitterRange = baseDelay.TotalMilliseconds * policy.JitterFactor;
-            var jitter = (random.NextDouble() * 2 - 1) * jitterRange; // -jitterRange to +jitterRange
-            baseDelay = TimeSpan.FromMilliseconds(Math.Max(0, baseDelay.TotalMilliseconds + jitter));
+            var jitterRange = delayMs * policy.JitterFactor;
+            delayMs = Clamp(delayMs + (Random.Shared.NextDouble() * 2 - 1) * jitterRange, maxMs);
         }
 
-        return baseDelay;
+        return TimeSpan.FromMilliseconds(delayMs);
     }
 
     /// <summary>
-    /// Determines if a retry should be attempted.
+    /// Whether another attempt may follow attempt number <paramref name="attemptNumber"/> (1-based).
+    /// True while fewer than MaxRetries retries have been made and the exception, if any, is retryable.
+    /// An <c>IsRetryable</c> predicate that throws counts as "not retryable".
     /// </summary>
     public bool ShouldRetry(int attemptNumber, Exception? exception = null)
     {
-        if (attemptNumber >= policy.MaxAttempts)
+        if (attemptNumber > policy.MaxRetries)
             return false;
 
         if (exception != null && policy.IsRetryable != null)
-            return policy.IsRetryable(exception);
+        {
+            try
+            {
+                return policy.IsRetryable(exception);
+            }
+            catch (Exception)
+            {
+                // A broken predicate cannot vouch for a retry: treat the failure as permanent.
+                return false;
+            }
+        }
 
         return true;
     }
 
     /// <summary>
-    /// Executes an async operation with retry logic.
+    /// Runs <paramref name="operation"/> up to MaxRetries + 1 times, waiting the backoff delay between attempts.
     /// </summary>
     public async Task<T> ExecuteAsync<T>(
         Func<CancellationToken, Task<T>> operation,
         CancellationToken cancellationToken = default)
     {
         var attempt = 0;
-        Exception? lastException = null;
 
         while (true)
         {
@@ -78,21 +88,15 @@ public class RetryExecutor
                 attempt++;
                 return await operation(cancellationToken);
             }
-            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested && ShouldRetry(attempt, ex))
             {
-                lastException = ex;
-
-                if (!ShouldRetry(attempt, ex))
-                    throw;
-
-                var delay = CalculateDelay(attempt);
-                await Task.Delay(delay, cancellationToken);
+                await Task.Delay(CalculateDelay(attempt), cancellationToken);
             }
         }
     }
 
     /// <summary>
-    /// Executes an async operation with retry logic (no return value).
+    /// Runs <paramref name="operation"/> up to MaxRetries + 1 times, waiting the backoff delay between attempts.
     /// </summary>
     public async Task ExecuteAsync(
         Func<CancellationToken, Task> operation,
@@ -104,5 +108,7 @@ public class RetryExecutor
             return true;
         }, cancellationToken);
     }
-}
 
+    static double Clamp(double delayMs, double maxMs) =>
+        double.IsNaN(delayMs) ? maxMs : Math.Clamp(delayMs, 0, maxMs);
+}

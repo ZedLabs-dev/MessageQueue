@@ -26,7 +26,7 @@ public class TelemetryActivity : IDisposable
         MessageType = messageType;
     }
 
-    public void SetError(Exception exception)
+    public virtual void SetError(Exception exception)
     {
         Error = exception;
     }

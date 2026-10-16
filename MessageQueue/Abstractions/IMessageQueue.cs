@@ -1,9 +1,10 @@
 namespace ESE.MessageQueue.Abstractions;
 
-public interface IMessageQueue<T> where T : class
+/// <summary>
+/// A queue of <typeparamref name="T"/> messages: the provider-agnostic entry point applications code against.
+/// </summary>
+public interface IMessageQueue<T> : IMessagePublisher<T>, IMessageSubscriber<T> where T : class
 {
-    Task PublishAsync(T message, CancellationToken cancellationToken = default);
-    Task PublishAsync(IEnumerable<T> messages, CancellationToken cancellationToken = default);
-    Task SubscribeAsync(Func<T, Task<bool>> handler, CancellationToken cancellationToken = default);
-    Task UnsubscribeAsync(CancellationToken cancellationToken = default);
+    /// <summary>What this provider guarantees.</summary>
+    MessageQueueCapabilities Capabilities { get; }
 }

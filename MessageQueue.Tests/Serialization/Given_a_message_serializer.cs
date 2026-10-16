@@ -137,6 +137,49 @@ public class Given_a_message_serializer
             "it should use a hash-collision resistant comparer for untrusted keys");
     }
 
+    [Fact]
+    public void When_Deserializing_Json_From_A_Slice_Of_A_Larger_Buffer()
+    {
+        var bytes = MessageSerializer.Serialize(new TestMessage("7", "Slice", 3), SerializationFormat.Json);
+        var buffer = new byte[bytes.Length + 8];
+        bytes.CopyTo(buffer, 4);
+
+        var result = MessageSerializer.Deserialize<TestMessage>(buffer.AsMemory(4, bytes.Length), SerializationFormat.Json);
+
+        result.Should().Be(new TestMessage("7", "Slice", 3), "it should read only the sliced region of a shared buffer");
+    }
+
+    [Fact]
+    public void When_Deserializing_MessagePack_From_A_Slice_Of_A_Larger_Buffer()
+    {
+        var bytes = MessageSerializer.Serialize(new PublicTestMessage("7", "Slice", 3), SerializationFormat.MessagePack);
+        var buffer = new byte[bytes.Length + 8];
+        bytes.CopyTo(buffer, 4);
+
+        var result = MessageSerializer.Deserialize<PublicTestMessage>(buffer.AsMemory(4, bytes.Length), SerializationFormat.MessagePack);
+
+        result.Should().Be(new PublicTestMessage("7", "Slice", 3), "it should read only the sliced region of a shared buffer");
+    }
+
+    [Fact]
+    public void When_Json_Body_Is_Not_Valid_Utf8()
+    {
+        byte[] invalidUtf8 = [.. "{\"id\":\""u8, 0xFF, 0xFE, .. "\",\"name\":\"x\",\"value\":1}"u8];
+
+        var act = () => MessageSerializer.Deserialize<TestMessage>(invalidUtf8, SerializationFormat.Json);
+
+        act.Should().Throw<JsonException>("it should reject a malformed body instead of silently replacing bytes");
+    }
+
+    [Fact]
+    public void When_Serializing_With_Json_Writes_Utf8_Directly()
+    {
+        var bytes = MessageSerializer.Serialize(new TestMessage("é", "ü", 1), SerializationFormat.Json);
+
+        JsonSerializer.Deserialize<JsonElement>(bytes).GetProperty("id").GetString()
+            .Should().Be("é", "it should produce valid UTF-8 JSON for non-ASCII content");
+    }
+
     static byte[] BuildNestedPayload(int depth)
     {
         var childKey = "Child"u8.ToArray();

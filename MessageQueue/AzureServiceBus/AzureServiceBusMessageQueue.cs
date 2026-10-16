@@ -1,43 +1,49 @@
+using System.Globalization;
 using Azure.Messaging.ServiceBus;
 using ESE.MessageQueue.Abstractions;
+using ESE.MessageQueue.Configuration;
 using ESE.MessageQueue.Exceptions;
+using ESE.MessageQueue.Processing;
 using ESE.MessageQueue.Serialization;
+using ESE.MessageQueue.Telemetry;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ESE.MessageQueue.AzureServiceBus;
 
-public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable where T : class
+public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable, IAsyncDisposable where T : class
 {
+    // Retries are abandoned for immediate redelivery for now (no broker-side backoff yet).
+    static readonly MessageQueueCapabilities AzureServiceBusCapabilities = new(Durable: true, DeadLetter: true, DelayedRedelivery: false);
+
     readonly AzureServiceBusConfig config;
+    readonly ITelemetryProvider telemetry;
+    readonly ILogger logger;
     readonly ServiceBusClient client;
     readonly PublisherSender[] senderPool;
     readonly ServiceBusProcessor processor;
-    readonly string queueName;
-    readonly string deadLetterQueueName;
-    readonly string publishDestination;
-    readonly bool useTopicPublishing;
     int senderIndex;
+    int disposed;
 
-    public AzureServiceBusMessageQueue(AzureServiceBusConfig config)
+    public AzureServiceBusMessageQueue(AzureServiceBusConfig config, ITelemetryProvider? telemetry = null, ILogger? logger = null)
     {
+        ConfigValidation.ThrowIfInvalid(config, new AzureServiceBusConfigValidator());
         this.config = config;
-        queueName = config.QueueName;
-        deadLetterQueueName = string.IsNullOrEmpty(config.DeadLetterQueueName)
-            ? $"{config.QueueName}.deadletter"
-            : config.DeadLetterQueueName;
+        this.telemetry = telemetry ?? NullTelemetryProvider.Instance;
+        this.logger = logger ?? NullLogger.Instance;
+        CapabilityChecks.WarnIfBackoffUnsupported(AzureServiceBusCapabilities, config, this.logger);
 
-        useTopicPublishing = !string.IsNullOrEmpty(config.TopicName);
-        publishDestination = useTopicPublishing ? config.TopicName! : queueName;
+        var useTopicPublishing = !string.IsNullOrEmpty(config.TopicName);
+        var publishDestination = useTopicPublishing ? config.TopicName! : config.QueueName;
 
         try
         {
             client = new ServiceBusClient(config.ConnectionString);
 
-            // Create sender pool
-            var poolSize = Math.Max(1, config.SenderPoolSize);
-            var maxConcurrentPerSender = Math.Max(1, config.MaxConcurrentSends / poolSize);
-            senderPool = new PublisherSender[poolSize];
+            var maxConcurrentPerSender = Math.Max(1, config.MaxConcurrentSends / config.SenderPoolSize);
+            senderPool = new PublisherSender[config.SenderPoolSize];
 
-            for (var i = 0; i < poolSize; i++)
+            for (var i = 0; i < senderPool.Length; i++)
             {
                 senderPool[i] = new PublisherSender(
                     client,
@@ -46,7 +52,6 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
                     config.SendTimeout);
             }
 
-            // Create processor for receiving messages
             var processorOptions = new ServiceBusProcessorOptions
             {
                 AutoCompleteMessages = false,
@@ -58,7 +63,7 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
 
             processor = useTopicPublishing && !string.IsNullOrEmpty(config.SubscriptionName)
                 ? client.CreateProcessor(config.TopicName, config.SubscriptionName, processorOptions)
-                : client.CreateProcessor(queueName, processorOptions);
+                : client.CreateProcessor(config.QueueName, processorOptions);
         }
         catch (Exception ex)
         {
@@ -66,19 +71,20 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         }
     }
 
-    PublisherSender GetNextSender()
-    {
-        var index = Interlocked.Increment(ref senderIndex);
-        return senderPool[index % senderPool.Length];
-    }
+    public MessageQueueCapabilities Capabilities => AzureServiceBusCapabilities;
 
-    public async Task PublishAsync(T message, CancellationToken cancellationToken = default)
+    PublisherSender GetNextSender() => senderPool[RoundRobin.Next(ref senderIndex, senderPool.Length)];
+
+    public Task PublishAsync(T message, CancellationToken cancellationToken = default) =>
+        PublishAsync(message, new PublishOptions(), cancellationToken);
+
+    public async Task PublishAsync(T message, PublishOptions options, CancellationToken cancellationToken = default)
     {
+        PublishValidation.Validate(message, options);
         try
         {
-            var serviceBusMessage = CreateServiceBusMessage(message);
-            var sender = GetNextSender();
-            await sender.SendAsync(serviceBusMessage, cancellationToken);
+            var serviceBusMessage = CreateServiceBusMessage(message, options);
+            await GetNextSender().SendAsync(serviceBusMessage, cancellationToken);
         }
         catch (MessageQueueException)
         {
@@ -92,6 +98,7 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
 
     public async Task PublishAsync(IEnumerable<T> messages, CancellationToken cancellationToken = default)
     {
+        PublishValidation.Validate(messages);
         try
         {
             var messageList = messages.ToList();
@@ -99,13 +106,12 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
             if (config.EnableBatchedOperations && messageList.Count > 1)
             {
                 var batches = messageList
-                    .Select(CreateServiceBusMessage)
+                    .Select(m => CreateServiceBusMessage(m, new PublishOptions()))
                     .Chunk(config.MaxBatchSize);
 
                 foreach (var batch in batches)
                 {
-                    var sender = GetNextSender();
-                    await sender.SendBatchAsync(batch, cancellationToken);
+                    await GetNextSender().SendBatchAsync(batch, cancellationToken);
                 }
             }
             else
@@ -126,65 +132,46 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         }
     }
 
-    ServiceBusMessage CreateServiceBusMessage(T message)
+    ServiceBusMessage CreateServiceBusMessage(T message, PublishOptions options)
     {
-        var body = MessageSerializer.Serialize(message, config.SerializationFormat);
-
-        var serviceBusMessage = new ServiceBusMessage(body)
+        var serviceBusMessage = new ServiceBusMessage(MessageSerializer.Serialize(message, config.SerializationFormat))
         {
-            MessageId = Guid.NewGuid().ToString(),
+            MessageId = options.MessageId ?? Guid.CreateVersion7().ToString(),
+            CorrelationId = options.CorrelationId,
             ContentType = MessageSerializer.GetContentType(config.SerializationFormat),
             TimeToLive = config.MessageTimeToLive,
             Subject = typeof(T).Name
         };
 
-        serviceBusMessage.ApplicationProperties.Add("MessageType", typeof(T).Name);
-        serviceBusMessage.ApplicationProperties.Add("PublishedAt", DateTimeOffset.UtcNow.ToString("O"));
+        if (options.Headers is not null)
+        {
+            foreach (var (key, value) in options.Headers)
+            {
+                serviceBusMessage.ApplicationProperties[key] = value;
+            }
+        }
 
         return serviceBusMessage;
     }
 
-    public async Task SubscribeAsync(Func<T, Task<bool>> handler, CancellationToken cancellationToken = default)
+    public Task SubscribeAsync(Func<T, Task<bool>> handler, CancellationToken cancellationToken = default) =>
+        SubscribeAsync(MessageHandlers.FromPredicate(handler), cancellationToken);
+
+    public async Task SubscribeAsync(
+        Func<T, MessageContext, CancellationToken, Task<MessageResult>> handler,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            processor.ProcessMessageAsync += async args =>
-            {
-                var body = args.Message.Body.ToArray();
-                var deliveryCount = args.Message.DeliveryCount;
+            var dispatcher = new MessageDispatcher<T>(config, handler, telemetry, logger);
 
-                try
-                {
-                    var message = MessageSerializer.Deserialize<T>(body, config.SerializationFormat);
-                    if (message != null)
-                    {
-                        var success = await handler(message);
-                        if (success)
-                        {
-                            await args.CompleteMessageAsync(args.Message, cancellationToken);
-                        }
-                        else
-                        {
-                            await HandleRetry(args, deliveryCount, cancellationToken);
-                        }
-                    }
-                    else
-                    {
-                        await args.DeadLetterMessageAsync(args.Message,
-                            "Deserialization failed", "Message could not be deserialized",
-                            cancellationToken);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    await HandleRetry(args, deliveryCount, cancellationToken, ex);
-                }
-            };
+            processor.ProcessMessageAsync += args => dispatcher.DispatchAsync(
+                args.Message.Body.ToMemory(),
+                ToContext(args.Message),
+                new ServiceBusDeliveryActions(args),
+                args.CancellationToken);
 
-            processor.ProcessErrorAsync += args =>
-            {
-                return Task.CompletedTask;
-            };
+            processor.ProcessErrorAsync += _ => Task.CompletedTask;
 
             await processor.StartProcessingAsync(cancellationToken);
         }
@@ -194,29 +181,30 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         }
     }
 
-    async Task HandleRetry(ProcessMessageEventArgs args, int deliveryCount,
-        CancellationToken cancellationToken, Exception? exception = null)
+    internal static MessageContext ToContext(ServiceBusReceivedMessage message)
     {
-        if (deliveryCount >= config.RetryAttempts)
+        var headers = new Dictionary<string, string>();
+        foreach (var (key, value) in message.ApplicationProperties)
         {
-            var reason = exception?.GetType().Name ?? "Processing failed";
-            var description = exception?.Message ?? "Message processing failed after maximum retry attempts";
-
-            await args.DeadLetterMessageAsync(args.Message, reason, description, cancellationToken);
-        }
-        else
-        {
-            var delay = TimeSpan.FromSeconds(Math.Pow(2, deliveryCount - 1) * config.RetryDelay.TotalSeconds);
-
-            var properties = new Dictionary<string, object>
+            var text = value switch
             {
-                ["RetryCount"] = deliveryCount,
-                ["NextRetryAt"] = DateTimeOffset.UtcNow.Add(delay).ToString("O"),
-                ["OriginalException"] = exception?.Message ?? "Processing failed"
+                string s => s,
+                IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+                null => null,
+                _ => value.ToString()
             };
-
-            await args.AbandonMessageAsync(args.Message, properties, cancellationToken);
+            if (text is not null)
+                headers[key] = text;
         }
+
+        return new MessageContext
+        {
+            MessageId = message.MessageId,
+            CorrelationId = message.CorrelationId,
+            Timestamp = message.EnqueuedTime,
+            DeliveryAttempt = Math.Max(1, message.DeliveryCount),
+            Headers = headers
+        };
     }
 
     public async Task UnsubscribeAsync(CancellationToken cancellationToken = default)
@@ -229,6 +217,9 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref disposed, 1) == 1)
+            return;
+
         if (processor.IsProcessing)
         {
             await processor.StopProcessingAsync();
@@ -242,10 +233,31 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         }
 
         await client.DisposeAsync();
+        GC.SuppressFinalize(this);
     }
 
     public void Dispose()
     {
         DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+
+    sealed class ServiceBusDeliveryActions : IDeliveryActions
+    {
+        readonly ProcessMessageEventArgs args;
+
+        public ServiceBusDeliveryActions(ProcessMessageEventArgs args)
+        {
+            this.args = args;
+        }
+
+        public Task CompleteAsync(CancellationToken cancellationToken) =>
+            args.CompleteMessageAsync(args.Message, cancellationToken);
+
+        // Interim: abandon for immediate redelivery; Service Bus increments DeliveryCount, which is the attempt number.
+        public Task RescheduleAsync(TimeSpan delay, int nextAttempt, CancellationToken cancellationToken) =>
+            args.AbandonMessageAsync(args.Message, cancellationToken: cancellationToken);
+
+        public Task DeadLetterAsync(DeadLetterReason reason, CancellationToken cancellationToken) =>
+            args.DeadLetterMessageAsync(args.Message, reason.Code, reason.Detail ?? string.Empty, cancellationToken);
     }
 }

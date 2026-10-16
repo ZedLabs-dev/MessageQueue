@@ -1,13 +1,11 @@
-using System.Text;
 using System.Text.Json;
 using MessagePack;
 using MessagePack.Resolvers;
 
 namespace ESE.MessageQueue.Serialization;
 
-/// <summary>
-/// Internal message serializer. Uses JSON by default, MessagePack for high-performance scenarios.
-/// </summary>
+// Serializes straight to and from UTF-8 / MessagePack bytes; consumers pass the broker body as
+// ReadOnlyMemory<byte> so no intermediate string or array copy is made.
 static class MessageSerializer
 {
     static readonly JsonSerializerOptions JsonOptions = new()
@@ -16,7 +14,7 @@ static class MessageSerializer
         WriteIndented = false
     };
 
-    // Use ContractlessStandardResolver so types don't need [MessagePackObject] attributes
+    // ContractlessStandardResolver: types don't need [MessagePackObject]. UntrustedData: broker input is hostile.
     internal static readonly MessagePackSerializerOptions MsgPackOptions =
         MessagePackSerializerOptions.Standard
             .WithResolver(ContractlessStandardResolver.Instance)
@@ -26,18 +24,18 @@ static class MessageSerializer
     {
         return format switch
         {
-            SerializationFormat.Json => SerializeJson(message),
-            SerializationFormat.MessagePack => SerializeMessagePack(message),
+            SerializationFormat.Json => JsonSerializer.SerializeToUtf8Bytes(message, JsonOptions),
+            SerializationFormat.MessagePack => MessagePackSerializer.Serialize(message, MsgPackOptions),
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported serialization format")
         };
     }
 
-    public static T? Deserialize<T>(byte[] data, SerializationFormat format) where T : class
+    public static T? Deserialize<T>(ReadOnlyMemory<byte> data, SerializationFormat format) where T : class
     {
         return format switch
         {
-            SerializationFormat.Json => DeserializeJson<T>(data),
-            SerializationFormat.MessagePack => DeserializeMessagePack<T>(data),
+            SerializationFormat.Json => JsonSerializer.Deserialize<T>(data.Span, JsonOptions),
+            SerializationFormat.MessagePack => MessagePackSerializer.Deserialize<T>(data, MsgPackOptions),
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported serialization format")
         };
     }
@@ -50,27 +48,5 @@ static class MessageSerializer
             SerializationFormat.MessagePack => "application/x-msgpack",
             _ => "application/octet-stream"
         };
-    }
-
-    static byte[] SerializeJson<T>(T message) where T : class
-    {
-        var json = JsonSerializer.Serialize(message, JsonOptions);
-        return Encoding.UTF8.GetBytes(json);
-    }
-
-    static T? DeserializeJson<T>(byte[] data) where T : class
-    {
-        var json = Encoding.UTF8.GetString(data);
-        return JsonSerializer.Deserialize<T>(json, JsonOptions);
-    }
-
-    static byte[] SerializeMessagePack<T>(T message) where T : class
-    {
-        return MessagePackSerializer.Serialize(message, MsgPackOptions);
-    }
-
-    static T? DeserializeMessagePack<T>(byte[] data) where T : class
-    {
-        return MessagePackSerializer.Deserialize<T>(data, MsgPackOptions);
     }
 }

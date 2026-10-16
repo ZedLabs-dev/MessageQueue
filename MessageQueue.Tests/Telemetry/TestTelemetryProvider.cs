@@ -1,46 +1,54 @@
+using System.Collections.Concurrent;
 using ESE.MessageQueue.Telemetry;
 
 namespace ESE.MessageQueue.Tests.Telemetry;
 
 public class TestTelemetryProvider : ITelemetryProvider
 {
-    public int PublishedCount { get; private set; }
-    public int ConsumedSuccessCount { get; private set; }
-    public int ConsumedFailureCount { get; private set; }
-    public int RetriedCount { get; private set; }
-    public int DeadLetteredCount { get; private set; }
+    int published;
+    int consumedSuccess;
+    int consumedFailure;
+    int retried;
+    int deadLettered;
+
+    public int PublishedCount => Volatile.Read(ref published);
+    public int ConsumedSuccessCount => Volatile.Read(ref consumedSuccess);
+    public int ConsumedFailureCount => Volatile.Read(ref consumedFailure);
+    public int RetriedCount => Volatile.Read(ref retried);
+    public int DeadLetteredCount => Volatile.Read(ref deadLettered);
+    public ConcurrentQueue<string> DeadLetterReasons { get; } = new();
+    public ConcurrentQueue<TelemetryActivity> Activities { get; } = new();
 
     public TelemetryActivity? StartPublishActivity(string queueName, string messageType)
     {
-        return new TelemetryActivity("publish", queueName, messageType);
+        var activity = new TelemetryActivity("publish", queueName, messageType);
+        Activities.Enqueue(activity);
+        return activity;
     }
 
     public TelemetryActivity? StartConsumeActivity(string queueName, string messageType, string? messageId)
     {
-        return new TelemetryActivity("consume", queueName, messageType) { MessageId = messageId };
+        var activity = new TelemetryActivity("consume", queueName, messageType) { MessageId = messageId };
+        Activities.Enqueue(activity);
+        return activity;
     }
 
-    public void RecordMessagePublished(string queueName, string messageType)
-    {
-        PublishedCount++;
-    }
+    public void RecordMessagePublished(string queueName, string messageType) => Interlocked.Increment(ref published);
 
     public void RecordMessageConsumed(string queueName, string messageType, bool success)
     {
         if (success)
-            ConsumedSuccessCount++;
+            Interlocked.Increment(ref consumedSuccess);
         else
-            ConsumedFailureCount++;
+            Interlocked.Increment(ref consumedFailure);
     }
 
-    public void RecordMessageRetried(string queueName, string messageType, int attemptNumber)
-    {
-        RetriedCount++;
-    }
+    public void RecordMessageRetried(string queueName, string messageType, int attemptNumber) => Interlocked.Increment(ref retried);
 
     public void RecordMessageDeadLettered(string queueName, string messageType, string reason)
     {
-        DeadLetteredCount++;
+        DeadLetterReasons.Enqueue(reason);
+        Interlocked.Increment(ref deadLettered);
     }
 
     public TraceContext? ExtractTraceContext(IDictionary<string, object> headers)

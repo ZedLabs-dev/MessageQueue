@@ -1,60 +1,57 @@
 # Message Queue API
 
-Provides type-safe asynchronous message processing through a generic message queue abstraction with support for RabbitMQ and Azure Service Bus providers.
+Provider-agnostic event messaging for .NET. Applications code against `IMessageQueue<T>`; RabbitMQ, Azure Service Bus
+and an in-memory provider are interchangeable, chosen by configuration.
 
 ## Library Overview
 
-**Module:** AgentReview.MessageQueue  
-**Version:** 1.0.0  
-**Purpose:** Type-safe message queue operations with provider abstraction, retry logic, and dead letter queue support
+**Package / namespace root:** `ESE.MessageQueue`
+**Target:** .NET 10
+**Design records:** `docs/adr/` (retry semantics, configuration, in-memory guarantees, consumer pipeline)
 
-**Installation Requirements:**
-- .NET 9.0 or higher
-- RabbitMQ.Client 6.8.1
-- Microsoft.Extensions.DependencyInjection 9.0.0
-- Microsoft.Extensions.Hosting 9.0.0
-
-**Core Architectural Patterns:**
-- Generic Type Safety: Compile-time type checking for messages
-- Provider Pattern: Pluggable message queue implementations
-- Dependency Injection: Full DI container integration
-- Background Processing: Hosted services for message consumption
-- Retry Pattern: Automatic retry with exponential backoff
+**Core concepts:**
+- `IMessageQueue<T>` = `IMessagePublisher<T>` + `IMessageSubscriber<T>` + `Capabilities`.
+- One consumer pipeline for every provider: size limit, deserialization, your handler, then the retry policy
+  (backoff, dead-letter after the last retry).
+- Configuration through the options pattern with startup validation; one queue per message type, each with its own
+  section and provider.
 
 ## Usage Examples
 
 ### Basic Configuration
 
 ```csharp
-using AgentReview.MessageQueue.Extensions;
-using AgentReview.MessageQueue.Hosting;
+using ESE.MessageQueue.Extensions;
+using ESE.MessageQueue.Hosting;
 
-public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
-{
-    // Configure message queue via configuration file
-    services.AddMessageQueue<OrderCreated>(configuration);
+services.AddMessageQueue<OrderCreated>(configuration);                     // binds the "MessageQueue" section
+services.AddMessageProcessor<OrderCreated, OrderCreatedProcessor>();       // scoped: one instance per message
+services.AddHostedService<MessageQueueHostedService<OrderCreated>>();      // consumes for the host's lifetime
+```
 
-    // Register message processor
-    services.AddMessageProcessor<OrderCreated, OrderCreatedProcessor>();
-    
-    // Add background service for message consumption
-    services.AddHostedService<MessageQueueHostedService<OrderCreated>>();
-}
+Several message types can use different sections (and providers):
+
+```csharp
+services.AddMessageQueue<OrderCreated>(configuration, "Orders");
+services.AddMessageQueue<PaymentReceived>(configuration, "Payments");
 ```
 
 ### Configuration File Setup
 
-Configure your preferred provider in `appsettings.json`:
+`Provider` is required: `RabbitMq`, `AzureServiceBus` or `InMemory` (names only, case-insensitive). A missing or
+unknown value throws `ConfigurationException` at registration; there is no default broker. Other settings are
+validated when the host starts (`OptionsValidationException`); unknown keys such as the removed `RetryAttempts` fail
+startup too. Constructing a provider directly applies the same validation. One queue per message type.
 
-**RabbitMQ Configuration:**
+**RabbitMQ:**
 ```json
 {
   "MessageQueue": {
-    "Provider": "RabbitMQ",
-    "ConnectionString": "amqp://admin:password123@localhost:5672/",
+    "Provider": "RabbitMq",
+    "ConnectionString": "amqps://user:password@rabbit.example.com:5671/",
     "QueueName": "order-created",
-    "RetryAttempts": 3,
     "EnableDeadLetterQueue": true,
+    "Retry": { "MaxRetries": 5, "InitialDelay": "00:00:02", "MaxDelay": "00:00:30" },
     "UseQuorumQueues": true,
     "QuorumInitialGroupSize": 3,
     "EnablePublisherConfirms": true,
@@ -63,448 +60,233 @@ Configure your preferred provider in `appsettings.json`:
 }
 ```
 
-**Azure Service Bus Configuration:**
+**Azure Service Bus:**
 ```json
 {
   "MessageQueue": {
     "Provider": "AzureServiceBus",
     "ConnectionString": "Endpoint=sb://your-namespace.servicebus.windows.net/;...",
     "QueueName": "order-created",
-    "RetryAttempts": 3,
-    "EnableDeadLetterQueue": true,
-    "MessageTimeToLive": "7.00:00:00",
     "MaxConcurrentCalls": 10,
+    "MessageTimeToLive": "7.00:00:00",
     "PrefetchCount": 20,
     "MaxAutoLockRenewalDuration": "00:05:00"
   }
 }
 ```
 
+**In-memory** (local development, tests, single-process deployments; no broker, nothing is durable):
+```json
+{ "MessageQueue": { "Provider": "InMemory", "QueueName": "order-created", "ShutdownTimeout": "00:00:30" } }
+```
+`QueueName` is required. `ShutdownTimeout` bounds how long unsubscribe and dispose wait for running handlers.
+or in code: `services.AddInMemoryMessageQueue<OrderCreated>(config => config.MaxConcurrentCalls = 4);`
+
 ### Publishing Messages
 
 ```csharp
-public class OrderService
+public class OrderService(IMessagePublisher<OrderCreated> publisher)
 {
-    private readonly IMessageQueue<OrderCreated> _messageQueue;
-
-    public OrderService(IMessageQueue<OrderCreated> messageQueue)
-    {
-        _messageQueue = messageQueue;
-    }
-
-    public async Task CreateOrderAsync(string customerId, decimal amount)
-    {
-        var orderCreated = new OrderCreated(
-            Guid.NewGuid().ToString(), 
-            customerId, 
-            amount, 
-            DateTime.UtcNow
-        );
-        
-        await _messageQueue.PublishAsync(orderCreated);
-    }
-
-    public async Task CreateBulkOrdersAsync(IEnumerable<OrderCreated> orders)
-    {
-        await _messageQueue.PublishAsync(orders);
-    }
+    public Task CreateOrderAsync(OrderCreated order, CancellationToken ct) =>
+        publisher.PublishAsync(order, new PublishOptions
+        {
+            MessageId = order.OrderId,             // portable idempotency key
+            CorrelationId = Activity.Current?.Id,
+            Headers = new Dictionary<string, string> { ["tenant"] = "acme" }
+        }, ct);
 }
 ```
 
 ### Message Processing
 
 ```csharp
-public class OrderCreatedProcessor : IMessageProcessor<OrderCreated>
+public class OrderCreatedProcessor(ILogger<OrderCreatedProcessor> logger) : IMessageProcessor<OrderCreated>
 {
-    private readonly ILogger<OrderCreatedProcessor> _logger;
-
-    public OrderCreatedProcessor(ILogger<OrderCreatedProcessor> logger)
-    {
-        _logger = logger;
-    }
-
-    public async Task<MessageResult> ProcessAsync(OrderCreated message, MessageContext context)
+    public async Task<MessageResult> ProcessAsync(OrderCreated message, MessageContext context, CancellationToken ct)
     {
         try
         {
-            _logger.LogInformation("Processing order {OrderId}", message.OrderId);
-            
-            // Process the order
-            await ProcessOrderLogic(message);
-            
+            await ProcessOrderLogic(message, ct);
             return MessageResult.Acknowledge;
         }
-        catch (TransientException ex)
+        catch (ValidationException)
         {
-            _logger.LogWarning(ex, "Transient error processing order {OrderId}", message.OrderId);
-            return MessageResult.Retry;
+            return MessageResult.DeadLetter;       // permanent: no retry
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to process order {OrderId}", message.OrderId);
-            return MessageResult.DeadLetter;
-        }
+        // Any other exception counts as MessageResult.Retry: redelivered after the backoff,
+        // dead-lettered once Retry.MaxRetries retries have failed.
     }
 }
 ```
 
 ## API Reference
 
-### `IMessageQueue<T>` Interface
+### `IMessagePublisher<T>`
 
-Primary interface for message queue operations with type safety.
+| Member | Purpose |
+|---|---|
+| `PublishAsync(T message, CancellationToken ct = default)` | Publish with a generated version 7 GUID message id |
+| `PublishAsync(T message, PublishOptions options, CancellationToken ct = default)` | Publish with message id, correlation id and headers |
+| `PublishAsync(IEnumerable<T> messages, CancellationToken ct = default)` | Publish several messages |
 
-#### `PublishAsync(T message, CancellationToken cancellationToken = default) -> Task`
+Throws `MessageQueueException` when publishing (or, in-memory, serializing) fails.
 
-**Purpose:** Publishes a single message to the queue
+### `IMessageSubscriber<T>`
 
-**Parameters:**
-- `message` (T): The message object to publish
-- `cancellationToken` (CancellationToken): Optional cancellation token
+| Member | Purpose |
+|---|---|
+| `SubscribeAsync(Func<T, MessageContext, CancellationToken, Task<MessageResult>> handler, CancellationToken ct = default)` | Rich handler: metadata in, `MessageResult` out. The token is cancelled when the subscription stops. A thrown exception counts as `Retry`. |
+| `SubscribeAsync(Func<T, Task<bool>> handler, CancellationToken ct = default)` | Convenience: `true` → `Acknowledge`, `false` → `Retry` |
+| `UnsubscribeAsync(CancellationToken ct = default)` | Stop delivering; undelivered messages stay queued |
 
-**Returns:** Task representing the asynchronous operation
+One subscriber per queue instance.
 
-**Raises:** `MessageQueueException` if publishing fails
+### `IMessageQueue<T>`
 
-**Example:**
-```csharp
-var message = new OrderCreated("order-123", "customer-456", 99.99m, DateTime.UtcNow);
-await messageQueue.PublishAsync(message);
-```
+Both of the above plus `MessageQueueCapabilities Capabilities`:
 
-#### `PublishAsync(IEnumerable<T> messages, CancellationToken cancellationToken = default) -> Task`
+| Provider | `Durable` | `DeadLetter` | `DelayedRedelivery` |
+|---|---|---|---|
+| RabbitMQ | yes | yes (`{QueueName}.deadletter`) | no: retries currently wait in process, then are republished |
+| Azure Service Bus | yes | yes (`$deadletterqueue`) | no: retries are currently abandoned for immediate redelivery |
+| In-memory | **no** | yes (`DeadLetters`) | yes |
 
-**Purpose:** Publishes multiple messages to the queue
+**Interim:** the retry *count* behaves the same everywhere, but the backoff *delay* is honoured broker-side only by
+the in-memory provider today. RabbitMQ and Azure Service Bus log a startup warning when the retry policy has a
+backoff; broker-side delayed redelivery arrives with their provider rework.
 
-**Parameters:**
-- `messages` (IEnumerable<T>): Collection of messages to publish
-- `cancellationToken` (CancellationToken): Optional cancellation token
+### `PublishOptions` Record
 
-**Returns:** Task representing the asynchronous operation
+- `MessageId` (string?): message id and idempotency key; consumers see it as `MessageContext.MessageId`.
+  Non-blank, at most `PublishOptions.MaxMessageIdLength` (128) characters.
+- `CorrelationId` (string?)
+- `Headers` (IReadOnlyDictionary<string, string>?): delivered as `MessageContext.Headers`. At most `MaxHeaders` (64),
+  names up to 128 characters, values up to 4096. Reserved names are rejected with `ArgumentException`: anything
+  starting with `x-` (broker and library headers such as `x-delivery-attempt`), `traceparent` and `tracestate`.
 
-**Raises:** `MessageQueueException` if publishing fails
-
-**Example:**
-```csharp
-var messages = new[] { message1, message2, message3 };
-await messageQueue.PublishAsync(messages);
-```
-
-#### `SubscribeAsync(Func<T, Task<bool>> handler, CancellationToken cancellationToken = default) -> Task`
-
-**Purpose:** Subscribes to messages with a simple boolean return handler
-
-**Parameters:**
-- `handler` (Func<T, Task<bool>>): Message handler returning success/failure
-- `cancellationToken` (CancellationToken): Optional cancellation token
-
-**Returns:** Task representing the subscription setup
-
-**Raises:** `MessageQueueException` if subscription fails
-
-**Example:**
-```csharp
-await messageQueue.SubscribeAsync(async message =>
-{
-    // Process message
-    return true; // Success
-});
-```
-
-#### `UnsubscribeAsync(CancellationToken cancellationToken = default) -> Task`
-
-**Purpose:** Unsubscribes from message consumption
-
-**Parameters:**
-- `cancellationToken` (CancellationToken): Optional cancellation token
-
-**Returns:** Task representing the unsubscription operation
+Every provider validates the message and options the same way before sending (`ArgumentNullException` /
+`ArgumentException`).
 
 ### `IMessageProcessor<T>` Interface
 
-Interface for structured message processing with retry logic.
-
-#### `ProcessAsync(T message, MessageContext context) -> Task<MessageResult>`
-
-**Purpose:** Processes a message with structured result handling
-
-**Parameters:**
-- `message` (T): The message to process
-- `context` (MessageContext): Message metadata and delivery information
-
-**Returns:** `MessageResult` indicating processing outcome
-
-**Example:**
-```csharp
-public async Task<MessageResult> ProcessAsync(OrderCreated message, MessageContext context)
-{
-    if (context.DeliveryCount > 3)
-        return MessageResult.DeadLetter;
-        
-    try
-    {
-        await ProcessOrder(message);
-        return MessageResult.Acknowledge;
-    }
-    catch (TransientException)
-    {
-        return MessageResult.Retry;
-    }
-}
-```
-
-### `RabbitMQMessageQueue<T>` Class
-
-RabbitMQ implementation of the message queue interface.
-
-#### Constructor: `RabbitMQMessageQueue(MessageQueueConfig config)`
-
-**Purpose:** Initializes RabbitMQ connection and declares queues
-
-**Parameters:**
-- `config` (MessageQueueConfig): Configuration for the message queue
-
-**Raises:** `MessageQueueException` if connection fails
+`Task<MessageResult> ProcessAsync(T message, MessageContext context, CancellationToken cancellationToken)`.
+Registered as scoped with `AddMessageProcessor<T, TProcessor>()`; `MessageQueueHostedService<T>` creates a DI scope
+for every message, so scoped dependencies (a `DbContext`, say) live for one message.
 
 ### `MessageContext` Record
 
-Contains metadata about message delivery and processing context.
-
-**Properties:**
-- `MessageId` (string): Unique identifier for the message
-- `Timestamp` (DateTime): When the message was received
-- `DeliveryCount` (int): Number of delivery attempts
-- `Properties` (Dictionary<string, object>): Additional message properties
+- `MessageId` (string): broker message id
+- `CorrelationId` (string?)
+- `Timestamp` (DateTimeOffset): publish time (ASB: enqueue time)
+- `DeliveryAttempt` (int): 1 for the first delivery, 2 for the first retry, and so on
+- `Headers` (IReadOnlyDictionary<string, string>): publisher headers, immutable (a handler cannot change what a retry sees)
 
 ### `MessageResult` Enum
 
-Defines the outcome of message processing.
+- `Acknowledge`: processed; remove the message
+- `Retry`: transient failure; redeliver after the backoff, dead-letter when retries are exhausted
+- `DeadLetter`: permanent failure; dead-letter now
 
-**Values:**
-- `Acknowledge`: Message processed successfully
-- `Retry`: Temporary failure, retry the message
-- `DeadLetter`: Permanent failure, send to dead letter queue
+### Provider classes
+
+`RabbitMqMessageQueue<T>(RabbitMqConfig, ITelemetryProvider? = null, ILogger? = null)`,
+`AzureServiceBusMessageQueue<T>(AzureServiceBusConfig, ITelemetryProvider? = null, ILogger? = null)` and
+`InMemoryMessageQueue<T>(InMemoryConfig? = null, ITelemetryProvider? = null, ILogger? = null)`. All are
+`IAsyncDisposable`; `AddMessageQueue<T>` registers them as container-owned singletons.
+
+`InMemoryMessageQueue<T>` also exposes `PublishedMessages`, `ProcessedMessages`, `DeadLetters`, `PendingCount`,
+`WaitForIdleAsync()` (completes when nothing is queued, running or waiting to retry) and `Clear()`.
 
 ## Configuration Options
 
-### `MessageQueueConfig` Properties
+### Base settings (every provider)
 
-| Property | Type | Required | Default | Description |
-|----------|------|----------|---------|-------------|
-| Provider | string | Yes | - | Message queue provider ("RabbitMQ") |
-| ConnectionString | string | Yes | - | Connection string for the message queue |
-| QueueName | string | Yes | - | Name of the queue to use |
-| RetryAttempts | int | No | 3 | Maximum number of retry attempts |
-| RetryDelay | TimeSpan | No | 5 seconds | Delay between retry attempts |
-| EnableDeadLetterQueue | bool | No | true | Enable dead letter queue for failed messages |
-| DeadLetterQueueName | string | No | "{QueueName}.deadletter" | Name of the dead letter queue |
-| UseQuorumQueues | bool | No | true | Use RabbitMQ quorum queues for high availability |
-| QuorumInitialGroupSize | int | No | 3 | Initial group size for quorum queues |
+| Property | Type | Default | Description |
+|---|---|---|---|
+| Provider | string | (required) | `RabbitMq`, `AzureServiceBus` or `InMemory` |
+| QueueName | string | (required) | Queue to publish to and consume from |
+| Retry | RetryPolicy | see below | Retry and backoff policy |
+| SerializationFormat | `Json` / `MessagePack` | Json | Wire format |
+| EnableDeadLetterQueue | bool | true | When false, messages that would be dead-lettered are dropped with a warning |
+| MaxMessageSizeBytes | int | 1048576 | Larger bodies are dead-lettered (`MessageTooLarge`) without being deserialized |
+| MaxConcurrentCalls | int | 10 | Handlers running at once. Honoured by ASB and in-memory; RabbitMQ honours it after its provider rework (until then prefetch bounds concurrency) |
 
-### RabbitMQ-Specific Configuration
+### `Retry` section
+
+| Property | Default | Description |
+|---|---|---|
+| Strategy | Exponential | `Fixed`, `Linear`, `Exponential` (`Custom` needs a code-supplied calculator) |
+| MaxRetries | 5 | Retries after the first attempt; at most `MaxRetries + 1` deliveries |
+| InitialDelay | 00:00:02 | Wait before the first retry |
+| BackoffMultiplier | 2.0 | Exponential growth factor (1..100) |
+| MaxDelay | 00:00:30 | Cap for a single wait (at most 1 day) |
+| UseJitter / JitterFactor | true / 0.1 | ±10% jitter, never above `MaxDelay` |
+
+The default waits 2 + 4 + 8 + 16 + 30 ≈ 60 s across five retries, then dead-letters.
+
+### RabbitMQ settings (`RabbitMqConfig`)
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| ExchangeName | string | QueueName | Name of the exchange for publishing. Defaults to queue name. |
-| ExchangeType | string | "direct" | Type of exchange: "direct", "fanout", "topic", or "headers" |
-| EnablePublisherConfirms | bool | true | Enable async publisher confirms for delivery guarantees |
-| PublisherChannelPoolSize | int | 2 | Number of publisher channels in the pool for concurrent publishing |
-| MaxOutstandingConfirms | int | 1000 | Maximum pending confirms across all channels (backpressure) |
-| ConfirmTimeout | TimeSpan | 30 seconds | Timeout for publisher confirm acknowledgment |
+| ConnectionString | string | (required) | `amqp://user:password@host:port/vhost` (`amqps://` for TLS) |
+| DeadLetterQueueName | string | `{QueueName}.deadletter` | Dead-letter queue |
+| UseQuorumQueues | bool | true | Quorum queues for replication |
+| QuorumInitialGroupSize | int | 3 | Initial quorum group size |
+| PrefetchCount | int | 10 | Unacknowledged deliveries per consumer (1..65535) |
+| ExchangeName | string | QueueName | Exchange to publish to |
+| ExchangeType | string | "direct" | `direct`, `fanout`, `topic` or `headers` |
+| EnablePublisherConfirms | bool | true | Wait for broker confirms |
+| PublisherChannelPoolSize | int | 2 | Publisher channels (1..64) |
+| MaxOutstandingConfirms | int | 1000 | Pending confirms per channel (backpressure) |
+| ConfirmTimeout | TimeSpan | 30 seconds | Confirm timeout (> 0) |
+| HeartbeatInterval / NetworkRecoveryInterval | TimeSpan | 60 s / 10 s | Connection settings |
 
-### Exchange-Based Publishing
+### Azure Service Bus settings (`AzureServiceBusConfig`)
 
-Configure exchange-based routing for flexible message distribution:
+| Property | Default | Description |
+|---|---|---|
+| ConnectionString | (required) | SAS connection string |
+| TopicName / SubscriptionName | null | Publish to a topic and consume from a subscription; `SubscriptionName` is required when `TopicName` is set |
+| MessageTimeToLive | 14 days | Message TTL |
+| PrefetchCount | 10 | Receiver prefetch |
+| MaxAutoLockRenewalDuration | 5 minutes | Lock renewal while a handler runs |
+| EnableBatchedOperations / MaxBatchSize | true / 100 | Batch publishing |
+| SenderPoolSize / MaxConcurrentSends / SendTimeout | 2 / 1000 / 30 s | Sender pool |
 
-```json
-{
-  "MessageQueue": {
-    "Provider": "RabbitMQ",
-    "ConnectionString": "amqp://admin:password123@localhost:5672/",
-    "QueueName": "order-created",
-    "ExchangeName": "order-events",
-    "ExchangeType": "topic",
-    "EnablePublisherConfirms": true,
-    "PublisherChannelPoolSize": 4,
-    "MaxOutstandingConfirms": 2000,
-    "ConfirmTimeout": "00:00:30"
-  }
-}
-```
-
-**Exchange Types:**
-- `direct`: Routes messages to queues based on exact routing key match
-- `fanout`: Broadcasts messages to all bound queues
-- `topic`: Routes messages based on routing key patterns (e.g., `order.*`)
-- `headers`: Routes based on message header attributes
-
-### High-Throughput Publishing Configuration
-
-For high-volume publishing scenarios with delivery guarantees:
-
-```csharp
-services.AddMessageQueue<OrderCreated>(options =>
-{
-    options.Provider = "RabbitMQ";
-    options.ConnectionString = "amqp://admin:password123@localhost:5672/";
-    options.QueueName = "high-volume-orders";
-
-    // Exchange configuration
-    options.ExchangeName = "order-events";
-    options.ExchangeType = "direct";
-
-    // Publisher confirms with channel pool
-    options.EnablePublisherConfirms = true;
-    options.PublisherChannelPoolSize = 4;      // 4 concurrent channels
-    options.MaxOutstandingConfirms = 4000;     // 1000 per channel
-    options.ConfirmTimeout = TimeSpan.FromSeconds(30);
-});
-```
-
-**Performance Considerations:**
-- Higher `PublisherChannelPoolSize` increases concurrent publishing capacity
-- `MaxOutstandingConfirms` provides backpressure to prevent memory exhaustion
-- Each channel can have `MaxOutstandingConfirms / PublisherChannelPoolSize` pending confirms
-- Set `EnablePublisherConfirms = false` for fire-and-forget (no delivery guarantee)
-
-### RabbitMQ Connection String Format
-
-```
-amqp://username:password@hostname:port/virtualhost
-```
-
-**Example:**
-```
-amqp://admin:password123@localhost:5672/
-```
-
-### Quorum Queue Configuration
-
-Quorum queues provide high availability and data safety:
-
-```csharp
-services.AddMessageQueue<MyMessage>(options =>
-{
-    options.UseQuorumQueues = true;
-    options.QuorumInitialGroupSize = 3; // Requires 3 nodes for cluster
-});
-```
-
-**Benefits:**
-- Built-in replication across cluster nodes
-- Automatic leader election
-- Better performance for persistent messages
-- Enhanced poison message handling
-
-### Classic Queue Configuration
-
-For single-node deployments or legacy compatibility:
-
-```csharp
-services.AddMessageQueue<MyMessage>(options =>
-{
-    options.UseQuorumQueues = false;
-});
-```
+Entity settings (partitioning, duplicate detection, max delivery count) belong to the queue's infrastructure
+definition, not to this library. Keep the entity's `MaxDeliveryCount` above `Retry.MaxRetries + 1`.
 
 ## Error Handling
 
 ### Exception Types
 
-- `MessageQueueException`: Base exception for message queue operations
-- `TransientMessageException`: Indicates a temporary failure that should be retried
+- `MessageQueueException`: publishing, subscribing or connection failures
+- `ConfigurationException`: a missing or unsupported `Provider`
+- `OptionsValidationException` (Microsoft.Extensions.Options): invalid settings, raised at host start
 
-### Retry Logic
+### Retry Logic and Dead-lettering
 
-The message queue implements automatic retry with exponential backoff:
+Every provider runs deliveries through the same pipeline:
 
-1. Message fails processing
-2. If delivery count < `RetryAttempts`, message is requeued
-3. Delay increases exponentially: 5s, 10s, 20s, etc.
-4. After max attempts, message goes to dead letter queue
+1. Body larger than `MaxMessageSizeBytes` → dead-letter `MessageTooLarge`.
+2. Body cannot be deserialized → dead-letter `DeserializationFailed`.
+3. Handler returns `Acknowledge` → removed. `DeadLetter` → dead-letter `Rejected`.
+4. Handler returns `Retry` or throws → redelivered as the next `DeliveryAttempt` after the backoff delay, until
+   `MaxRetries` retries have been made; then dead-letter `MaxRetriesExceeded`.
 
-### Dead Letter Queue
+Dead-letter records carry the reason code and, for exceptions, the exception **type** only; exception messages are
+never written to the broker. Reason codes are listed in `DeadLetterReasons`.
 
-Failed messages are automatically routed to a dead letter queue:
+## Threading and Concurrency
 
-- Queue name: `{original-queue-name}.deadletter`
-- Messages retain original headers and properties
-- Manual inspection and reprocessing possible
+- Publishing is thread-safe; RabbitMQ and ASB use publisher pools.
+- One subscriber per queue instance. ASB and in-memory run up to `MaxConcurrentCalls` handlers at once.
+- Handlers must be idempotent: delivery is at least once. Use `MessageContext.MessageId` to de-duplicate.
 
-## Threading Safety and Concurrency
+## Observability
 
-- `IMessageQueue<T>` implementations are thread-safe
-- Multiple concurrent publishers supported
-- Single subscriber per queue instance
-- Background processing through hosted services
-- Configurable prefetch count for performance tuning
-
-## Memory Usage and Resource Management
-
-- Connection pooling for RabbitMQ channels
-- Automatic disposal of resources
-- Configurable prefetch limits to control memory usage
-- Message serialization uses System.Text.Json for efficiency
-
-## Integration Points
-
-### Dependency Injection
-
-Full integration with Microsoft.Extensions.DependencyInjection:
-
-```csharp
-services.AddMessageQueue<OrderCreated>(options => { /* config */ });
-services.AddMessageProcessor<OrderCreated, OrderCreatedProcessor>();
-services.AddHostedService<MessageQueueHostedService<OrderCreated>>();
-```
-
-### Logging
-
-Structured logging with Microsoft.Extensions.Logging:
-
-```csharp
-_logger.LogInformation("Published {MessageType} with ID {MessageId}", 
-    typeof(T).Name, messageId);
-```
-
-### Health Checks
-
-Monitor message queue health:
-
-```csharp
-services.AddHealthChecks()
-    .AddRabbitMQ(connectionString, name: "rabbitmq");
-```
-
-## Production Deployment Considerations
-
-### Performance Characteristics
-
-- **Throughput**: 10,000+ messages/second with quorum queues
-- **Latency**: Sub-millisecond publishing, configurable consumer prefetch
-- **Memory**: ~1MB per 10,000 queued messages
-
-### Resource Requirements
-
-- **CPU**: Minimal overhead, scales with message processing logic
-- **Memory**: Configurable prefetch limits control memory usage
-- **Network**: Persistent connections with automatic reconnection
-- **Storage**: Durable messages persisted to disk
-
-### High Availability Setup
-
-```csharp
-services.AddMessageQueue<OrderCreated>(options =>
-{
-    options.ConnectionString = "amqp://user:pass@node1:5672,node2:5672,node3:5672";
-    options.UseQuorumQueues = true;
-    options.QuorumInitialGroupSize = 3;
-});
-```
-
-### Monitoring and Observability
-
-- Built-in metrics for message counts, processing times
-- Integration with Application Insights and Prometheus
-- Dead letter queue monitoring for failed messages
-- Connection health monitoring
+- `services.AddMessageQueueTelemetry("MyApp.Messaging")` registers an `ActivitySource`/`Meter`-based provider.
+  Consume spans and the `messagequeue.messages.consumed|retried|deadlettered` counters come from the pipeline.
+  Spans record `exception.type`; pass `recordExceptionDetails: true` to also record messages and stack traces.
+- Logging uses `Microsoft.Extensions.Logging` with source-generated `LoggerMessage` methods.
+- Health checks: `AddRabbitMqHealthCheck`, `AddAzureServiceBusHealthCheck`, `AddMessageQueueHealthCheck`.

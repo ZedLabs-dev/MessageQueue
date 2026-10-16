@@ -12,9 +12,9 @@ public class Given_a_message_processor
     {
         var processor = new TestMessageProcessor(shouldSucceed: true);
         var message = new TestMessage("test-id", "test-content");
-        var context = new MessageContext { MessageId = "msg-1", DeliveryCount = 1 };
+        var context = new MessageContext { MessageId = "msg-1", DeliveryAttempt = 1 };
 
-        var result = await processor.ProcessAsync(message, context);
+        var result = await processor.ProcessAsync(message, context, TestContext.Current.CancellationToken);
 
         result.Should().Be(MessageResult.Acknowledge, "it should acknowledge successfully processed messages");
     }
@@ -24,9 +24,9 @@ public class Given_a_message_processor
     {
         var processor = new TestMessageProcessor(shouldSucceed: false, isTransient: true);
         var message = new TestMessage("test-id", "test-content");
-        var context = new MessageContext { MessageId = "msg-1", DeliveryCount = 1 };
+        var context = new MessageContext { MessageId = "msg-1", DeliveryAttempt = 1 };
 
-        var result = await processor.ProcessAsync(message, context);
+        var result = await processor.ProcessAsync(message, context, TestContext.Current.CancellationToken);
 
         result.Should().Be(MessageResult.Retry, "it should retry on transient errors");
     }
@@ -36,9 +36,9 @@ public class Given_a_message_processor
     {
         var processor = new TestMessageProcessor(shouldSucceed: false, isTransient: false);
         var message = new TestMessage("test-id", "test-content");
-        var context = new MessageContext { MessageId = "msg-1", DeliveryCount = 1 };
+        var context = new MessageContext { MessageId = "msg-1", DeliveryAttempt = 1 };
 
-        var result = await processor.ProcessAsync(message, context);
+        var result = await processor.ProcessAsync(message, context, TestContext.Current.CancellationToken);
 
         result.Should().Be(MessageResult.DeadLetter, "it should dead-letter on fatal errors");
     }
@@ -48,9 +48,9 @@ public class Given_a_message_processor
     {
         var processor = new TestMessageProcessor(shouldSucceed: false, isTransient: true);
         var message = new TestMessage("test-id", "test-content");
-        var context = new MessageContext { MessageId = "msg-1", DeliveryCount = 4 };
+        var context = new MessageContext { MessageId = "msg-1", DeliveryAttempt = 4 };
 
-        var result = await processor.ProcessAsync(message, context);
+        var result = await processor.ProcessAsync(message, context, TestContext.Current.CancellationToken);
 
         result.Should().Be(MessageResult.DeadLetter, "it should dead-letter after exceeding max retries");
     }

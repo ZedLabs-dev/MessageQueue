@@ -53,15 +53,14 @@ Configure Azure Service Bus in `appsettings.json`:
     "Provider": "AzureServiceBus",
     "ConnectionString": "Endpoint=sb://your-namespace.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=your-key",
     "QueueName": "order-created",
-    "RetryAttempts": 3,
+    "Retry": { "MaxRetries": 3 },
     "EnableDeadLetterQueue": true,
     "MessageTimeToLive": "7.00:00:00",
     "MaxConcurrentCalls": 10,
     "PrefetchCount": 20,
     "MaxAutoLockRenewalDuration": "00:05:00",
     "EnableBatchedOperations": true,
-    "MaxBatchSize": 100,
-    "BatchFlushInterval": "00:00:01"
+    "MaxBatchSize": 100
   }
 }
 ```
@@ -77,7 +76,7 @@ public void ConfigureServices(IServiceCollection services, IConfiguration config
         options.Provider = MessageQueueProvider.AzureServiceBus;
         options.ConnectionString = "Endpoint=sb://your-namespace.servicebus.windows.net/;...";
         options.QueueName = "order-created";
-        options.RetryAttempts = 3;
+        options.Retry = new RetryPolicy { MaxRetries = 3 };
         options.EnableDeadLetterQueue = true;
         
         // Azure Service Bus specific settings
@@ -140,12 +139,12 @@ public class OrderCreatedProcessor : IMessageProcessor<OrderCreated>
         _orderService = orderService;
     }
 
-    public async Task<MessageResult> ProcessAsync(OrderCreated message, MessageContext context)
+    public async Task<MessageResult> ProcessAsync(OrderCreated message, MessageContext context, CancellationToken cancellationToken)
     {
         try
         {
-            _logger.LogInformation("Processing order {OrderId} (Delivery #{DeliveryCount})", 
-                message.OrderId, context.DeliveryCount);
+            _logger.LogInformation("Processing order {OrderId} (attempt {DeliveryAttempt})", 
+                message.OrderId, context.DeliveryAttempt);
             
             // Long-running processing is supported with automatic lock renewal
             await _orderService.ProcessOrderAsync(message);
@@ -295,7 +294,6 @@ Configure high-throughput settings in `appsettings.json`:
     "MaxAutoLockRenewalDuration": "00:10:00",
     "EnableBatchedOperations": true,
     "MaxBatchSize": 200,
-    "BatchFlushInterval": "00:00:00.500",
     "SenderPoolSize": 4,
     "MaxConcurrentSends": 4000,
     "SendTimeout": "00:00:30"

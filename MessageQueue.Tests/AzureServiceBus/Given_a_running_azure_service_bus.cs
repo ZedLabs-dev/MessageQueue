@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using AwesomeAssertions;
 using ESE.MessageQueue.AzureServiceBus;
+using ESE.MessageQueue.Retry;
 
 namespace ESE.MessageQueue.Tests.AzureServiceBus;
 
@@ -20,7 +21,7 @@ public sealed class Given_a_running_azure_service_bus : IAsyncLifetime
         {
             ConnectionString = AzureServiceBusEnvironment.RequireConnectionString(),
             QueueName = AzureServiceBusEnvironment.QueueName,
-            RetryAttempts = 3,
+            Retry = new RetryPolicy { MaxRetries = 2, InitialDelay = TimeSpan.FromMilliseconds(20), UseJitter = false },
             EnableDeadLetterQueue = true,
             MessageTimeToLive = TimeSpan.FromMinutes(30),
             MaxConcurrentCalls = 2,
@@ -132,8 +133,8 @@ public sealed class Given_a_running_azure_service_bus : IAsyncLifetime
             return Task.FromResult(msg.Id != message.Id);
         }, TestContext.Current.CancellationToken);
         await queue.PublishAsync(message, TestContext.Current.CancellationToken);
-        await Wait.UntilAsync(() => Volatile.Read(ref attempts) >= config.RetryAttempts, Wait.DeliveryTimeout);
+        await Wait.UntilAsync(() => Volatile.Read(ref attempts) >= config.Retry.MaxRetries + 1, Wait.DeliveryTimeout);
 
-        Volatile.Read(ref attempts).Should().BeGreaterThanOrEqualTo(config.RetryAttempts, "it should retry failed messages");
+        Volatile.Read(ref attempts).Should().BeGreaterThanOrEqualTo(config.Retry.MaxRetries + 1, "it should retry failed messages");
     }
 }

@@ -11,9 +11,13 @@ public class OpenTelemetryProvider : ITelemetryProvider
     readonly Counter<long> messagesConsumed;
     readonly Counter<long> messagesRetried;
     readonly Counter<long> messagesDeadLettered;
+    readonly bool recordExceptionDetails;
 
-    public OpenTelemetryProvider(string sourceName)
+    // recordExceptionDetails: also put exception messages and stack traces on spans. Off by default (S6):
+    // exception text can carry personal or secret data, and spans often leave the trust boundary.
+    public OpenTelemetryProvider(string sourceName, bool recordExceptionDetails = false)
     {
+        this.recordExceptionDetails = recordExceptionDetails;
         activitySource = new ActivitySource(sourceName);
         meter = new Meter(sourceName);
 
@@ -49,7 +53,7 @@ public class OpenTelemetryProvider : ITelemetryProvider
         activity.SetTag("messaging.message.type", messageType);
         activity.SetTag("messaging.operation.type", "publish");
 
-        return new OpenTelemetryActivity(activity, "publish", queueName, messageType);
+        return new OpenTelemetryActivity(activity, "publish", queueName, messageType, recordExceptionDetails);
     }
 
     public TelemetryActivity? StartConsumeActivity(string queueName, string messageType, string? messageId)
@@ -65,7 +69,7 @@ public class OpenTelemetryProvider : ITelemetryProvider
         if (messageId != null)
             activity.SetTag("messaging.message.id", messageId);
 
-        return new OpenTelemetryActivity(activity, "consume", queueName, messageType) { MessageId = messageId };
+        return new OpenTelemetryActivity(activity, "consume", queueName, messageType, recordExceptionDetails) { MessageId = messageId };
     }
 
     public void RecordMessagePublished(string queueName, string messageType)
@@ -127,25 +131,42 @@ public class OpenTelemetryProvider : ITelemetryProvider
 
 public class OpenTelemetryActivity : TelemetryActivity
 {
-    readonly Activity activity;
+    public const int MaxRecordedLength = 4096;
 
-    public OpenTelemetryActivity(Activity activity, string operationName, string queueName, string messageType)
+    readonly Activity activity;
+    readonly bool recordExceptionDetails;
+
+    public OpenTelemetryActivity(
+        Activity activity,
+        string operationName,
+        string queueName,
+        string messageType,
+        bool recordExceptionDetails = false)
         : base(operationName, queueName, messageType)
     {
         this.activity = activity;
+        this.recordExceptionDetails = recordExceptionDetails;
     }
 
-    public new void SetError(Exception exception)
+    public override void SetError(Exception exception)
     {
         base.SetError(exception);
-        activity.SetStatus(ActivityStatusCode.Error, exception.Message);
-        activity.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+
+        var exceptionType = exception.GetType().FullName;
+        var tags = new ActivityTagsCollection { { "exception.type", exceptionType } };
+        if (recordExceptionDetails)
         {
-            { "exception.type", exception.GetType().FullName },
-            { "exception.message", exception.Message },
-            { "exception.stacktrace", exception.StackTrace }
-        }));
+            tags.Add("exception.message", Truncate(exception.Message));
+            tags.Add("exception.stacktrace", Truncate(exception.ToString()));
+        }
+
+        activity.SetStatus(ActivityStatusCode.Error, Truncate(recordExceptionDetails ? exception.Message : exceptionType));
+        activity.AddEvent(new ActivityEvent("exception", tags: tags));
     }
+
+    // Exporters and backends cap attribute sizes; long values are cut here so the span is still exported.
+    static string? Truncate(string? value) =>
+        value is { Length: > MaxRecordedLength } ? value[..MaxRecordedLength] : value;
 
     public override void Dispose()
     {
@@ -153,4 +174,3 @@ public class OpenTelemetryActivity : TelemetryActivity
         base.Dispose();
     }
 }
-

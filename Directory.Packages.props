@@ -14,6 +14,8 @@
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.13" />
     <!-- Held at 6.x on purpose: 7.x is an async-only rewrite, migrated in OPTIMIZATION-PLAN Phase 5. -->
     <PackageVersion Include="RabbitMQ.Client" Version="6.8.1" />
   </ItemGroup>

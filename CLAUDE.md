@@ -28,14 +28,18 @@ The compose file is for manual experiments only; the tests do not use it (see Te
 
 | Layer | Folder | Key types |
 |---|---|---|
-| Abstractions | `Abstractions/`, `Processing/` | `IMessageQueue<T>`, `IMessagePublisher<T>`, `IMessageSubscriber<T>`, `MessageContext`, `MessageResult`, `IMessageProcessor<T>` |
-| Configuration | `Configuration/`, `Extensions/` | `MessageQueueConfig` (base record), `MessageQueueProvider`, `ServiceCollectionExtensions.AddMessageQueue<T>` |
-| Providers | `RabbitMQ/`, `AzureServiceBus/`, `Testing/` | `RabbitMqMessageQueue<T>` + `PublisherChannel` pool; `AzureServiceBusMessageQueue<T>` + `PublisherSender` pool; `InMemoryMessageQueue<T>` |
-| Cross-cutting | `Serialization/`, `Retry/`, `Exceptions/` | `MessageSerializer` (JSON / MessagePack, `UntrustedData`), `RetryPolicy`, `RetryExecutor`, `MessageQueueException` |
-| Hosting & ops | `Hosting/`, `HealthChecks/`, `Telemetry/` | `MessageQueueHostedService<T>`, health checks per broker, `ITelemetryProvider` (`System.Diagnostics` Activity/Meter) |
+| Abstractions | `Abstractions/` | `IMessageQueue<T>` (= `IMessagePublisher<T>` + `IMessageSubscriber<T>` + `Capabilities`), `MessageContext`, `MessageResult`, `PublishOptions`, `MessageQueueCapabilities` |
+| Consumer pipeline | `Processing/` | internal `MessageDispatcher<T>` + `IDeliveryActions` transport seam (ADR 0004), `DeadLetterReasons`, `IMessageProcessor<T>` |
+| Configuration | `Configuration/`, `Extensions/` | `MessageQueueConfig` (portable base record), `MessageQueueProvider`, per-provider `IValidateOptions` validators, `ServiceCollectionExtensions.AddMessageQueue<T>` / `AddInMemoryMessageQueue<T>` |
+| Providers | `RabbitMQ/`, `AzureServiceBus/`, `InMemory/` | `RabbitMqMessageQueue<T>` + `PublisherChannel` pool; `AzureServiceBusMessageQueue<T>` + `PublisherSender` pool; `InMemoryMessageQueue<T>` (single-process, non-durable, ADR 0003) |
+| Cross-cutting | `Serialization/`, `Retry/`, `Exceptions/` | `MessageSerializer` (JSON / MessagePack, `UntrustedData`), `RetryPolicy` + `RetryExecutor` (`MaxRetries` semantics, ADR 0001), `MessageQueueException` |
+| Hosting & ops | `Hosting/`, `HealthChecks/`, `Telemetry/` | `MessageQueueHostedService<T>` (DI scope per message), health checks per broker, `ITelemetryProvider` (`System.Diagnostics` Activity/Meter) |
 
 Abstractions never reference a broker SDK. Provider-specific settings live on the provider config
-(`RabbitMqConfig`, `AzureServiceBusConfig`), not on the base.
+(`RabbitMqConfig`, `AzureServiceBusConfig`, `InMemoryConfig`), not on the base (ADR 0002). Every provider consumes
+through `MessageDispatcher<T>` and implements only `IDeliveryActions` (complete / reschedule / dead-letter) plus
+metadata mapping; retry, backoff, size limit and dead-letter decisions are never re-implemented in a provider.
+Design decisions live in `docs/adr/`; read them before changing retry, config, in-memory or dispatcher behavior.
 
 ## Code conventions (enforced by `.editorconfig` + analyzers)
 
@@ -63,12 +67,14 @@ Abstractions never reference a broker SDK. Provider-specific settings live on th
 6. Every test class has `[Trait("Category","Unit")]` or `[Trait("Category","Integration")]`. Unit tests must not
    need a broker, Docker or the network.
 7. Layout: one folder per area (`Serialization/`, `Retry/`, `Telemetry/`, `HealthChecks/`, `InMemory/`, `RabbitMQ/`,
-   `AzureServiceBus/`, `Configuration/`, `Processing/`, `Abstractions/`), one class under test per file. Shared
+   `AzureServiceBus/`, `Configuration/`, `Processing/`, `Hosting/`, `Abstractions/`), one class under test per file. Shared
    fixtures and helpers live in `Support/`.
 8. Pass `TestContext.Current.CancellationToken` to anything that takes a token (analyzer xUnit1051 fails the build).
    Async tests that could hang get `[Fact(Timeout = ...)]`; CI also runs with `--blame-hang-timeout 2m`.
 9. Before asserting an exact count of asynchronously delivered messages, use `Wait.ForCountAsync`: it waits for the
    count, then requires it to stay stable for 500 ms so late duplicates fail the test.
+10. The default retry policy takes about 60 s to give up. Any test whose handler fails sets a millisecond `Retry`
+    policy (see `RabbitMqTestQueues.FastRetry`). For the in-memory provider, await `WaitForIdleAsync` instead of polling.
 
 ### Test infrastructure
 
@@ -114,7 +120,7 @@ Abstractions never reference a broker SDK. Provider-specific settings live on th
 - [ ] `dotnet build ESE.MessageQueue.sln -warnaserror` is clean.
 - [ ] `dotnet format ESE.MessageQueue.sln --verify-no-changes` passes.
 - [ ] `dotnet test` reports 0 failed and **0 vacuous passes**; skips appear as skips.
-- [ ] `scripts/coverage.sh` passes: line coverage of `ESE.MessageQueue` at or above the gate (59% since Phase 3,
+- [ ] `scripts/coverage.sh` passes: line coverage of `ESE.MessageQueue` at or above the gate (73% since Phase 4,
       ratcheted up toward 80%; never lower it).
 - [ ] Vulnerable-package scan reports none.
 - [ ] `CHANGELOG.md` Unreleased updated for any behavior or public-API change.

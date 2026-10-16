@@ -2,12 +2,17 @@ using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.AzureServiceBus;
 using ESE.MessageQueue.Configuration;
 using ESE.MessageQueue.Exceptions;
+using ESE.MessageQueue.InMemory;
 using ESE.MessageQueue.Processing;
 using ESE.MessageQueue.RabbitMQ;
 using ESE.MessageQueue.Telemetry;
 using ESE.MessageQueue.Telemetry.OpenTelemetry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace ESE.MessageQueue.Extensions;
 
@@ -16,67 +21,73 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddMessageQueue<T>(
         this IServiceCollection services,
         IConfiguration configuration,
-        string configurationSection = "MessageQueue") where T : class
+        string configurationSection = MessageQueueConfig.SectionName) where T : class
     {
-        var providerType = configuration.GetValue<MessageQueueProvider>($"{configurationSection}:Provider");
+        var section = configuration.GetSection(configurationSection);
+        var provider = ReadProvider(section, configurationSection);
 
-        return providerType switch
+        return provider switch
         {
-            MessageQueueProvider.RabbitMq => AddRabbitMqQueue<T>(services, configuration, configurationSection),
-            MessageQueueProvider.AzureServiceBus => AddAzureServiceBusQueue<T>(services, configuration, configurationSection),
-            _ => throw new NotSupportedException($"Provider '{providerType}' is not supported")
+            MessageQueueProvider.RabbitMq => AddQueue<T, RabbitMqConfig, RabbitMqConfigValidator, RabbitMqMessageQueue<T>>(
+                services, builder => BindStrictly(builder, section), (config, telemetry, logger) => new RabbitMqMessageQueue<T>(config, telemetry, logger)),
+            MessageQueueProvider.AzureServiceBus => AddQueue<T, AzureServiceBusConfig, AzureServiceBusConfigValidator, AzureServiceBusMessageQueue<T>>(
+                services, builder => BindStrictly(builder, section), (config, telemetry, logger) => new AzureServiceBusMessageQueue<T>(config, telemetry, logger)),
+            MessageQueueProvider.InMemory => AddQueue<T, InMemoryConfig, InMemoryConfigValidator, InMemoryMessageQueue<T>>(
+                services, builder => BindStrictly(builder, section), (config, telemetry, logger) => new InMemoryMessageQueue<T>(config, telemetry, logger)),
+            _ => throw new ConfigurationException($"Provider '{provider}' is not supported")
         };
     }
 
-    static IServiceCollection AddRabbitMqQueue<T>(
-        IServiceCollection services,
-        IConfiguration configuration,
-        string section) where T : class
+    // Unknown keys (typos, or settings removed such as RetryAttempts) fail at startup instead of being ignored,
+    // and enum settings must be spelled as names.
+    static void BindStrictly<TConfig>(OptionsBuilder<TConfig> builder, IConfigurationSection section) where TConfig : MessageQueueConfig
     {
-        var config = new RabbitMqConfig();
-        configuration.GetSection(section).Bind(config);
-        ValidateBaseConfig(config);
-        ValidateRabbitMqConfig(config);
-        return services.AddSingleton<IMessageQueue<T>>(_ => new RabbitMqMessageQueue<T>(config));
+        builder.Bind(section, options => options.ErrorOnUnknownConfiguration = true);
+        builder.Services.AddSingleton<IValidateOptions<TConfig>>(new EnumNameValidator<TConfig>(builder.Name, section));
     }
 
-    static IServiceCollection AddAzureServiceBusQueue<T>(
-        IServiceCollection services,
-        IConfiguration configuration,
-        string section) where T : class
+    // The provider decides which config type and queue to register, so it is checked here, at registration.
+    // A missing or unknown value fails: there is no default broker.
+    static MessageQueueProvider ReadProvider(IConfigurationSection section, string sectionName)
     {
-        var config = new AzureServiceBusConfig();
-        configuration.GetSection(section).Bind(config);
-        ValidateBaseConfig(config);
-        ValidateAzureServiceBusConfig(config);
-        return services.AddSingleton<IMessageQueue<T>>(_ => new AzureServiceBusMessageQueue<T>(config));
+        var value = section["Provider"];
+        var supported = string.Join(", ", Enum.GetNames<MessageQueueProvider>());
+
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ConfigurationException($"{sectionName}:Provider is required. Supported providers: {supported}");
+
+        if (!ConfigValidation.IsEnumName<MessageQueueProvider>(value))
+            throw new ConfigurationException($"{sectionName}:Provider '{value}' is not supported. Supported providers: {supported}");
+
+        return Enum.Parse<MessageQueueProvider>(value.Trim(), ignoreCase: true);
     }
 
-    static void ValidateBaseConfig(MessageQueueConfig config)
+    public static IServiceCollection AddInMemoryMessageQueue<T>(
+        this IServiceCollection services,
+        Action<InMemoryConfig>? configure = null) where T : class
     {
-        if (string.IsNullOrWhiteSpace(config.ConnectionString))
-            throw new ConfigurationException("ConnectionString is required");
-
-        if (string.IsNullOrWhiteSpace(config.QueueName))
-            throw new ConfigurationException("QueueName is required");
-
-        if (config.RetryAttempts < 0)
-            throw new ConfigurationException("RetryAttempts must be >= 0");
+        return AddQueue<T, InMemoryConfig, InMemoryConfigValidator, InMemoryMessageQueue<T>>(
+            services,
+            builder => builder.Configure(config =>
+            {
+                config.QueueName = typeof(T).Name;
+                configure?.Invoke(config);
+            }),
+            (config, telemetry, logger) => new InMemoryMessageQueue<T>(config, telemetry, logger));
     }
 
-    static void ValidateRabbitMqConfig(RabbitMqConfig config)
+    public static IServiceCollection AddInMemoryMessageQueue<T>(
+        this IServiceCollection services,
+        InMemoryMessageQueue<T> queue) where T : class
     {
-        if (config.PrefetchCount < 1)
-            throw new ConfigurationException("PrefetchCount must be >= 1");
-    }
+        ThrowIfRegistered<T>(services);
 
-    static void ValidateAzureServiceBusConfig(AzureServiceBusConfig config)
-    {
-        if (config.MaxConcurrentCalls < 1)
-            throw new ConfigurationException("MaxConcurrentCalls must be >= 1");
-
-        if (config.MaxBatchSize < 1)
-            throw new ConfigurationException("MaxBatchSize must be >= 1");
+        // Instance registrations: the caller created the queue, so the container must not dispose it.
+        services.AddSingleton(queue);
+        services.AddSingleton<IMessageQueue<T>>(queue);
+        services.AddSingleton<IMessagePublisher<T>>(queue);
+        services.AddSingleton<IMessageSubscriber<T>>(queue);
+        return services;
     }
 
     public static IServiceCollection AddMessageProcessor<T, TProcessor>(
@@ -89,9 +100,10 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddMessageQueueTelemetry(
         this IServiceCollection services,
-        string sourceName = "ESE.MessageQueue")
+        string sourceName = "ESE.MessageQueue",
+        bool recordExceptionDetails = false)
     {
-        return services.AddSingleton<ITelemetryProvider>(new OpenTelemetryProvider(sourceName));
+        return services.AddSingleton<ITelemetryProvider>(new OpenTelemetryProvider(sourceName, recordExceptionDetails));
     }
 
     public static IServiceCollection AddMessageQueueTelemetry<TProvider>(
@@ -99,5 +111,50 @@ public static class ServiceCollectionExtensions
         where TProvider : class, ITelemetryProvider
     {
         return services.AddSingleton<ITelemetryProvider, TProvider>();
+    }
+
+    // Options are named per message type, so queues for different T can use different sections and providers.
+    internal static string OptionsName<T>() => typeof(T).FullName ?? typeof(T).Name;
+
+    static IServiceCollection AddQueue<T, TConfig, TValidator, TQueue>(
+        IServiceCollection services,
+        Action<OptionsBuilder<TConfig>> configure,
+        Func<TConfig, ITelemetryProvider, ILogger, TQueue> create)
+        where T : class
+        where TConfig : MessageQueueConfig
+        where TValidator : class, IValidateOptions<TConfig>
+        where TQueue : class, IMessageQueue<T>
+    {
+        ThrowIfRegistered<T>(services);
+
+        var name = OptionsName<T>();
+        var builder = services.AddOptions<TConfig>(name);
+        configure(builder);
+        builder.ValidateDataAnnotations().ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<TConfig>, TValidator>());
+
+        services.AddSingleton(sp => create(
+            sp.GetRequiredService<IOptionsMonitor<TConfig>>().Get(name),
+            sp.GetService<ITelemetryProvider>() ?? NullTelemetryProvider.Instance,
+            sp.GetService<ILoggerFactory>()?.CreateLogger<TQueue>() ?? (ILogger)NullLogger.Instance));
+
+        return AddQueueAliases<T, TQueue>(services);
+    }
+
+    // One queue per message type: a second registration would silently replace the first.
+    static void ThrowIfRegistered<T>(IServiceCollection services) where T : class
+    {
+        if (services.Any(d => d.ServiceType == typeof(IMessageQueue<T>)))
+            throw new ConfigurationException($"A message queue for {typeof(T).FullName} is already registered");
+    }
+
+    static IServiceCollection AddQueueAliases<T, TQueue>(IServiceCollection services)
+        where T : class
+        where TQueue : class, IMessageQueue<T>
+    {
+        services.AddSingleton<IMessageQueue<T>>(sp => sp.GetRequiredService<TQueue>());
+        services.AddSingleton<IMessagePublisher<T>>(sp => sp.GetRequiredService<IMessageQueue<T>>());
+        services.AddSingleton<IMessageSubscriber<T>>(sp => sp.GetRequiredService<IMessageQueue<T>>());
+        return services;
     }
 }

@@ -21,11 +21,11 @@ public record OrderCreated(string OrderId, string CustomerId, decimal Amount, Da
 
 public class OrderCreatedProcessor : IMessageProcessor<OrderCreated>
 {
-    public async Task<MessageResult> ProcessAsync(OrderCreated message, MessageContext context)
+    public async Task<MessageResult> ProcessAsync(OrderCreated message, MessageContext context, CancellationToken cancellationToken)
     {
         try
         {
-            await ProcessOrderLogic(message);
+            await ProcessOrderLogic(message, cancellationToken);
             return MessageResult.Acknowledge;
         }
         catch (TransientException)
@@ -38,9 +38,9 @@ public class OrderCreatedProcessor : IMessageProcessor<OrderCreated>
         }
     }
 
-    static async Task ProcessOrderLogic(OrderCreated order)
+    static async Task ProcessOrderLogic(OrderCreated order, CancellationToken cancellationToken)
     {
-        await Task.Delay(100);
+        await Task.Delay(100, cancellationToken);
     }
 }
 

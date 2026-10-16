@@ -14,9 +14,9 @@ public class TestMessageProcessor : IMessageProcessor<TestMessage>
         this.isTransient = isTransient;
     }
 
-    public Task<MessageResult> ProcessAsync(TestMessage message, MessageContext context)
+    public Task<MessageResult> ProcessAsync(TestMessage message, MessageContext context, CancellationToken cancellationToken)
     {
-        if (context.DeliveryCount > 3)
+        if (context.DeliveryAttempt > 3)
             return Task.FromResult(MessageResult.DeadLetter);
 
         if (shouldSucceed)

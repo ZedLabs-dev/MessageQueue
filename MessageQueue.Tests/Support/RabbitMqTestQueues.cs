@@ -1,4 +1,5 @@
 using ESE.MessageQueue.RabbitMQ;
+using ESE.MessageQueue.Retry;
 
 namespace ESE.MessageQueue.Tests;
 
@@ -16,11 +17,20 @@ sealed class RabbitMqTestQueues : IDisposable
         this.broker = broker;
     }
 
+    // Millisecond backoff so retry specs finish quickly.
+    public static readonly RetryPolicy FastRetry = new()
+    {
+        MaxRetries = 2,
+        InitialDelay = TimeSpan.FromMilliseconds(20),
+        MaxDelay = TimeSpan.FromMilliseconds(100),
+        UseJitter = false
+    };
+
     public RabbitMqConfig NewConfig(string prefix) => new()
     {
         ConnectionString = broker.ConnectionString,
         QueueName = $"{prefix}-{Guid.NewGuid():N}",
-        RetryAttempts = 3,
+        Retry = FastRetry,
         EnableDeadLetterQueue = true,
         UseQuorumQueues = true,
         QuorumInitialGroupSize = 1
@@ -29,7 +39,7 @@ sealed class RabbitMqTestQueues : IDisposable
     public RabbitMqMessageQueue<TestMessage> Create(RabbitMqConfig config)
     {
         queues.Add(config.QueueName);
-        queues.Add(string.IsNullOrEmpty(config.DeadLetterQueueName) ? $"{config.QueueName}.deadletter" : config.DeadLetterQueueName);
+        queues.Add(config.EffectiveDeadLetterQueueName);
         exchanges.Add(string.IsNullOrWhiteSpace(config.ExchangeName) ? config.QueueName : config.ExchangeName);
 
         var queue = new RabbitMqMessageQueue<TestMessage>(config);
