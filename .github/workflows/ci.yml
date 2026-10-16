@@ -41,13 +41,37 @@ jobs:
       - name: Verify formatting
         run: dotnet format ESE.MessageQueue.sln --no-restore --verify-no-changes --verbosity diagnostic
 
-      # Broker-backed tests still pass vacuously without a broker until Phase 3 (xunit.v3 real skips + Testcontainers).
-      - name: Test
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      - name: Unit tests
         run: >
           dotnet test ESE.MessageQueue.sln --no-build --configuration Release
+          --filter Category=Unit
           --collect:"XPlat Code Coverage"
+          --blame-hang-timeout 2m
           --results-directory TestResults
-          --logger "trx;LogFileName=test-results.trx"
+          --logger "trx;LogFileName=unit.trx"
+
+      # RabbitMQ runs in a Testcontainers container (Docker is preinstalled on ubuntu runners).
+      # MQ_REQUIRE_DOCKER turns "Docker unavailable" into a failure instead of a skip.
+      # Azure Service Bus tests skip unless the MQ_ASB_CONNECTION_STRING secret is configured.
+      - name: Integration tests
+        env:
+          MQ_REQUIRE_DOCKER: 'true'
+          MQ_ASB_CONNECTION_STRING: ${{ secrets.MQ_ASB_CONNECTION_STRING }}
+        run: >
+          dotnet test ESE.MessageQueue.sln --no-build --configuration Release
+          --filter Category=Integration
+          --collect:"XPlat Code Coverage"
+          --blame-hang-timeout 2m
+          --results-directory TestResults
+          --logger "trx;LogFileName=integration.trx"
+
+      - name: Coverage gate
+        run: |
+          bash scripts/coverage.sh --skip-tests
+          cat TestResults/coverage-report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Vulnerable package scan
         if: always()

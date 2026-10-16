@@ -9,8 +9,10 @@ Roadmap: `OPTIMIZATION-PLAN.md` (phased work), `PRODUCTION-READINESS-PLAN.md` (b
 ```bash
 dotnet restore ESE.MessageQueue.sln --locked-mode          # CI restore; lock files must not drift
 dotnet build ESE.MessageQueue.sln -warnaserror              # warnings are errors (also via Directory.Build.props)
-dotnet test ESE.MessageQueue.sln                            # full suite
-dotnet test ESE.MessageQueue.sln --filter "FullyQualifiedName!~Integration"   # fast loop; becomes --filter Category=Unit in Phase 3
+dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m                             # full suite (RabbitMQ via Testcontainers; needs Docker)
+dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Unit      # fast loop: no Docker, no broker
+dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Integration
+scripts/coverage.sh                                         # full suite + coverage report + gate (TestResults/coverage-report/index.html)
 dotnet format ESE.MessageQueue.sln                          # apply .editorconfig style
 dotnet format ESE.MessageQueue.sln --verify-no-changes      # what CI runs
 dotnet list ESE.MessageQueue.sln package --vulnerable --include-transitive   # must report none
@@ -20,8 +22,7 @@ docker compose -f MessageQueue/docker-compose.dev.yml up -d --wait              
 docker compose -f MessageQueue/docker-compose.dev.yml --profile servicebus up -d          # + ASB emulator (ACCEPT_EULA=Y in .env)
 ```
 
-Integration tests need RabbitMQ on `localhost:5672` (`admin`/`password123` today) and
-`AZURE_SERVICEBUS_CONNECTION_STRING` for ASB. Until Phase 3, tests without a broker pass vacuously.
+The compose file is for manual experiments only; the tests do not use it (see Testing below).
 
 ## Architecture
 
@@ -52,19 +53,50 @@ Abstractions never reference a broker SDK. Provider-specific settings live on th
 1. Write the spec first. Run it and **see it fail** for the right reason before writing implementation.
 2. Test classes are named for the behavior or context under test: `Given_a_rabbitmq_queue`, `PublishingMessages`.
 3. Test methods: `When_<Condition_Or_Action>`, e.g. `When_Message_Is_Valid`, `When_ConnectionString_Is_Null`.
-4. Assertions use FluentAssertions (AwesomeAssertions from Phase 3) with a `because` that starts with
+4. Assertions use AwesomeAssertions (Apache-2.0 fork of FluentAssertions) with a `because` that starts with
    `"it should"` / `"it should not"` and describes behavior, so output reads "When X, it should Y":
    ```csharp
    result.Should().BeTrue("it should acknowledge a valid message");
    await act.Should().ThrowAsync<MessageQueueException>("it should not leak the connection password");
    ```
 5. No `// Arrange` / `// Act` / `// Assert` comments.
-6. Unit tests must not need a broker. Broker tests are integration tests (`[Trait("Category","Integration")]` from Phase 3).
+6. Every test class has `[Trait("Category","Unit")]` or `[Trait("Category","Integration")]`. Unit tests must not
+   need a broker, Docker or the network.
+7. Layout: one folder per area (`Serialization/`, `Retry/`, `Telemetry/`, `HealthChecks/`, `InMemory/`, `RabbitMQ/`,
+   `AzureServiceBus/`, `Configuration/`, `Processing/`, `Abstractions/`), one class under test per file. Shared
+   fixtures and helpers live in `Support/`.
+8. Pass `TestContext.Current.CancellationToken` to anything that takes a token (analyzer xUnit1051 fails the build).
+   Async tests that could hang get `[Fact(Timeout = ...)]`; CI also runs with `--blame-hang-timeout 2m`.
+9. Before asserting an exact count of asynchronously delivered messages, use `Wait.ForCountAsync`: it waits for the
+   count, then requires it to stay stable for 500 ms so late duplicates fail the test.
+
+### Test infrastructure
+
+- **Runner:** xunit.v3 run through VSTest (`xunit.runner.visualstudio`), not Microsoft Testing Platform
+  (`IsTestingPlatformApplication=false` in the test project). That keeps `--filter Category=Unit` and
+  `--collect:"XPlat Code Coverage"` working with plain `dotnet test`.
+- **RabbitMQ:** `Support/RabbitMqBrokerFixture` is an xunit collection fixture (`[Collection(RabbitMqCollection.Name)]`)
+  that starts one `rabbitmq:4.3.6-management` container via Testcontainers for the whole run and hands tests its
+  connection string (Testcontainers supplies the credentials). It starts only when an integration test in that
+  collection runs, so the unit loop never touches Docker. `Support/RabbitMqTestQueues` creates per-test queues and
+  deletes them (and their dead-letter queues and exchanges) in the test class's `IAsyncLifetime.DisposeAsync`.
+- **Azure Service Bus:** integration tests run only when `MQ_ASB_CONNECTION_STRING` is set (a real namespace, or the
+  emulator from the compose file after the owner accepts its EULA). They use the predeclared queue
+  `integration-test-queue` from `MessageQueue/servicebus-emulator-config.json`; `MQ_ASB_QUEUE_NAME` overrides it.
+- **Skips are skips:** no Docker means the RabbitMQ tests report **Skipped** (`Assert.SkipWhen` in the test class's
+  `InitializeAsync`); no `MQ_ASB_CONNECTION_STRING` means the ASB tests report **Skipped**. `MQ_REQUIRE_DOCKER=true` (or `1`;
+  set in CI) turns missing Docker into a failure. Only Testcontainers' `DockerUnavailableException` is turned into a
+  skip; any other container start failure fails the tests.
+- **Coverage:** coverlet.collector writes Cobertura; `scripts/coverage.sh` merges every
+  `TestResults/**/coverage.cobertura.xml` with ReportGenerator (local tool in `.config/dotnet-tools.json`, run
+  `dotnet tool restore` once), prints line coverage for `ESE.MessageQueue`, writes an HTML report and fails below the
+  gate (`COVERAGE_THRESHOLD`, default in the script). The gate is measured on the merged unit + integration run with
+  Docker on and no ASB connection string; a unit-only run is lower. `--skip-tests` only merges existing results (CI).
 
 ## Hard rules
 
 - **Never** early-`return`, catch-and-ignore, or loosen an assertion to make a test pass. A test that cannot
-  run must be a real skip that shows up as skipped (`Assert.Skip*` from Phase 3), never a vacuous pass.
+  run must be a real skip that shows up as skipped (`Assert.Skip`/`SkipWhen`/`SkipUnless`), never a vacuous pass.
 - **Never** add or bump a package outside Central Package Management: versions live only in
   `Directory.Packages.props`; `PackageReference` has no `Version`. Commit the updated `packages.lock.json`.
 - **Never** suppress NU19xx (NuGet audit) warnings. Fix the vulnerable dependency instead.
@@ -82,7 +114,8 @@ Abstractions never reference a broker SDK. Provider-specific settings live on th
 - [ ] `dotnet build ESE.MessageQueue.sln -warnaserror` is clean.
 - [ ] `dotnet format ESE.MessageQueue.sln --verify-no-changes` passes.
 - [ ] `dotnet test` reports 0 failed and **0 vacuous passes**; skips appear as skips.
-- [ ] Coverage is at or above the gate (≥ 80% line on `MessageQueue/`, enforced from Phase 3).
+- [ ] `scripts/coverage.sh` passes: line coverage of `ESE.MessageQueue` at or above the gate (59% since Phase 3,
+      ratcheted up toward 80%; never lower it).
 - [ ] Vulnerable-package scan reports none.
 - [ ] `CHANGELOG.md` Unreleased updated for any behavior or public-API change.
 - [ ] Ticked the item in `OPTIMIZATION-PLAN.md` if the change completes one.

@@ -1,18 +1,19 @@
+using AwesomeAssertions;
 using ESE.MessageQueue.Exceptions;
 using ESE.MessageQueue.RabbitMQ;
-using FluentAssertions;
 using NSubstitute;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
-namespace ESE.MessageQueue.Tests;
+namespace ESE.MessageQueue.Tests.RabbitMQ;
 
-public class PublisherChannelTests
+[Trait("Category", "Unit")]
+public class Given_a_publisher_channel
 {
     readonly IConnection mockConnection;
     readonly IModel mockChannel;
 
-    public PublisherChannelTests()
+    public Given_a_publisher_channel()
     {
         mockConnection = Substitute.For<IConnection>();
         mockChannel = Substitute.For<IModel>();
@@ -20,7 +21,7 @@ public class PublisherChannelTests
     }
 
     [Fact]
-    public void When_Creating_With_Confirms_Enabled_Should_Call_ConfirmSelect()
+    public void When_Creating_With_Confirms_Enabled()
     {
         using var publisherChannel = new PublisherChannel(
             mockConnection,
@@ -32,7 +33,7 @@ public class PublisherChannelTests
     }
 
     [Fact]
-    public void When_Creating_With_Confirms_Disabled_Should_Not_Call_ConfirmSelect()
+    public void When_Creating_With_Confirms_Disabled()
     {
         using var publisherChannel = new PublisherChannel(
             mockConnection,
@@ -44,7 +45,7 @@ public class PublisherChannelTests
     }
 
     [Fact]
-    public async Task When_Publishing_Without_Confirms_Should_Complete_Immediately()
+    public async Task When_Publishing_Without_Confirms()
     {
         using var publisherChannel = new PublisherChannel(
             mockConnection,
@@ -62,7 +63,7 @@ public class PublisherChannelTests
             properties,
             "test-exchange",
             "test-routing-key",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         mockChannel.Received(1).BasicPublish(
             exchange: "test-exchange",
@@ -72,7 +73,7 @@ public class PublisherChannelTests
     }
 
     [Fact]
-    public async Task When_Publishing_With_Confirms_And_Ack_Received_Should_Complete_Successfully()
+    public async Task When_Publishing_With_Confirms_And_Ack_Received()
     {
         mockChannel.NextPublishSeqNo.Returns(1UL);
 
@@ -103,11 +104,13 @@ public class PublisherChannelTests
 
         var body = new byte[] { 1, 2, 3 };
 
-        await publisherChannel.PublishAsync(body, properties, "test-exchange", "test-routing-key", CancellationToken.None);
+        var action = () => publisherChannel.PublishAsync(body, properties, "test-exchange", "test-routing-key", TestContext.Current.CancellationToken);
+
+        await action.Should().NotThrowAsync("it should complete the publish once the broker acks it");
     }
 
     [Fact]
-    public async Task When_Publishing_With_Confirms_And_Nack_Received_Should_Throw()
+    public async Task When_Publishing_With_Confirms_And_Nack_Received()
     {
         mockChannel.NextPublishSeqNo.Returns(1UL);
 
@@ -138,13 +141,13 @@ public class PublisherChannelTests
 
         var body = new byte[] { 1, 2, 3 };
 
-        var action = () => publisherChannel.PublishAsync(body, properties, "test-exchange", "test-routing-key", CancellationToken.None);
+        var action = () => publisherChannel.PublishAsync(body, properties, "test-exchange", "test-routing-key", TestContext.Current.CancellationToken);
 
-        await action.Should().ThrowAsync<MessageQueueException>().WithMessage("*nacked*");
+        await action.Should().ThrowAsync<MessageQueueException>("it should fail the publish when the broker nacks it").WithMessage("*nacked*");
     }
 
     [Fact]
-    public async Task When_Confirm_Times_Out_Should_Throw()
+    public async Task When_Confirm_Times_Out()
     {
         mockChannel.NextPublishSeqNo.Returns(1UL);
 
@@ -159,13 +162,13 @@ public class PublisherChannelTests
 
         var body = new byte[] { 1, 2, 3 };
 
-        var action = () => publisherChannel.PublishAsync(body, properties, "test-exchange", "test-routing-key", CancellationToken.None);
+        var action = () => publisherChannel.PublishAsync(body, properties, "test-exchange", "test-routing-key", TestContext.Current.CancellationToken);
 
-        await action.Should().ThrowAsync<MessageQueueException>().WithMessage("*timed out*");
+        await action.Should().ThrowAsync<MessageQueueException>("it should fail the publish when no confirm arrives in time").WithMessage("*timed out*");
     }
 
     [Fact]
-    public async Task When_Cancellation_Requested_Should_Throw_OperationCanceledException()
+    public async Task When_Cancellation_Is_Requested()
     {
         mockChannel.NextPublishSeqNo.Returns(1UL);
 
@@ -185,11 +188,11 @@ public class PublisherChannelTests
 
         var action = () => publisherChannel.PublishAsync(body, properties, "test-exchange", "test-routing-key", cts.Token);
 
-        await action.Should().ThrowAsync<OperationCanceledException>();
+        await action.Should().ThrowAsync<OperationCanceledException>("it should honor the caller's cancellation");
     }
 
     [Fact]
-    public async Task When_Multiple_Ack_Received_Should_Complete_All_Pending()
+    public async Task When_Multiple_Ack_Received()
     {
         var seqNo = 0UL;
         mockChannel.NextPublishSeqNo.Returns(_ => ++seqNo);
@@ -209,19 +212,20 @@ public class PublisherChannelTests
 
         var body = new byte[] { 1, 2, 3 };
 
-        var task1 = publisherChannel.PublishAsync(body, properties, "ex", "rk", CancellationToken.None);
-        var task2 = publisherChannel.PublishAsync(body, properties, "ex", "rk", CancellationToken.None);
-        var task3 = publisherChannel.PublishAsync(body, properties, "ex", "rk", CancellationToken.None);
+        var task1 = publisherChannel.PublishAsync(body, properties, "ex", "rk", TestContext.Current.CancellationToken);
+        var task2 = publisherChannel.PublishAsync(body, properties, "ex", "rk", TestContext.Current.CancellationToken);
+        var task3 = publisherChannel.PublishAsync(body, properties, "ex", "rk", TestContext.Current.CancellationToken);
 
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
 
         ackHandler?.Invoke(mockChannel, new BasicAckEventArgs { DeliveryTag = 3UL, Multiple = true });
 
-        await Task.WhenAll(task1, task2, task3);
+        var action = () => Task.WhenAll(task1, task2, task3);
+        await action.Should().NotThrowAsync("it should complete every publish covered by a multiple ack");
     }
 
     [Fact]
-    public void When_Disposed_Should_Dispose_Channel()
+    public void When_Disposed()
     {
         var publisherChannel = new PublisherChannel(
             mockConnection,
@@ -235,7 +239,7 @@ public class PublisherChannelTests
     }
 
     [Fact]
-    public async Task When_Disposed_While_Pending_Should_Fail_Pending_Tasks()
+    public async Task When_Disposed_While_Confirms_Are_Pending()
     {
         mockChannel.NextPublishSeqNo.Returns(1UL);
 
@@ -250,19 +254,19 @@ public class PublisherChannelTests
 
         var body = new byte[] { 1, 2, 3 };
 
-        var publishTask = publisherChannel.PublishAsync(body, properties, "test-exchange", "test-routing-key", CancellationToken.None);
+        var publishTask = publisherChannel.PublishAsync(body, properties, "test-exchange", "test-routing-key", TestContext.Current.CancellationToken);
 
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
 
         publisherChannel.Dispose();
 
         var action = () => publishTask;
 
-        await action.Should().ThrowAsync<ObjectDisposedException>();
+        await action.Should().ThrowAsync<ObjectDisposedException>("it should fail publishes still waiting for a confirm");
     }
 
     [Fact]
-    public async Task When_Max_Outstanding_Confirms_Reached_Should_Block_Until_Confirmed()
+    public async Task When_Max_Outstanding_Confirms_Reached()
     {
         var seqNo = 0UL;
         mockChannel.NextPublishSeqNo.Returns(_ => ++seqNo);
@@ -282,18 +286,19 @@ public class PublisherChannelTests
 
         var body = new byte[] { 1, 2, 3 };
 
-        var task1 = publisherChannel.PublishAsync(body, properties, "ex", "rk", CancellationToken.None);
-        var task2 = publisherChannel.PublishAsync(body, properties, "ex", "rk", CancellationToken.None);
+        var task1 = publisherChannel.PublishAsync(body, properties, "ex", "rk", TestContext.Current.CancellationToken);
+        var task2 = publisherChannel.PublishAsync(body, properties, "ex", "rk", TestContext.Current.CancellationToken);
 
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
         var task3 = publisherChannel.PublishAsync(body, properties, "ex", "rk", cts.Token);
 
         var action = () => task3;
-        await action.Should().ThrowAsync<OperationCanceledException>();
+        await action.Should().ThrowAsync<OperationCanceledException>("it should block a publish beyond the outstanding-confirm limit");
 
         ackHandler?.Invoke(mockChannel, new BasicAckEventArgs { DeliveryTag = 2UL, Multiple = true });
-        await Task.WhenAll(task1, task2);
+        var confirmed = () => Task.WhenAll(task1, task2);
+        await confirmed.Should().NotThrowAsync("it should complete the publishes inside the limit once acked");
     }
 }

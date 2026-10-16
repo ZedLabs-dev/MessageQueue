@@ -1,6 +1,6 @@
 using ESE.MessageQueue.Abstractions;
 
-namespace ESE.MessageQueue.Tests;
+namespace ESE.MessageQueue.Tests.Abstractions;
 
 public class MockMessageQueue<T> : IMessageQueue<T> where T : class
 {

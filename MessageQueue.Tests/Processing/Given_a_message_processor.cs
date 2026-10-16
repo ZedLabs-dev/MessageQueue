@@ -1,10 +1,11 @@
+using AwesomeAssertions;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Processing;
-using FluentAssertions;
 
-namespace ESE.MessageQueue.Tests;
+namespace ESE.MessageQueue.Tests.Processing;
 
-public class MessageProcessorTests
+[Trait("Category", "Unit")]
+public class Given_a_message_processor
 {
     [Fact]
     public async Task When_Processing_Succeeds()
@@ -52,31 +53,5 @@ public class MessageProcessorTests
         var result = await processor.ProcessAsync(message, context);
 
         result.Should().Be(MessageResult.DeadLetter, "it should dead-letter after exceeding max retries");
-    }
-}
-
-public class TestMessageProcessor : IMessageProcessor<TestMessage>
-{
-    readonly bool shouldSucceed;
-    readonly bool isTransient;
-
-    public TestMessageProcessor(bool shouldSucceed, bool isTransient = false)
-    {
-        this.shouldSucceed = shouldSucceed;
-        this.isTransient = isTransient;
-    }
-
-    public Task<MessageResult> ProcessAsync(TestMessage message, MessageContext context)
-    {
-        if (context.DeliveryCount > 3)
-            return Task.FromResult(MessageResult.DeadLetter);
-
-        if (shouldSucceed)
-            return Task.FromResult(MessageResult.Acknowledge);
-
-        if (isTransient)
-            return Task.FromResult(MessageResult.Retry);
-
-        return Task.FromResult(MessageResult.DeadLetter);
     }
 }

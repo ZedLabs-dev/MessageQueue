@@ -1,14 +1,13 @@
-using ESE.MessageQueue.AzureServiceBus;
+using AwesomeAssertions;
 using ESE.MessageQueue.Exceptions;
 using ESE.MessageQueue.Extensions;
-using ESE.MessageQueue.RabbitMQ;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ESE.MessageQueue.Tests;
+namespace ESE.MessageQueue.Tests.Configuration;
 
-public class ConfigurationValidationTests
+[Trait("Category", "Unit")]
+public class Given_a_message_queue_configuration
 {
     [Fact]
     public void When_RabbitMQ_ConnectionString_Is_Empty()

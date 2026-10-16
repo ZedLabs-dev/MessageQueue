@@ -2,20 +2,28 @@
 
     <PropertyGroup>
         <IsPackable>false</IsPackable>
+        <!-- xunit.v3 test projects are executables. -->
+        <OutputType>Exe</OutputType>
+        <!--
+          Run through VSTest (Microsoft.NET.Test.Sdk + xunit.runner.visualstudio), not Microsoft Testing Platform:
+          keeps the VSTest `filter Category=Unit` syntax and the coverlet.collector data collector working on the .NET 10 SDK.
+        -->
+        <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
         <AssemblyName>ESE.MessageQueue.Tests</AssemblyName>
         <RootNamespace>ESE.MessageQueue.Tests</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="AwesomeAssertions" />
         <PackageReference Include="coverlet.collector" />
-        <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Microsoft.Extensions.Configuration" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
         <PackageReference Include="Microsoft.Extensions.Logging" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
         <PackageReference Include="NSubstitute" />
-        <PackageReference Include="xunit" />
+        <PackageReference Include="Testcontainers.RabbitMq" />
         <PackageReference Include="xunit.runner.visualstudio" />
+        <PackageReference Include="xunit.v3" />
     </ItemGroup>
 
     <ItemGroup>

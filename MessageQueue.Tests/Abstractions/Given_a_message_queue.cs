@@ -1,8 +1,9 @@
-using FluentAssertions;
+using AwesomeAssertions;
 
-namespace ESE.MessageQueue.Tests;
+namespace ESE.MessageQueue.Tests.Abstractions;
 
-public class MessageQueueTests
+[Trait("Category", "Unit")]
+public class Given_a_message_queue
 {
     readonly TestMessage testMessage = new("test-id", "test-content");
 
@@ -17,7 +18,7 @@ public class MessageQueueTests
     {
         var queue = new MockMessageQueue<TestMessage>();
 
-        await queue.PublishAsync(testMessage);
+        await queue.PublishAsync(testMessage, TestContext.Current.CancellationToken);
 
         queue.PublishedMessages.Should().ContainSingle("it should store exactly one message");
         queue.PublishedMessages.First().Should().Be(testMessage, "it should store the published message");
@@ -28,7 +29,7 @@ public class MessageQueueTests
     {
         var queue = new MockMessageQueue<TestMessage>();
 
-        await queue.PublishAsync(testMessages);
+        await queue.PublishAsync(testMessages, TestContext.Current.CancellationToken);
 
         queue.PublishedMessages.Should().HaveCount(2, "it should store all published messages");
     }
@@ -43,7 +44,7 @@ public class MessageQueueTests
         {
             processedMessages.Add(message);
             return Task.FromResult(true);
-        });
+        }, TestContext.Current.CancellationToken);
         await queue.SimulateMessageReceived(testMessage);
 
         processedMessages.Should().ContainSingle("it should process the received message");
@@ -60,8 +61,8 @@ public class MessageQueueTests
         {
             processedMessages.Add(message);
             return Task.FromResult(true);
-        });
-        await queue.UnsubscribeAsync();
+        }, TestContext.Current.CancellationToken);
+        await queue.UnsubscribeAsync(TestContext.Current.CancellationToken);
         await queue.SimulateMessageReceived(testMessage);
 
         processedMessages.Should().BeEmpty("it should not process messages after unsubscribing");
