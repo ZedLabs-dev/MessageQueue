@@ -12,8 +12,8 @@ public record AzureServiceBusConfig : MessageQueueConfig
     public bool EnableBatchedOperations { get; set; } = true;
     public int MaxBatchSize { get; set; } = 100;
     public TimeSpan BatchFlushInterval { get; set; } = TimeSpan.FromSeconds(1);
-    public bool EnablePartitioning { get; set; } = false;
-    public bool RequiresDuplicateDetection { get; set; } = false;
+    public bool EnablePartitioning { get; set; }
+    public bool RequiresDuplicateDetection { get; set; }
     public TimeSpan DuplicateDetectionHistoryTimeWindow { get; set; } = TimeSpan.FromMinutes(10);
     public string? TopicName { get; set; }
     public string? SubscriptionName { get; set; }

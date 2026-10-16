@@ -8,7 +8,7 @@ namespace ESE.MessageQueue.Serialization;
 /// <summary>
 /// Internal message serializer. Uses JSON by default, MessagePack for high-performance scenarios.
 /// </summary>
-internal static class MessageSerializer
+static class MessageSerializer
 {
     static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -17,8 +17,10 @@ internal static class MessageSerializer
     };
 
     // Use ContractlessStandardResolver so types don't need [MessagePackObject] attributes
-    static readonly MessagePackSerializerOptions MsgPackOptions =
-        MessagePackSerializerOptions.Standard.WithResolver(ContractlessStandardResolver.Instance);
+    internal static readonly MessagePackSerializerOptions MsgPackOptions =
+        MessagePackSerializerOptions.Standard
+            .WithResolver(ContractlessStandardResolver.Instance)
+            .WithSecurity(MessagePackSecurity.UntrustedData);
 
     public static byte[] Serialize<T>(T message, SerializationFormat format) where T : class
     {

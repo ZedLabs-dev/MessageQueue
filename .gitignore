@@ -19,3 +19,11 @@ bld/
 [Ll]og/
 [Ll]ogs/
 *.user
+
+# Local secrets for docker-compose (template: MessageQueue/.env.example)
+.env
+!.env.example
+
+# Coverage / test output
+TestResults/
+coverage/

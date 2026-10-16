@@ -12,7 +12,7 @@ public class MessageQueueUsageExample
     public static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddMessageQueue<OrderCreated>(configuration);
-        
+
         services.AddMessageProcessor<OrderCreated, OrderCreatedProcessor>();
         services.AddHostedService<MessageQueueHostedService<OrderCreated>>();
     }
@@ -33,9 +33,9 @@ public class OrderService
     {
         var orderId = Guid.NewGuid().ToString();
         var orderCreated = new OrderCreated(orderId, customerId, amount, DateTime.UtcNow);
-        
+
         await messageQueue.PublishAsync(orderCreated);
-        
+
         logger.LogInformation("Published OrderCreated event for order {OrderId}", orderId);
     }
 }

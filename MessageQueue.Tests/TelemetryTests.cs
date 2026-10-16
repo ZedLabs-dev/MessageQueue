@@ -9,6 +9,7 @@ using ESE.MessageQueue.Telemetry;
 using ESE.MessageQueue.Telemetry.OpenTelemetry;
 using ESE.MessageQueue.Testing;
 using FluentAssertions;
+using MessagePack;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -273,7 +274,7 @@ public class OpenTelemetryProviderTests
 
 public class MessageSerializerTests
 {
-    record TestMessage(string Id, string Name, int Value);
+    sealed record TestMessage(string Id, string Name, int Value);
 
     [Fact]
     public void When_Serializing_With_Json()
@@ -359,6 +360,61 @@ public class MessageSerializerTests
 
         msgpackBytes.Length.Should().BeLessThan(jsonBytes.Length, "it should produce smaller payloads than JSON");
     }
+
+    [Fact]
+    public void When_Configuring_MessagePack()
+    {
+        MessageSerializer.MsgPackOptions.Security.Should().BeSameAs(MessagePackSecurity.UntrustedData,
+            "it should treat broker payloads as untrusted data");
+    }
+
+    [Fact]
+    public void When_Deserializing_A_Deeply_Nested_MessagePack_Payload()
+    {
+        var hostilePayload = BuildNestedPayload(depth: 1_000);
+
+        var act = () => MessageSerializer.Deserialize<NestedNode>(hostilePayload, SerializationFormat.MessagePack);
+
+        act.Should().Throw<MessagePackSerializationException>(
+            "it should reject a hostile object graph instead of overflowing the stack");
+    }
+
+    [Fact]
+    public void When_Deserializing_A_MessagePack_Dictionary()
+    {
+        var original = new KeyedMessage { Counts = new Dictionary<string, int> { ["a"] = 1, ["b"] = 2 } };
+        var bytes = MessageSerializer.Serialize(original, SerializationFormat.MessagePack);
+
+        var result = MessageSerializer.Deserialize<KeyedMessage>(bytes, SerializationFormat.MessagePack);
+
+        result!.Counts.Should().BeEquivalentTo(original.Counts, "it should round-trip the dictionary");
+        result.Counts.Comparer.Should().NotBeSameAs(EqualityComparer<string>.Default,
+            "it should use a hash-collision resistant comparer for untrusted keys");
+    }
+
+    static byte[] BuildNestedPayload(int depth)
+    {
+        var childKey = "Child"u8.ToArray();
+        var payload = new List<byte>(depth * (2 + childKey.Length) + 1);
+        for (var i = 0; i < depth; i++)
+        {
+            payload.Add(0x81);
+            payload.Add((byte)(0xA0 | childKey.Length));
+            payload.AddRange(childKey);
+        }
+        payload.Add(0xC0);
+        return [.. payload];
+    }
+}
+
+public sealed class KeyedMessage
+{
+    public Dictionary<string, int> Counts { get; set; } = [];
+}
+
+public sealed class NestedNode
+{
+    public NestedNode? Child { get; set; }
 }
 
 public class RetryPolicyTests
@@ -627,7 +683,7 @@ public class HealthCheckTests
 
 public class InMemoryMessageQueueTests
 {
-    record TestMessage(string Id, string Content);
+    sealed record TestMessage(string Id, string Content);
 
     [Fact]
     public async Task When_Publishing_A_Single_Message()

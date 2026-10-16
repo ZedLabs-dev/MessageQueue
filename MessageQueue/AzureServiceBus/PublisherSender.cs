@@ -3,7 +3,7 @@ using ESE.MessageQueue.Exceptions;
 
 namespace ESE.MessageQueue.AzureServiceBus;
 
-internal sealed class PublisherSender : IAsyncDisposable
+sealed class PublisherSender : IAsyncDisposable
 {
     readonly ServiceBusSender sender;
     readonly SemaphoreSlim concurrencySemaphore;

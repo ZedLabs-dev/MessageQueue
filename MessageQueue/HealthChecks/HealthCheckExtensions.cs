@@ -8,6 +8,9 @@ namespace ESE.MessageQueue.HealthChecks;
 /// </summary>
 public static class HealthCheckExtensions
 {
+    static readonly string[] DefaultRabbitMqTags = ["messagequeue", "rabbitmq"];
+    static readonly string[] DefaultAzureServiceBusTags = ["messagequeue", "azureservicebus"];
+
     /// <summary>
     /// Adds a health check for a message queue.
     /// </summary>
@@ -42,7 +45,7 @@ public static class HealthCheckExtensions
             name,
             _ => new RabbitMqHealthCheck(connectionString),
             failureStatus,
-            tags ?? new[] { "messagequeue", "rabbitmq" },
+            tags ?? DefaultRabbitMqTags,
             timeout ?? TimeSpan.FromSeconds(5)));
     }
 
@@ -62,7 +65,7 @@ public static class HealthCheckExtensions
             name,
             _ => new AzureServiceBusHealthCheck(connectionString, queueName),
             failureStatus,
-            tags ?? new[] { "messagequeue", "azureservicebus" },
+            tags ?? DefaultAzureServiceBusTags,
             timeout ?? TimeSpan.FromSeconds(10)));
     }
 }

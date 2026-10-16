@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore (locked)
+        run: dotnet restore ESE.MessageQueue.sln --locked-mode
+
+      - name: Build
+        run: dotnet build ESE.MessageQueue.sln --no-restore --configuration Release -warnaserror
+
+      - name: Verify formatting
+        run: dotnet format ESE.MessageQueue.sln --no-restore --verify-no-changes --verbosity diagnostic
+
+      # Broker-backed tests still pass vacuously without a broker until Phase 3 (xunit.v3 real skips + Testcontainers).
+      - name: Test
+        run: >
+          dotnet test ESE.MessageQueue.sln --no-build --configuration Release
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults
+          --logger "trx;LogFileName=test-results.trx"
+
+      - name: Vulnerable package scan
+        if: always()
+        shell: bash  # bash -eo pipefail: a failing `dotnet list` fails the step despite the pipe to tee
+        run: |
+          dotnet list ESE.MessageQueue.sln package --vulnerable --include-transitive 2>&1 | tee vulnerable.txt
+          if grep -q '^ *>' vulnerable.txt; then
+            echo "::error::Vulnerable NuGet packages found"
+            exit 1
+          fi
+
+      - name: Upload test results and coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-and-coverage
+          path: TestResults/
+          if-no-files-found: warn

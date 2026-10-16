@@ -22,7 +22,7 @@ public record RabbitMqConfig : MessageQueueConfig
     public TimeSpan ConfirmTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     // Connection settings
-    public bool EnableClusterMode { get; set; } = false;
+    public bool EnableClusterMode { get; set; }
     public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(60);
     public TimeSpan NetworkRecoveryInterval { get; set; } = TimeSpan.FromSeconds(10);
 }

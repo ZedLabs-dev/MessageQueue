@@ -76,9 +76,9 @@ public class InMemoryMessageQueue<T> : IMessageQueue<T> where T : class
         }
     }
 
-    public Task SubscribeAsync(Func<T, Task<bool>> messageHandler, CancellationToken cancellationToken = default)
+    public Task SubscribeAsync(Func<T, Task<bool>> handler, CancellationToken cancellationToken = default)
     {
-        handler = messageHandler;
+        this.handler = handler;
         isSubscribed = true;
         return Task.CompletedTask;
     }

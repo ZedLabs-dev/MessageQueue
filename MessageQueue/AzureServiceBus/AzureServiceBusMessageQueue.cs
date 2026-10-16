@@ -194,27 +194,27 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDisposable wher
         }
     }
 
-    async Task HandleRetry(ProcessMessageEventArgs args, int deliveryCount, 
+    async Task HandleRetry(ProcessMessageEventArgs args, int deliveryCount,
         CancellationToken cancellationToken, Exception? exception = null)
     {
         if (deliveryCount >= config.RetryAttempts)
         {
             var reason = exception?.GetType().Name ?? "Processing failed";
             var description = exception?.Message ?? "Message processing failed after maximum retry attempts";
-            
+
             await args.DeadLetterMessageAsync(args.Message, reason, description, cancellationToken);
         }
         else
         {
             var delay = TimeSpan.FromSeconds(Math.Pow(2, deliveryCount - 1) * config.RetryDelay.TotalSeconds);
-            
+
             var properties = new Dictionary<string, object>
             {
                 ["RetryCount"] = deliveryCount,
                 ["NextRetryAt"] = DateTimeOffset.UtcNow.Add(delay).ToString("O"),
                 ["OriginalException"] = exception?.Message ?? "Processing failed"
             };
-            
+
             await args.AbandonMessageAsync(args.Message, properties, cancellationToken);
         }
     }

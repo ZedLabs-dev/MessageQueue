@@ -5,7 +5,7 @@ using RabbitMQ.Client.Events;
 
 namespace ESE.MessageQueue.RabbitMQ;
 
-internal sealed class PublisherChannel : IDisposable
+sealed class PublisherChannel : IDisposable
 {
     readonly IModel channel;
     readonly TimeSpan confirmTimeout;

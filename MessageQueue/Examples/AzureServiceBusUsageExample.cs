@@ -38,7 +38,7 @@ public class OrderCreatedProcessor : IMessageProcessor<OrderCreated>
         }
     }
 
-    async Task ProcessOrderLogic(OrderCreated order)
+    static async Task ProcessOrderLogic(OrderCreated order)
     {
         await Task.Delay(100);
     }

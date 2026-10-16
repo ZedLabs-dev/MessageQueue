@@ -1,6 +1,6 @@
 # ESE.MessageQueue — Optimization, Security & Agentic Workflow Plan
 
-Reviewed 2026-10-16 against `main` @ `846883c`. This plan complements [PRODUCTION-READINESS-PLAN.md](PRODUCTION-READINESS-PLAN.md) (the long-term backlog) and adopts the conventions in [messagequeue-refactoring-instructions.md](messagequeue-refactoring-instructions.md). Each phase below leaves the build green and can be done as its own PR.
+Reviewed 2026-10-16 against `main` @ `846883c`. This plan complements [PRODUCTION-READINESS-PLAN.md](PRODUCTION-READINESS-PLAN.md) (the long-term backlog) and adopts the conventions in [messagequeue-refactoring-instructions.md](messagequeue-refactoring-instructions.md). Each phase below leaves the build green and lands as one or more commits directly on `main` (owner's directive; no feature branches or worktrees).
 
 ---
 
@@ -246,7 +246,7 @@ Agents work best when the build itself rejects bad output:
   - `/release`: version bump, changelog, PublicAPI shipped/unshipped move.
 
 ### 6.4 CI/CD (`.github/workflows/`)
-- `ci.yml` on every PR:
+- `ci.yml` on every push to `main` (and on PRs, if PRs are ever adopted):
   - restore (locked)
   - `build -warnaserror`
   - `format --verify-no-changes`
@@ -257,26 +257,26 @@ Agents work best when the build itself rejects bad output:
 - `codeql.yml` (C#), weekly and on PR.
 - **Claude Code GitHub Action**: `@claude` on issues and PRs to implement backlog items, plus an automatic review pass (`/code-review` + `/security-review`) on each PR.
 - **Scheduled agent** (weekly routine): run `/update-packages` and open a PR. Dependabot covers the plain bumps; the agent handles majors that need code changes.
-- Branch protection on `main`: required CI checks and at least one human approval for agent-authored PRs.
+- *Optional, future:* branch protection on `main` with required CI checks and human approval for agent-authored PRs, if the owner moves from commits-on-main to a PR flow.
 - Release workflow: `dotnet pack` with SourceLink and deterministic builds, then push to the NuGet feed on tag.
 
 ---
 
 ## 7. Execution order
 
-Each phase is a separate PR with a green CI.
+Each phase lands as commits on `main` with a green CI. Claude Code hooks (`PostToolUse` format, `Stop` build+unit-test gate, §6.3) land in Phase 7, not Phase 1.
 
 | Phase | Scope | Exit criteria |
 |---|---|---|
-| **1. Guardrails & honest baseline** | `global.json`, `Directory.Build.props` (audit settings, but warnings not yet errors), CPM, `CLAUDE.md`, `.claude/settings.json`, CI skeleton, `.env` for the compose file and the real ASB emulator | CI runs; test counts are reported truthfully |
-| **2. Security patch, package diet & net10** | MessagePack 3.1.12 + `UntrustedData` (S1); remove the 6 unused packages and add Configuration.Binder plus the 3 test-project references (S2); minor bumps; **retarget to `net10.0`** with Microsoft.Extensions.* 10.0.x; **turn on `TreatWarningsAsErrors`** | 0 NU19xx warnings; vulnerable scan clean. Already proven on net9 in a scratch copy: build OK, 103/103 pass, scan clean. |
+| **1. Guardrails & honest baseline** — implemented 2026-10-16; exit criteria still open: CI has not run yet, and ~19 broker tests still pass vacuously until Phase 3. The ASB emulator compose is validated with `docker compose config` only (EULA left for the owner), and its predeclared entity names do not yet match the random queue names in `AzureServiceBusIntegrationTests`. | `global.json`, `Directory.Build.props` (audit settings, but warnings not yet errors), CPM, `CLAUDE.md`, `.claude/settings.json`, CI skeleton, `.env` for the compose file and the real ASB emulator | CI runs; test counts are reported truthfully |
+| **2. Security patch, package diet & net10** ✅ done 2026-10-16 (106/106 pass on net10 with RabbitMQ 4.3.6 running; vulnerable scan clean; S1 specs `When_Configuring_MessagePack` and `When_Deserializing_A_MessagePack_Dictionary` were seen failing without `UntrustedData`. The deep-nesting spec is a regression guard only: MessagePack enforces the 500-level depth limit even for `TrustedData`.) | MessagePack 3.1.12 + `UntrustedData` (S1); remove the 6 unused packages and add Configuration.Binder plus the 3 test-project references (S2); minor bumps; **retarget to `net10.0`** with Microsoft.Extensions.* 10.0.x; **turn on `TreatWarningsAsErrors`** | 0 NU19xx warnings; vulnerable scan clean. Already proven on net9 in a scratch copy: build OK, 103/103 pass, scan clean. |
 | **3. Test infrastructure** | xunit.v3, delete `Skip.cs`, Testcontainers, traits, split test files, coverage gate, FluentAssertions → AwesomeAssertions | No vacuous passes; integration tests run in CI |
 | **4. Bug fixes & provider model** | B1, B3–B7, B9–B14, each test-first; §3a (in-memory provider, shared retry pipeline, config split, resolving B16) | All new regression tests pass |
 | **5. RabbitMQ.Client 7 migration** | Async API, `IChannel`, native confirms, `AsyncEventingBasicConsumer`; delete `PublisherChannel` (fixes B2, B15) | Integration suite passes on RabbitMQ 4.x; benchmark at least matches 6.x |
 | **6. Hardening & perf** | S3–S10, §4 optimizations with benchmarks, telemetry wiring (B10) | Benchmarks recorded in `docs/benchmarks.md` |
 | **7. API lock** | PublicApiAnalyzers, XML docs, samples project, package metadata, `v1.0.0` | `PublicAPI.Shipped.txt` committed |
 
-Phases 1–3 make every later phase safe to hand to an agent. Phases 4, 5 and 6 split into independent tasks and can run as parallel agent sessions in separate worktrees.
+Phases 1–3 make every later phase safe to hand to an agent. Phases 4, 5 and 6 split into independent tasks that land as sequential commits on `main`.
 
 ---
 

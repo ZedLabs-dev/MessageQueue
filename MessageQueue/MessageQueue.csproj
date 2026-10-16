@@ -1,9 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net9.0</TargetFramework>
-        <Nullable>enable</Nullable>
-        <ImplicitUsings>enable</ImplicitUsings>
         <AssemblyName>ESE.MessageQueue</AssemblyName>
         <RootNamespace>ESE.MessageQueue</RootNamespace>
     </PropertyGroup>
@@ -13,43 +10,15 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
-        <PackageReference Include="MessagePack" Version="3.1.4" />
-        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.4" />
-        <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="9.0.4" />
-        <PackageReference Include="OpenTelemetry.Api" Version="1.14.0" />
-        <PackageReference Include="RabbitMQ.Client" Version="6.8.1" />
-
-        <!-- OpenTelemetry Dependencies -->
-        <PackageReference Include="OpenTelemetry" Version="1.7.0" />
-        <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.7.0" />
-        <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.6.0-rc.1" />
-        <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.7.0" />
+        <PackageReference Include="Azure.Messaging.ServiceBus" />
+        <PackageReference Include="MessagePack" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.Options" />
+        <PackageReference Include="RabbitMQ.Client" />
     </ItemGroup>
 
-    <ItemGroup>
-      <Compile Remove="MessageQueue.Tests\**" />
-      <Compile Remove="ClassLibrary1\**" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <EmbeddedResource Remove="MessageQueue.Tests\**" />
-      <EmbeddedResource Remove="ClassLibrary1\**" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <Content Remove="MessageQueue.Tests\**" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <None Remove="MessageQueue.Tests\**" />
-      <None Remove="ClassLibrary1\**" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <_ContentIncludedByDefault Remove="MessageQueue.Tests\obj\MessageQueue.Tests.csproj.nuget.dgspec.json" />
-      <_ContentIncludedByDefault Remove="MessageQueue.Tests\obj\project.assets.json" />
-      <_ContentIncludedByDefault Remove="MessageQueue.Tests\obj\project.packagespec.json" />
-    </ItemGroup>
-    
 </Project>

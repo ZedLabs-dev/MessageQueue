@@ -22,13 +22,13 @@ public class MessageQueueHostedService<T> : BackgroundService where T : class
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("Starting message queue hosted service for {MessageType}", typeof(T).Name);
-        
+
         try
         {
             using var scope = serviceProvider.CreateScope();
             var messageQueue = scope.ServiceProvider.GetRequiredService<IMessageQueue<T>>();
             var processor = scope.ServiceProvider.GetService<IMessageProcessor<T>>();
-            
+
             if (processor != null)
             {
                 await messageQueue.SubscribeAsync(async message =>
@@ -39,7 +39,7 @@ public class MessageQueueHostedService<T> : BackgroundService where T : class
                         Timestamp = DateTime.UtcNow,
                         DeliveryCount = 1
                     };
-                    
+
                     var result = await processor.ProcessAsync(message, context);
                     return result == MessageResult.Acknowledge;
                 }, stoppingToken);
@@ -48,7 +48,7 @@ public class MessageQueueHostedService<T> : BackgroundService where T : class
             {
                 logger.LogWarning("No message processor registered for {MessageType}", typeof(T).Name);
             }
-            
+
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }
         catch (OperationCanceledException)

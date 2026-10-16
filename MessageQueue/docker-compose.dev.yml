@@ -1,0 +1,73 @@
+# Local development brokers.
+#   cp MessageQueue/.env.example MessageQueue/.env   # then adjust values
+#   docker compose -f MessageQueue/docker-compose.dev.yml up -d                        # RabbitMQ only
+#   docker compose -f MessageQueue/docker-compose.dev.yml --profile servicebus up -d   # + ASB emulator
+# Compose reads MessageQueue/.env automatically (it sits next to this file).
+
+services:
+  rabbitmq-dev:
+    image: rabbitmq:4.3.6-management
+    container_name: rabbitmq-dev
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    volumes:
+      - rabbitmq_dev_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - dev_network
+
+  # Azure Service Bus emulator: https://learn.microsoft.com/azure/service-bus-messaging/overview-emulator
+  # Entities are not created at runtime; they are declared in servicebus-emulator-config.json.
+  # Connection string (from the host):
+  #   Endpoint=sb://localhost:${ASB_EMULATOR_AMQP_PORT};SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;
+  servicebus-emulator:
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:2.0.1
+    profiles: ["servicebus"]
+    container_name: servicebus-emulator-dev
+    restart: unless-stopped
+    ports:
+      # Host port differs from 5672 so it can run alongside RabbitMQ.
+      - "${ASB_EMULATOR_AMQP_PORT:-5673}:5672"
+      - "${ASB_EMULATOR_MANAGEMENT_PORT:-5300}:5300"
+    environment:
+      SQL_SERVER: servicebus-sql
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-}
+      ACCEPT_EULA: ${ACCEPT_EULA:-N}
+      SQL_WAIT_INTERVAL: ${SQL_WAIT_INTERVAL:-15}
+    volumes:
+      - ./servicebus-emulator-config.json:/ServiceBus_Emulator/ConfigFiles/Config.json:ro
+    depends_on:
+      - servicebus-sql
+    networks:
+      - dev_network
+
+  # SQL Server backing store required by the Service Bus emulator.
+  # Needs ACCEPT_EULA=Y and a policy-compliant MSSQL_SA_PASSWORD in MessageQueue/.env, or it exits on start.
+  # Image is amd64-only; on Apple Silicon it runs under Rosetta emulation (Docker Desktop).
+  servicebus-sql:
+    image: mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04
+    profiles: ["servicebus"]
+    platform: linux/amd64
+    container_name: servicebus-sql-dev
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: ${ACCEPT_EULA:-N}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-}
+    networks:
+      - dev_network
+
+volumes:
+  rabbitmq_dev_data:
+
+networks:
+  dev_network:
+    driver: bridge
