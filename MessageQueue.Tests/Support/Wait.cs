@@ -18,6 +18,15 @@ static class Wait
         }
     }
 
+    public static async Task UntilAsync(Func<Task<bool>> condition, TimeSpan timeout)
+    {
+        var elapsed = Stopwatch.StartNew();
+        while (!await condition() && elapsed.Elapsed < timeout)
+        {
+            await Task.Delay(50, TestContext.Current.CancellationToken);
+        }
+    }
+
     // For exact-count assertions: waits until at least `expected` items arrived, then keeps watching for
     // SettleTime (restarting whenever the count changes) so late duplicates are seen by the assertion.
     public static async Task ForCountAsync(Func<int> count, int expected, TimeSpan timeout)
@@ -30,6 +39,25 @@ static class Wait
         {
             await Task.Delay(50, TestContext.Current.CancellationToken);
             var current = count();
+            if (current != last)
+            {
+                last = current;
+                settled.Restart();
+            }
+        }
+    }
+
+    // ForCountAsync for counts that must be read asynchronously, such as a broker queue depth.
+    public static async Task ForCountAsync(Func<Task<int>> count, int expected, TimeSpan timeout)
+    {
+        await UntilAsync(async () => await count() >= expected, timeout);
+
+        var settled = Stopwatch.StartNew();
+        var last = await count();
+        while (settled.Elapsed < SettleTime)
+        {
+            await Task.Delay(50, TestContext.Current.CancellationToken);
+            var current = await count();
             if (current != last)
             {
                 last = current;

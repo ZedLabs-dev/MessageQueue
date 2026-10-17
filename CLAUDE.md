@@ -31,9 +31,9 @@ The compose file is for manual experiments only; the tests do not use it (see Te
 | Abstractions | `Abstractions/` | `IMessageQueue<T>` (= `IMessagePublisher<T>` + `IMessageSubscriber<T>` + `Capabilities`), `MessageContext`, `MessageResult`, `PublishOptions`, `MessageQueueCapabilities` |
 | Consumer pipeline | `Processing/` | internal `MessageDispatcher<T>` + `IDeliveryActions` transport seam (ADR 0004), `DeadLetterReasons`, `IMessageProcessor<T>` |
 | Configuration | `Configuration/`, `Extensions/` | `MessageQueueConfig` (portable base record), `MessageQueueProvider`, per-provider `IValidateOptions` validators, `ServiceCollectionExtensions.AddMessageQueue<T>` / `AddInMemoryMessageQueue<T>` |
-| Providers | `RabbitMQ/`, `AzureServiceBus/`, `InMemory/` | `RabbitMqMessageQueue<T>` + `PublisherChannel` pool; `AzureServiceBusMessageQueue<T>` + `PublisherSender` pool; `InMemoryMessageQueue<T>` (single-process, non-durable, ADR 0003) |
+| Providers | `RabbitMQ/`, `AzureServiceBus/`, `InMemory/` | `RabbitMqMessageQueue<T>` (RabbitMQ.Client 7, lazy async connect, `PublisherPool`, per-delay `RetryQueues`, `RabbitMqConnections` TLS rules; ADRs 0006–0008); `AzureServiceBusMessageQueue<T>` + `PublisherSender` pool; `InMemoryMessageQueue<T>` (single-process, non-durable, ADR 0003) |
 | Cross-cutting | `Serialization/`, `Retry/`, `Exceptions/` | `MessageSerializer` (JSON / MessagePack, `UntrustedData`), `RetryPolicy` + `RetryExecutor` (`MaxRetries` semantics, ADR 0001), `MessageQueueException` |
-| Hosting & ops | `Hosting/`, `HealthChecks/`, `Telemetry/` | `MessageQueueHostedService<T>` (DI scope per message), health checks per broker, `ITelemetryProvider` (`System.Diagnostics` Activity/Meter) |
+| Hosting & ops | `Hosting/`, `HealthChecks/`, `Telemetry/` | `MessageQueueHostedService<T>` (DI scope per message), health checks per broker (`AddRabbitMqHealthCheck<T>` reuses the queue's connection), `ITelemetryProvider` (`System.Diagnostics` Activity/Meter) |
 
 Abstractions never reference a broker SDK. Provider-specific settings live on the provider config
 (`RabbitMqConfig`, `AzureServiceBusConfig`, `InMemoryConfig`), not on the base (ADR 0002). Every provider consumes
@@ -83,9 +83,11 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
   `--collect:"XPlat Code Coverage"` working with plain `dotnet test`.
 - **RabbitMQ:** `Support/RabbitMqBrokerFixture` is an xunit collection fixture (`[Collection(RabbitMqCollection.Name)]`)
   that starts one `rabbitmq:4.3.6-management` container via Testcontainers for the whole run and hands tests its
-  connection string (Testcontainers supplies the credentials). It starts only when an integration test in that
+  connection string (Testcontainers supplies the credentials; test configs set `RequireTls = false`). It starts only when an integration test in that
   collection runs, so the unit loop never touches Docker. `Support/RabbitMqTestQueues` creates per-test queues and
-  deletes them (and their dead-letter queues and exchanges) in the test class's `IAsyncLifetime.DisposeAsync`.
+  deletes them (and their dead-letter queues, lazily created `{queue}.retry.*` queues and exchanges) in the test
+  class's `IAsyncLifetime.DisposeAsync`. RabbitMQ queues connect lazily: call `InitializeAsync` before asserting on
+  topology.
 - **Azure Service Bus:** integration tests run only when `MQ_ASB_CONNECTION_STRING` is set (a real namespace, or the
   emulator from the compose file after the owner accepts its EULA). They use the predeclared queue
   `integration-test-queue` from `MessageQueue/servicebus-emulator-config.json`; `MQ_ASB_QUEUE_NAME` overrides it.
@@ -120,7 +122,7 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
 - [ ] `dotnet build ESE.MessageQueue.sln -warnaserror` is clean.
 - [ ] `dotnet format ESE.MessageQueue.sln --verify-no-changes` passes.
 - [ ] `dotnet test` reports 0 failed and **0 vacuous passes**; skips appear as skips.
-- [ ] `scripts/coverage.sh` passes: line coverage of `ESE.MessageQueue` at or above the gate (73% since Phase 4,
+- [ ] `scripts/coverage.sh` passes: line coverage of `ESE.MessageQueue` at or above the gate (79% since Phase 5,
       ratcheted up toward 80%; never lower it).
 - [ ] Vulnerable-package scan reports none.
 - [ ] `CHANGELOG.md` Unreleased updated for any behavior or public-API change.

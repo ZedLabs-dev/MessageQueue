@@ -59,6 +59,8 @@ public class RabbitMqConfigValidator : IValidateOptions<RabbitMqConfig>
     public ValidateOptionsResult Validate(string? name, RabbitMqConfig options)
     {
         var errors = MessageQueueConfigRules.Validate(options);
+        errors.AddRange(RabbitMqConnections.Validate(options));
+        RabbitMqNames.Validate(options, errors);
 
         if (options.ConfirmTimeout <= TimeSpan.Zero)
             errors.Add("ConfirmTimeout must be > 0");
@@ -68,6 +70,9 @@ public class RabbitMqConfigValidator : IValidateOptions<RabbitMqConfig>
 
         if (options.NetworkRecoveryInterval <= TimeSpan.Zero)
             errors.Add("NetworkRecoveryInterval must be > 0");
+
+        if (options.ShutdownTimeout <= TimeSpan.Zero)
+            errors.Add("ShutdownTimeout must be > 0");
 
         return MessageQueueConfigRules.ToResult(errors);
     }

@@ -147,13 +147,13 @@ Both of the above plus `MessageQueueCapabilities Capabilities`:
 
 | Provider | `Durable` | `DeadLetter` | `DelayedRedelivery` |
 |---|---|---|---|
-| RabbitMQ | yes | yes (`{QueueName}.deadletter`) | no: retries currently wait in process, then are republished |
+| RabbitMQ | yes | yes (`{QueueName}.deadletter`) | yes: per-delay retry queues `{QueueName}.retry.{ms}` (ADR 0006) |
 | Azure Service Bus | yes | yes (`$deadletterqueue`) | no: retries are currently abandoned for immediate redelivery |
 | In-memory | **no** | yes (`DeadLetters`) | yes |
 
-**Interim:** the retry *count* behaves the same everywhere, but the backoff *delay* is honoured broker-side only by
-the in-memory provider today. RabbitMQ and Azure Service Bus log a startup warning when the retry policy has a
-backoff; broker-side delayed redelivery arrives with their provider rework.
+**Interim:** the retry *count* behaves the same everywhere, and RabbitMQ and in-memory honour the backoff *delay*
+without holding the message. Azure Service Bus logs a startup warning when the retry policy has a backoff;
+broker-side delayed redelivery arrives with its provider rework.
 
 ### `PublishOptions` Record
 
@@ -209,7 +209,7 @@ for every message, so scoped dependencies (a `DbContext`, say) live for one mess
 | SerializationFormat | `Json` / `MessagePack` | Json | Wire format |
 | EnableDeadLetterQueue | bool | true | When false, messages that would be dead-lettered are dropped with a warning |
 | MaxMessageSizeBytes | int | 1048576 | Larger bodies are dead-lettered (`MessageTooLarge`) without being deserialized |
-| MaxConcurrentCalls | int | 10 | Handlers running at once. Honoured by ASB and in-memory; RabbitMQ honours it after its provider rework (until then prefetch bounds concurrency) |
+| MaxConcurrentCalls | int | 10 | Handlers running at once (1..1000), on every provider. RabbitMQ: also bounded by `PrefetchCount` |
 
 ### `Retry` section
 
@@ -228,18 +228,52 @@ The default waits 2 + 4 + 8 + 16 + 30 ≈ 60 s across five retries, then dead-le
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| ConnectionString | string | (required) | `amqp://user:password@host:port/vhost` (`amqps://` for TLS) |
+| ConnectionString | string | (one endpoint form required) | `amqps://user:password@host:port/vhost` (`amqp://` only without TLS, see `RequireTls`) |
+| HostName / Port / UserName / Password / VirtualHost | string / int | empty / 0 (5672, or 5671 with TLS) | Alternative to `ConnectionString`; set exactly one of `ConnectionString` and `HostName`. `Password` is redacted from `ToString()` |
+| RequireTls | bool? | unset: false for `localhost`/`127.0.0.1`/`::1`, true for any other host | Plain `amqp://` (or `HostName` without `Tls:Enabled`) is rejected at startup when TLS is required |
+| Tls:Enabled | bool | false | TLS for the `HostName` form (`amqps://` enables it for a connection string) |
+| Tls:ServerName | string | the host | Name the server certificate must match |
+| Tls:AcceptablePolicyErrors | `SslPolicyErrors` flags | None | Certificate errors to accept; anything but `None` also needs `Tls:AllowInsecureCertificates = true` |
 | DeadLetterQueueName | string | `{QueueName}.deadletter` | Dead-letter queue |
-| UseQuorumQueues | bool | true | Quorum queues for replication |
+| UseQuorumQueues | bool | true | Quorum queues (main, dead-letter and retry queues) |
 | QuorumInitialGroupSize | int | 3 | Initial quorum group size |
-| PrefetchCount | int | 10 | Unacknowledged deliveries per consumer (1..65535) |
+| PrefetchCount | int | 10 | Unacknowledged deliveries per consumer (1..65535), applied to every queue type |
 | ExchangeName | string | QueueName | Exchange to publish to |
 | ExchangeType | string | "direct" | `direct`, `fanout`, `topic` or `headers` |
-| EnablePublisherConfirms | bool | true | Wait for broker confirms |
-| PublisherChannelPoolSize | int | 2 | Publisher channels (1..64) |
-| MaxOutstandingConfirms | int | 1000 | Pending confirms per channel (backpressure) |
-| ConfirmTimeout | TimeSpan | 30 seconds | Confirm timeout (> 0) |
+| EnablePublisherConfirms | bool | true | Wait for broker confirms on `PublishAsync` (retry and dead-letter copies are always confirmed) |
+| PublisherChannelPoolSize | int | 2 | Publisher channels (1..64), used round-robin |
+| MaxOutstandingConfirms | int | 1000 | Unconfirmed publishes per channel; further publishes wait (backpressure) |
+| ConfirmTimeout | TimeSpan | 30 seconds | Longest wait for capacity plus the confirm (> 0) |
+| ShutdownTimeout | TimeSpan | 30 seconds | Longest wait for running handlers on unsubscribe or dispose |
 | HeartbeatInterval / NetworkRecoveryInterval | TimeSpan | 60 s / 10 s | Connection settings |
+
+#### RabbitMQ behavior (RabbitMQ.Client 7; ADRs 0006–0008)
+
+- **Lazy connection.** Constructing the queue (or resolving it from DI) does not connect. The first publish,
+  subscribe or `InitializeAsync()` connects and declares the exchange and queues. A failure throws
+  `MessageQueueException` (without credentials) and the next call tries again. To fail fast, use
+  `await queue.InitializeAsync()` or `await RabbitMqMessageQueue.CreateAsync<T>(config)`.
+- **Broker-side backoff.** A retry is published, with a confirm, to `{QueueName}.retry.{ms}`, a durable queue with
+  that TTL that dead-letters back to the main queue; then the original is acked. Buckets follow the policy's
+  schedule, with at most three per step for jitter (14 for the default policy, 5 without jitter); custom calculators
+  are rounded to two significant digits. Retry queues are created on first use; classic ones expire when unused for
+  max(1 h, 4 x TTL), quorum ones never do (clean them up with an operator policy if needed). A deleted retry or dead-letter queue is declared again; persistent broker failures requeue the
+  delivery after a growing backoff.
+- **Dead letters** are published to the dead-letter queue with `x-ese-dead-letter-reason` (a `DeadLetterReasons`
+  code) and, for exceptions, `x-ese-dead-letter-detail` (the exception type). Then the original is acked.
+- **Attempts** come from the library's `x-delivery-attempt` header (honoured only on messages coming back from the
+  queue's retry queues) plus broker redeliveries: the redelivered flag adds 1, and on quorum queues
+  `x-delivery-count` adds every crash. A process that crashes mid-handler uses up an attempt.
+- **Headers**: `MessageContext.Headers` holds application headers only; `x-*` and trace headers are stripped.
+- **Unsubscribe/dispose** cancels the handlers' token and requeues their deliveries. Prefetched deliveries that
+  were never handled go back without using up an attempt. The call returns once nothing is in flight, or after
+  `ShutdownTimeout`; handlers still running after that can settle normally, and the channel closes after them.
+  `DisposeAsync` is bounded by `ShutdownTimeout` (plus 1 s for the close).
+  Calling it from inside a handler returns immediately. You can subscribe again afterwards.
+- **Malformed deliveries** (for example an out-of-range timestamp) are handled or dead-lettered as `DeliveryFailed`;
+  they never block the consumer.
+- **Batches** (`PublishAsync(IEnumerable<T>)`) publish everything, then await the confirms together. Order is not
+  guaranteed.
 
 ### Azure Service Bus settings (`AzureServiceBusConfig`)
 
@@ -260,8 +294,9 @@ definition, not to this library. Keep the entity's `MaxDeliveryCount` above `Ret
 
 ### Exception Types
 
-- `MessageQueueException`: publishing, subscribing or connection failures
-- `ConfigurationException`: a missing or unsupported `Provider`
+- `MessageQueueException`: publishing, subscribing or connection failures (RabbitMQ: on first use, see above)
+- `ConfigurationException`: a missing or unsupported `Provider`; RabbitMQ connection settings that break the TLS rules
+  when the queue connects
 - `OptionsValidationException` (Microsoft.Extensions.Options): invalid settings, raised at host start
 
 ### Retry Logic and Dead-lettering
@@ -280,7 +315,7 @@ never written to the broker. Reason codes are listed in `DeadLetterReasons`.
 ## Threading and Concurrency
 
 - Publishing is thread-safe; RabbitMQ and ASB use publisher pools.
-- One subscriber per queue instance. ASB and in-memory run up to `MaxConcurrentCalls` handlers at once.
+- One subscriber per queue instance. Every provider runs up to `MaxConcurrentCalls` handlers at once.
 - Handlers must be idempotent: delivery is at least once. Use `MessageContext.MessageId` to de-duplicate.
 
 ## Observability
@@ -289,4 +324,6 @@ never written to the broker. Reason codes are listed in `DeadLetterReasons`.
   Consume spans and the `messagequeue.messages.consumed|retried|deadlettered` counters come from the pipeline.
   Spans record `exception.type`; pass `recordExceptionDetails: true` to also record messages and stack traces.
 - Logging uses `Microsoft.Extensions.Logging` with source-generated `LoggerMessage` methods.
-- Health checks: `AddRabbitMqHealthCheck`, `AddAzureServiceBusHealthCheck`, `AddMessageQueueHealthCheck`.
+- Health checks: `AddRabbitMqHealthCheck<T>()` (reuses the registered RabbitMQ queue's connection),
+  `AddRabbitMqHealthCheck(connectionString)` (opens a connection per probe), `AddAzureServiceBusHealthCheck`,
+  `AddMessageQueueHealthCheck`. The RabbitMQ checks put no exception text, host or port in the result.

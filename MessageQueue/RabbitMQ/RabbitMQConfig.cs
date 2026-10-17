@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Net.Security;
 using System.Text;
 using ESE.MessageQueue.Configuration;
 
@@ -8,8 +9,25 @@ public record RabbitMqConfig : MessageQueueConfig
 {
     public override MessageQueueProvider Provider => MessageQueueProvider.RabbitMq;
 
-    [Required]
+    public static readonly TimeSpan DefaultShutdownTimeout = TimeSpan.FromSeconds(30);
+
     public string ConnectionString { get; set; } = string.Empty;
+
+    public string HostName { get; set; } = string.Empty;
+
+    [Range(0, 65535)]
+    public int Port { get; set; }
+
+    public string UserName { get; set; } = string.Empty;
+
+    public string Password { get; set; } = string.Empty;
+
+    public string VirtualHost { get; set; } = string.Empty;
+
+    public bool? RequireTls { get; set; }
+
+    [Required]
+    public RabbitMqTlsConfig Tls { get; set; } = new();
 
     public string DeadLetterQueueName { get; set; } = string.Empty;
 
@@ -36,15 +54,29 @@ public record RabbitMqConfig : MessageQueueConfig
 
     public TimeSpan ConfirmTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
-    public bool EnableClusterMode { get; set; }
+    public TimeSpan ShutdownTimeout { get; set; } = DefaultShutdownTimeout;
 
     public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(60);
 
     public TimeSpan NetworkRecoveryInterval { get; set; } = TimeSpan.FromSeconds(10);
 
     protected override bool PrintMembers(StringBuilder builder) =>
-        ConfigValidation.PrintMembers(this, builder, nameof(ConnectionString));
+        ConfigValidation.PrintMembers(this, builder, nameof(ConnectionString), nameof(Password));
+
+    // Test seam: shortens the retry queues' x-expires so expiry can be observed in seconds.
+    internal TimeSpan? RetryQueueExpiresOverride { get; init; }
 
     internal string EffectiveDeadLetterQueueName =>
         string.IsNullOrWhiteSpace(DeadLetterQueueName) ? $"{QueueName}.deadletter" : DeadLetterQueueName;
+}
+
+public record RabbitMqTlsConfig
+{
+    public bool Enabled { get; set; }
+
+    public string ServerName { get; set; } = string.Empty;
+
+    public SslPolicyErrors AcceptablePolicyErrors { get; set; } = SslPolicyErrors.None;
+
+    public bool AllowInsecureCertificates { get; set; }
 }

@@ -78,284 +78,66 @@ public static IServiceCollection AddMessageQueue<T>(
 
 ### RabbitMQ Implementation Deep Dive
 
-#### Connection Management
+RabbitMQ.Client 7 (async-only). Design records: ADR 0004 (dispatcher seam), 0006 (broker-side backoff),
+0007 (client 7 and lazy initialization), 0008 (TLS and consumer shutdown).
 
-```csharp
-public RabbitMQMessageQueue(MessageQueueConfig config)
-{
-    _config = config;
-    var factory = new ConnectionFactory { Uri = new Uri(config.ConnectionString) };
-    _connection = factory.CreateConnection();
+| Type (`RabbitMQ/`) | Role |
+|---|---|
+| `RabbitMqMessageQueue<T>` | Provider: lazy connection, topology, publish, subscribe, `IDeliveryActions` |
+| `RabbitMqMessageQueue.CreateAsync<T>` | Construct and connect in one call |
+| `PublisherPool` | Publisher channels with the client's confirm tracking, round-robin, `ConfirmTimeout`, nack/return mapping |
+| `RetryQueues` | Delay buckets (policy schedule steps, x3 for jitter; custom: two significant digits), retry queue names, arguments, `x-expires` |
+| `BatchPublisher` | Batch publish window; awaits every started publish |
+| `RabbitMqNames` | 255-byte name limits including derived queue names |
+| `RabbitMqConnections` | Endpoint/credential/TLS rules (`RequireTls`, `Tls`) and the `ConnectionFactory` built from them |
+| `RabbitMqConfig`, `RabbitMqTlsConfig` | Settings; validated by `RabbitMqConfigValidator` |
 
-    // Create publisher channel pool for concurrent publishing
-    var poolSize = Math.Max(1, config.PublisherChannelPoolSize);
-    _publisherChannels = new PublisherChannel[poolSize];
-    for (var i = 0; i < poolSize; i++)
-    {
-        _publisherChannels[i] = new PublisherChannel(
-            _connection,
-            config.EnablePublisherConfirms,
-            config.ConfirmTimeout,
-            config.MaxOutstandingConfirms / poolSize);
-    }
+#### Connection and topology
 
-    // Separate consumer channel for subscriptions
-    _consumerChannel = _connection.CreateModel();
+The constructor validates only. `ConnectAsync` (behind `InitializeAsync`, the first publish or subscribe, and the
+health probe) creates under a lock: one connection (automatic and topology recovery on), the publisher pool, and
+a confirmed pool for retry and dead-letter copies (the same pool when `EnablePublisherConfirms` is on). It also
+declares the exchange, the main queue, its binding and the dead-letter queue on a short-lived channel. Failures
+are not cached. They throw `MessageQueueException` with the exception type only (no client text, which can echo
+endpoints).
 
-    DeclareExchangeAndQueues();
-}
-```
+#### Publishing
 
-**Connection Strategy:**
-- Single persistent connection per queue instance
-- **Publisher channel pool** for concurrent publishing with backpressure
-- Separate consumer channel for message consumption
-- Automatic reconnection handled by RabbitMQ client
-- Connection disposal in finalizer
+`BasicPublishAsync` on a channel opened with `publisherConfirmationTrackingEnabled` completes when the broker
+confirms and throws `PublishException` on a nack or a mandatory return. `PublisherPool` picks channels with
+`RoundRobin.Next`, caps the wait at `ConfirmTimeout` and turns failures into `MessageQueueException`. Caller
+cancellation stays an `OperationCanceledException`. Each channel's `MaxOutstandingConfirms` is a
+`ConcurrencyLimiter` with an unbounded queue. Batches start every publish (bounded by the limiters) and await the
+confirms together.
 
-#### PublisherChannel Class (Internal)
+#### Consuming
 
-The `PublisherChannel` class manages async publisher confirms with backpressure control:
+A subscription owns a consumer channel created with `ConsumerDispatchConcurrency = MaxConcurrentCalls` and
+`BasicQos(PrefetchCount)` on every queue type. `AsyncEventingBasicConsumer.ReceivedAsync` hands each delivery to
+the shared `MessageDispatcher<T>` with `ea.Body` in place. The client returns its pooled buffer only after the
+awaited handler completes, and every action that reads the body (retry and dead-letter copies) runs inside it.
+`ToContext` maps the message id, correlation id and timestamp. It also maps the attempt: `x-delivery-attempt` +
+(`x-delivery-count` or 1 if redelivered) — plus application headers only.
 
-```csharp
-internal sealed class PublisherChannel : IDisposable
-{
-    readonly IModel channel;
-    readonly TimeSpan confirmTimeout;
-    readonly SemaphoreSlim outstandingConfirmsSemaphore;
-    readonly ConcurrentDictionary<ulong, TaskCompletionSource<bool>> pendingConfirms;
-    readonly object publishLock;
-    readonly bool enableConfirms;
-}
-```
+The delivery actions:
 
-**Purpose:**
-- Wraps a RabbitMQ channel with async publisher confirm tracking
-- Provides backpressure via `SemaphoreSlim` to limit outstanding confirms
-- Handles `BasicAcks`/`BasicNacks` events including the `Multiple` flag
-- Supports both confirmed and fire-and-forget publishing modes
+- `CompleteAsync`: ack.
+- `RescheduleAsync(delay, next)`: a copy goes to `{queue}.retry.{bucket}` (TTL = bucket, dead-letters back to the
+  queue), through the default exchange, mandatory and confirmed, with `x-delivery-attempt = next`. Then ack.
+- `DeadLetterAsync(reason)`: a copy goes to the dead-letter queue with `x-ese-dead-letter-reason` / `-detail`. Then
+  ack.
 
-**Key Design Decisions:**
-- `ConcurrentDictionary` for thread-safe tracking of pending confirms by sequence number
-- `TaskCompletionSource` with `RunContinuationsAsynchronously` to avoid deadlocks
-- Lock around publish to ensure sequence number and dictionary update are atomic
-- Timeout handling with linked cancellation tokens
-- Clean shutdown that fails all pending confirms
+Every delivery is settled exactly once (`Settlement`; a safety net requeues anything left unsettled). An unreadable
+delivery is dead-lettered as `DeliveryFailed`. If the stopping token cancels the handler it is nacked with requeue. A
+failed transport action requeues after a backoff (100 ms, doubling, at most 30 s) with a throttled error log.
 
-**Backpressure Mechanism:**
-```csharp
-public async Task PublishAsync(...)
-{
-    // Wait for available slot (backpressure)
-    await outstandingConfirmsSemaphore.WaitAsync(cancellationToken);
+#### Shutdown
 
-    try
-    {
-        // Publish and track
-        lock (publishLock)
-        {
-            seqNo = channel.NextPublishSeqNo;
-            pendingConfirms[seqNo] = tcs;
-            channel.BasicPublish(...);
-        }
-
-        // Wait for confirm with timeout
-        var confirmed = await tcs.Task.WaitAsync(timeoutCts.Token);
-    }
-    finally
-    {
-        outstandingConfirmsSemaphore.Release();
-    }
-}
-```
-
-**Confirm Handling:**
-```csharp
-void HandleConfirmation(ulong deliveryTag, bool multiple, bool confirmed)
-{
-    if (multiple)
-    {
-        // Ack/Nack all messages up to and including deliveryTag
-        var keysToRemove = pendingConfirms.Keys.Where(k => k <= deliveryTag);
-        foreach (var key in keysToRemove)
-        {
-            if (pendingConfirms.TryRemove(key, out var tcs))
-                tcs.TrySetResult(confirmed);
-        }
-    }
-    else
-    {
-        if (pendingConfirms.TryRemove(deliveryTag, out var tcs))
-            tcs.TrySetResult(confirmed);
-    }
-}
-```
-
-#### Exchange-Based Publishing
-
-The RabbitMQ implementation now uses exchange-based publishing for flexibility:
-
-```csharp
-private void DeclareExchangeAndQueues()
-{
-    // Declare exchange (default: direct exchange named after queue)
-    var exchangeName = config.ExchangeName ?? config.QueueName;
-    var exchangeType = config.ExchangeType ?? "direct";
-
-    _channel.ExchangeDeclare(exchangeName, exchangeType, durable: true);
-
-    // Declare queue and bind to exchange
-    _channel.QueueDeclare(_queueName, durable: true, ...);
-    _channel.QueueBind(_queueName, exchangeName, routingKey: _queueName);
-}
-```
-
-**Benefits:**
-- Decouples publishers from queue names
-- Enables topic/fanout routing patterns
-- Supports multiple queues bound to same exchange
-- Allows routing key-based message filtering
-
-#### Queue Declaration Logic
-
-The queue declaration logic handles both classic and quorum queues:
-
-```csharp
-private void DeclareQueues()
-{
-    var queueArgs = new Dictionary<string, object>();
-    
-    if (_config.UseQuorumQueues)
-    {
-        queueArgs.Add("x-queue-type", "quorum");
-        queueArgs.Add("x-quorum-initial-group-size", _config.QuorumInitialGroupSize);
-        queueArgs.Add("x-overflow", "reject-publish");
-    }
-    
-    if (_config.EnableDeadLetterQueue)
-    {
-        // Declare dead letter queue first
-        _channel.QueueDeclare(_deadLetterQueueName, durable: true, ...);
-        
-        // Configure main queue to route to dead letter
-        queueArgs.Add("x-dead-letter-exchange", "");
-        queueArgs.Add("x-dead-letter-routing-key", _deadLetterQueueName);
-    }
-    
-    _channel.QueueDeclare(_queueName, durable: true, exclusive: false, 
-        autoDelete: false, arguments: queueArgs);
-}
-```
-
-**Queue Configuration Strategy:**
-- Durable queues survive broker restarts
-- Non-exclusive allows multiple consumers
-- Auto-delete disabled for persistence
-- Dead letter routing configured at queue level
-
-#### Message Serialization
-
-```csharp
-public Task PublishAsync(T message, CancellationToken cancellationToken = default)
-{
-    var json = JsonSerializer.Serialize(message);
-    var body = Encoding.UTF8.GetBytes(json);
-    
-    var properties = _channel.CreateBasicProperties();
-    properties.Persistent = true;
-    properties.MessageId = Guid.NewGuid().ToString();
-    properties.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-    
-    _channel.BasicPublish("", _queueName, properties, body);
-}
-```
-
-**Serialization Decisions:**
-- System.Text.Json for performance and .NET integration
-- UTF-8 encoding for international character support
-- Message properties include ID and timestamp for tracing
-- Persistent delivery mode for durability
-
-#### Consumer Implementation
-
-```csharp
-public Task SubscribeAsync(Func<T, Task<bool>> handler, CancellationToken cancellationToken = default)
-{
-    _consumer = new EventingBasicConsumer(_channel);
-    
-    if (_config.UseQuorumQueues)
-    {
-        _channel.BasicQos(prefetchSize: 0, prefetchCount: 10, global: false);
-    }
-    
-    _consumer.Received += async (model, ea) =>
-    {
-        var body = ea.Body.ToArray();
-        var json = Encoding.UTF8.GetString(body);
-        var deliveryCount = GetDeliveryCount(ea.BasicProperties);
-        
-        try
-        {
-            var message = JsonSerializer.Deserialize<T>(json);
-            var success = await handler(message);
-            
-            if (success)
-            {
-                _channel.BasicAck(ea.DeliveryTag, false);
-            }
-            else
-            {
-                HandleRetry(ea, deliveryCount);
-            }
-        }
-        catch (Exception)
-        {
-            HandleRetry(ea, deliveryCount);
-        }
-    };
-    
-    _channel.BasicConsume(_queueName, autoAck: false, consumer: _consumer);
-}
-```
-
-**Consumer Design:**
-- Event-driven message processing
-- Manual acknowledgment for reliability
-- Prefetch count optimization for quorum queues
-- Exception handling with retry logic
-
-### Retry Mechanism
-
-The retry mechanism implements exponential backoff with dead letter routing:
-
-```csharp
-private void HandleRetry(BasicDeliverEventArgs ea, int deliveryCount)
-{
-    if (deliveryCount >= _config.RetryAttempts)
-    {
-        // Send to dead letter queue
-        if (_config.UseQuorumQueues)
-        {
-            _channel.BasicReject(ea.DeliveryTag, false);
-        }
-        else
-        {
-            _channel.BasicNack(ea.DeliveryTag, false, false);
-        }
-    }
-    else
-    {
-        // Requeue for retry
-        _channel.BasicNack(ea.DeliveryTag, false, true);
-    }
-}
-```
-
-**Retry Strategy:**
-- Delivery count tracked in message headers
-- Reject vs Nack optimization for quorum queues
-- Dead letter routing after max attempts
-- No explicit delay (relies on queue redelivery)
+`UnsubscribeAsync`/`DisposeAsync`: cancel the subscription token, then `BasicCancelAsync`, then wait until nothing is
+in flight (with a 100 ms quiet period), at most `ShutdownTimeout`. Cancelled handlers nack with requeue. Deliveries
+arriving after the stop return through `{queue}.retry.0` with their attempt unchanged. On timeout the call returns,
+and a background task closes the channel once the late handlers have settled. An AsyncLocal marks the running
+handler, so a call from inside one runs the shutdown in the background. A new `SubscribeAsync` opens a new channel.
 
 ### Message Processing Pipeline
 
@@ -444,7 +226,7 @@ internal sealed class PublisherSender : IAsyncDisposable
 - Supports both single message and batch sends
 
 **Key Design Decisions:**
-- Simpler than RabbitMQ's `PublisherChannel` because Azure Service Bus handles confirms internally
+- Like RabbitMQ's `PublisherPool`, confirms are handled by the SDK; the pool only bounds concurrency
 - `SendMessageAsync` returns when the message is accepted by the broker
 - Backpressure prevents overwhelming the service with too many concurrent requests
 - Timeout handling prevents indefinite waits on network issues
@@ -523,7 +305,8 @@ public void Dispose()
 ```
 
 **Resource Management:**
-- Explicit disposal of RabbitMQ resources
+- Explicit disposal of RabbitMQ resources (the RabbitMQ provider is async: `DisposeAsync` closes the consumer
+  channel, publisher channels and connection; `Dispose` blocks on it)
 - Finalizer pattern for cleanup
 - Channel and connection lifecycle management
 
@@ -573,7 +356,8 @@ public class TransientMessageException : MessageQueueException
 
 ### Failure Scenarios
 
-1. **Connection Failures**: Automatic reconnection by RabbitMQ client
+1. **Connection Failures**: Automatic reconnection by RabbitMQ client; RabbitMQ connects lazily and retries the
+   initial connection on the next call
 2. **Serialization Failures**: Immediate dead letter routing
 3. **Processing Failures**: Retry with exponential backoff
 4. **Queue Declaration Failures**: Startup exception with clear message

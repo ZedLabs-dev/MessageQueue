@@ -6,6 +6,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### RabbitMQ provider on RabbitMQ.Client 7 (OPTIMIZATION-PLAN Phase 5: B1–B4, B15, S7, S10, §4.2)
+
+Design records: `docs/adr/0006`–`0008`.
+
+#### Breaking
+- RabbitMQ.Client 6.8.1 → 7.2.2 (async-only API). Apps that reference RabbitMQ.Client themselves must move to 7.x.
+- `RabbitMqMessageQueue<T>` no longer connects in its constructor. It connects, and declares its exchange and queues,
+  on the first `PublishAsync`/`SubscribeAsync` or on the new `InitializeAsync(CancellationToken)`. New
+  `RabbitMqMessageQueue.CreateAsync<T>(config, telemetry, logger, cancellationToken)` constructs and connects in one
+  call. Connection failures surface there as `MessageQueueException`, whose message names only the exception type
+  (no client text, no credentials). A failed connect is retried on the next call.
+- TLS is required by default for any host other than `localhost`/`127.0.0.1`/`::1` (S7): a plain `amqp://`
+  connection string to a remote host now fails validation at startup and in the constructor. Use `amqps://` or set
+  the new `RequireTls = false`. Connect-time re-checks throw `ConfigurationException`.
+- `RabbitMqConfig.ConnectionString` is no longer `[Required]` alone: exactly one of `ConnectionString` or the new
+  `HostName` must be set. `ConnectionString` must be an absolute `amqp://`/`amqps://` URI.
+- Retries are no longer waited out in process: they are published to per-delay retry queues
+  `{QueueName}.retry.{ms}` (declared on first use, same queue type as the main queue) and come back to the main
+  queue when their TTL expires. `Capabilities.DelayedRedelivery` is now `true`. Delete the retry queues together
+  with the main queue.
+- Dead letters are published by the library to the dead-letter queue, with headers `x-ese-dead-letter-reason`
+  (a `DeadLetterReasons` code) and `x-ese-dead-letter-detail` (exception type), then the original is acked. Before,
+  the original was nacked into the broker DLX without a reason. The main queue's DLX arguments are unchanged.
+- `MessageContext.DeliveryAttempt` now also counts broker redeliveries (`x-delivery-count` on quorum queues, the
+  redelivered flag on classic queues). A delivery interrupted by a crash or by `UnsubscribeAsync` uses up an attempt.
+- `MessageContext.Headers` no longer contains broker or library headers (`x-*`, `traceparent`, `tracestate`).
+- `PrefetchCount` now applies to classic queues too (it applied only to quorum queues). `MaxConcurrentCalls` now
+  bounds concurrent RabbitMQ handlers (it was ignored).
+- `RabbitMqMessageQueue<T>.Dispose()` blocks on `DisposeAsync()`; prefer `DisposeAsync`.
+- Removed the unused `RabbitMqConfig.EnableClusterMode` (it was never read).
+- `QueueName` is limited to 240 UTF-8 bytes, and `DeadLetterQueueName` and `ExchangeName` to 255. This leaves room for
+  the derived `.retry.{ms}` and `.deadletter` queues.
+- `UnsubscribeAsync` returns after `ShutdownTimeout` (or when its token is cancelled) even if handlers are still
+  running; they can still settle, and the channel closes once they finish. `DisposeAsync` waits one
+  `ShutdownTimeout` for all handlers, then closes the connection (at most 1 s more), requeueing what is unsettled.
+- `RabbitMqHealthCheck(connectionString)` applies the queue's TLS rules: plain `amqp://` to a non-local host is
+  reported Unhealthy unless the new `requireTls: false` is passed (constructor and `AddRabbitMqHealthCheck`).
+- After a failed connection, the next attempts back off (1 s, doubling, at most 30 s); calls in between fail fast
+  with `MessageQueueException`.
+- Retry queues now follow the retry policy's schedule (at most three per step for jitter; 14 for the default policy)
+  and, when classic, expire when unused (`x-expires`, at least one hour; quorum retry queues never expire, because
+  RabbitMQ 4.3.6 does not reset a quorum queue's expiry on redeclare). Zero-delay retries go through `{QueueName}.retry.0`.
+- A publisher can no longer set the attempt: `x-delivery-attempt` is honoured only on messages coming back from the
+  queue's retry queues, and `x-delivery-count` only on broker redeliveries from quorum queues.
+- Removed the internal `PublisherChannel` (custom confirm tracking, B15); confirms are tracked by RabbitMQ.Client.
+
+#### Added
+- `RabbitMqConfig`: `RequireTls` (`bool?`), `Tls` (`Enabled`, `ServerName`, `AcceptablePolicyErrors`,
+  `AllowInsecureCertificates`; accepting certificate errors requires `AllowInsecureCertificates = true`),
+  `HostName`/`Port`/`UserName`/`Password`/`VirtualHost` as an alternative to `ConnectionString` (`Password` is
+  redacted from `ToString()`), `ShutdownTimeout` (default 30 s).
+- New public record `RabbitMqTlsConfig`; new static class `RabbitMqMessageQueue` (factory).
+- `AddRabbitMqHealthCheck<T>()` reuses the registered RabbitMQ queue's connection. It also reports Unhealthy when the subscribed consumer's
+  channel is closed or the broker cancelled the consumer.
+- A startup warning when `MaxConcurrentCalls` is above `PrefetchCount`.
+
+#### Fixed
+- B1: publisher channels are picked with the shared overflow-safe `RoundRobin` helper.
+- B2: the consumer uses `AsyncEventingBasicConsumer`; handlers are awaited (no `async void`) and settle on a
+  channel that is safe for concurrent use.
+- B3: retries follow `RetryPolicy` with real, broker-side backoff; the original is acked only after the retry copy
+  is confirmed, so a retry is neither lost nor duplicated (barring a crash between the two).
+- B4: `BasicQos(PrefetchCount)` is applied to every queue type.
+- B15: no custom sequence-number tracking left to collide after recovery.
+- Unsubscribe requeues deliveries whose handlers were cancelled, waits up to `ShutdownTimeout`, and closes the
+  consumer channel, so the messages are redelivered and a later `SubscribeAsync` works.
+- Batch `PublishAsync(IEnumerable<T>)` publishes all messages, then awaits their confirms together (§4.2), instead
+  of one round trip per message. Publishes beyond `MaxOutstandingConfirms` wait instead of failing.
+- S5 (RabbitMQ): `RabbitMqHealthCheck` puts no exception text, host or port in its result data or description,
+  and no longer blocks a thread while it connects.
+- A malformed delivery (such as an out-of-range timestamp) is settled: it is handled, or dead-lettered as
+  `DeliveryFailed`. Before, it could stay unacknowledged and block the consumer.
+- Retry or dead-letter queues deleted at runtime are declared again (only on an explicit nack or return; a confirm
+  timeout is not republished). Persistent transport failures requeue after a per-message backoff (100 ms, doubling,
+  at most 30 s, cut short by unsubscribe) with a throttled error log, instead of a hot loop.
+- Unsubscribe or dispose called from inside a handler no longer deadlocks (tasks a handler spawns are not treated
+  as the handler once it returned). Deliveries the client had prefetched but
+  not handled at shutdown go back without using up an attempt.
+- Cancelling a batch publish waits for the publishes already started, so none fails unobserved.
+- The consumer no longer copies the message body: RabbitMQ.Client 7 keeps it valid until the awaited handler
+  completes, and the size limit is checked first.
+
 ### Provider-agnostic core (OPTIMIZATION-PLAN Phase 4: §3a, B9, B11–B14, S9, §4.1)
 
 Design records: `docs/adr/0001`–`0004`. Pre-v1, so these breaking changes ship without a deprecation period.

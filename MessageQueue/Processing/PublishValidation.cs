@@ -47,7 +47,8 @@ static class PublishValidation
         ArgumentNullException.ThrowIfNull(messages);
     }
 
-    static bool IsReserved(string name) =>
+    // Also used on consume, to keep broker and library headers out of MessageContext.Headers.
+    public static bool IsReserved(string name) =>
         name.StartsWith(ReservedPrefix, StringComparison.OrdinalIgnoreCase)
         || ReservedNames.Contains(name.Trim(), StringComparer.OrdinalIgnoreCase);
 }

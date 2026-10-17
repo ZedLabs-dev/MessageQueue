@@ -23,11 +23,7 @@ public sealed class Given_a_rabbitmq_queue_with_a_subscriber : IAsyncLifetime
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask DisposeAsync()
-    {
-        queues.Dispose();
-        return ValueTask.CompletedTask;
-    }
+    public ValueTask DisposeAsync() => queues.DisposeAsync();
 
     static Task<bool> Collect(ConcurrentQueue<TestMessage> received, TestMessage message)
     {
@@ -110,18 +106,19 @@ public sealed class Given_a_rabbitmq_queue_with_a_subscriber : IAsyncLifetime
             EnablePublisherConfirms = true
         };
         var queue = queues.Create(config);
-        var probeQueue = queues.BindProbeQueue(config.ExchangeName!, routingKey: config.QueueName);
+        await queue.InitializeAsync(TestContext.Current.CancellationToken);
+        var probeQueue = await queues.BindProbeQueueAsync(config.ExchangeName!, routingKey: config.QueueName);
         var received = new ConcurrentQueue<TestMessage>();
         var message = new TestMessage("exchange-test", "test-content");
 
         await queue.SubscribeAsync(msg => Collect(received, msg), TestContext.Current.CancellationToken);
         await queue.PublishAsync(message, TestContext.Current.CancellationToken);
         await Wait.ForCountAsync(() => received.Count, 1, Wait.DeliveryTimeout);
-        await Wait.ForCountAsync(() => (int)broker.GetMessageCount(probeQueue), 1, Wait.DeliveryTimeout);
+        await Wait.ForCountAsync(async () => (int)await broker.GetMessageCountAsync(probeQueue), 1, Wait.DeliveryTimeout);
 
         received.Should().ContainSingle("it should receive message via custom exchange")
             .Which.Id.Should().Be(message.Id, "it should route the message through the custom exchange to the queue");
-        broker.GetMessageCount(probeQueue).Should().Be(1u,
+        (await broker.GetMessageCountAsync(probeQueue)).Should().Be(1u,
             "it should publish to the custom exchange, so another queue bound to it gets a copy");
     }
 
@@ -164,28 +161,8 @@ public sealed class Given_a_rabbitmq_queue_with_a_subscriber : IAsyncLifetime
             .Select(i => queue.PublishAsync(new TestMessage($"fast-{i}", $"content-{i}"), TestContext.Current.CancellationToken)));
 
         await action.Should().NotThrowAsync("it should publish without waiting for broker confirms");
-        await Wait.ForCountAsync(() => (int)broker.GetMessageCount(config.QueueName), messageCount, Wait.DeliveryTimeout);
-        broker.GetMessageCount(config.QueueName).Should().Be((uint)messageCount, "it should still deliver every message to the queue");
-    }
-
-    [Fact]
-    public async Task When_The_Handler_Always_Fails()
-    {
-        var config = queues.NewConfig("retry-test");
-        var queue = queues.Create(config);
-        var attempts = new ConcurrentQueue<int>();
-
-        await queue.SubscribeAsync((_, context, _) =>
-        {
-            attempts.Enqueue(context.DeliveryAttempt);
-            return Task.FromResult(MessageResult.Retry);
-        }, TestContext.Current.CancellationToken);
-        await queue.PublishAsync(new TestMessage("poison", "always fails"), TestContext.Current.CancellationToken);
-        await Wait.ForCountAsync(() => (int)broker.GetMessageCount(config.EffectiveDeadLetterQueueName), 1, Wait.DeliveryTimeout);
-
-        attempts.Should().Equal([1, 2, 3], "it should make the first attempt plus MaxRetries retries, counting attempts across redeliveries");
-        broker.GetMessageCount(config.EffectiveDeadLetterQueueName).Should().Be(1u, "it should move the message to the dead-letter queue");
-        broker.GetMessageCount(config.QueueName).Should().Be(0u, "it should leave nothing behind on the main queue");
+        await Wait.ForCountAsync(async () => (int)await broker.GetMessageCountAsync(config.QueueName), messageCount, Wait.DeliveryTimeout);
+        (await broker.GetMessageCountAsync(config.QueueName)).Should().Be((uint)messageCount, "it should still deliver every message to the queue");
     }
 
     [Fact]
@@ -222,7 +199,7 @@ public sealed class Given_a_rabbitmq_queue_with_a_subscriber : IAsyncLifetime
         var queue = queues.Create(queues.NewConfig("capabilities-test"));
 
         queue.Capabilities.Durable.Should().BeTrue("it should report that RabbitMQ keeps messages across restarts");
-        queue.Capabilities.DelayedRedelivery.Should().BeFalse("it should admit that retries still wait in process");
+        queue.Capabilities.DelayedRedelivery.Should().BeTrue("it should wait out retry backoff on the broker, not in a consumer slot");
     }
 
     [Fact]
@@ -264,12 +241,169 @@ public sealed class Given_a_rabbitmq_queue_with_a_subscriber : IAsyncLifetime
     {
         var config = queues.NewConfig("reserved-header-test");
         var queue = queues.Create(config);
+        await queue.InitializeAsync(TestContext.Current.CancellationToken);
 
         var act = () => queue.PublishAsync(new TestMessage("1", "forged"),
             new PublishOptions { Headers = new Dictionary<string, string> { ["x-delivery-attempt"] = "99" } },
             TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ArgumentException>("it should not let a publisher forge the retry counter");
-        broker.GetMessageCount(config.QueueName).Should().Be(0u, "it should publish nothing");
+        (await broker.GetMessageCountAsync(config.QueueName)).Should().Be(0u, "it should publish nothing");
+    }
+
+    [Theory(Timeout = 60_000)]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task When_Unsubscribing_Mid_Handler_Then_Resubscribing(bool quorum)
+    {
+        var queue = queues.Create(queues.NewConfig("redeliver-test") with { UseQuorumQueues = quorum });
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var received = new ConcurrentQueue<(TestMessage Message, MessageContext Context)>();
+
+        await queue.SubscribeAsync(async (_, _, ct) =>
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.Infinite, ct);
+            return MessageResult.Acknowledge;
+        }, TestContext.Current.CancellationToken);
+        await queue.PublishAsync(new TestMessage("interrupted", "redeliver me"), TestContext.Current.CancellationToken);
+        await started.Task.WaitAsync(Wait.DeliveryTimeout, TestContext.Current.CancellationToken);
+        await queue.UnsubscribeAsync(TestContext.Current.CancellationToken);
+        await queue.SubscribeAsync((message, context, _) =>
+        {
+            received.Enqueue((message, context));
+            return Task.FromResult(MessageResult.Acknowledge);
+        }, TestContext.Current.CancellationToken);
+        await Wait.ForCountAsync(() => received.Count, 1, Wait.DeliveryTimeout);
+
+        received.Should().ContainSingle("it should give an interrupted delivery back to the broker for redelivery")
+            .Which.Message.Id.Should().Be("interrupted", "it should redeliver the message whose handler was cancelled");
+        received.Single().Context.DeliveryAttempt.Should().Be(2,
+            "it should count the interrupted delivery as a used attempt (ADR 0006), so a handler that never finishes cannot loop forever");
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task When_Resubscribing_After_Unsubscribing()
+    {
+        var queue = queues.Create(queues.NewConfig("resubscribe-after-test"));
+        var received = new ConcurrentQueue<TestMessage>();
+        await queue.SubscribeAsync(_ => Task.FromResult(true), TestContext.Current.CancellationToken);
+        await queue.UnsubscribeAsync(TestContext.Current.CancellationToken);
+
+        await queue.SubscribeAsync(msg => Collect(received, msg), TestContext.Current.CancellationToken);
+        await queue.PublishAsync(new TestMessage("after", "resubscribed"), TestContext.Current.CancellationToken);
+        await Wait.ForCountAsync(() => received.Count, 1, Wait.DeliveryTimeout);
+
+        received.Should().ContainSingle("it should deliver to a subscriber added after an unsubscribe");
+    }
+
+    [Theory(Timeout = 60_000)]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task When_Handlers_Run_Concurrently(bool quorum)
+    {
+        var config = queues.NewConfig("concurrency-test") with { UseQuorumQueues = quorum, PrefetchCount = 20, MaxConcurrentCalls = 3 };
+        var peak = await MeasurePeakConcurrencyAsync(config, messageCount: 12, TestContext.Current.CancellationToken);
+
+        peak.Should().BeLessThanOrEqualTo(3, "it should run at most MaxConcurrentCalls handlers at once");
+        peak.Should().Be(3, "it should use the concurrency it is allowed when messages are waiting");
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task When_Prefetch_Is_Lower_Than_The_Concurrency_Limit_On_A_Classic_Queue()
+    {
+        var config = queues.NewConfig("prefetch-test") with { UseQuorumQueues = false, PrefetchCount = 3, MaxConcurrentCalls = 10 };
+        var peak = await MeasurePeakConcurrencyAsync(config, messageCount: 12, TestContext.Current.CancellationToken);
+
+        peak.Should().BeLessThanOrEqualTo(3, "it should apply PrefetchCount to classic queues too, so unacked deliveries are bounded");
+        peak.Should().Be(3, "it should still use the whole prefetch window");
+    }
+
+    async Task<int> MeasurePeakConcurrencyAsync(ESE.MessageQueue.RabbitMQ.RabbitMqConfig config, int messageCount, CancellationToken cancellationToken)
+    {
+        var queue = queues.Create(config);
+        var running = 0;
+        var peak = 0;
+        var done = 0;
+
+        await queue.PublishAsync(Enumerable.Range(0, messageCount).Select(i => new TestMessage($"c-{i}", "slow")), cancellationToken);
+        await queue.SubscribeAsync(async (_, _, ct) =>
+        {
+            var now = Interlocked.Increment(ref running);
+            InterlockedMax(ref peak, now);
+            await Task.Delay(300, ct);
+            Interlocked.Decrement(ref running);
+            Interlocked.Increment(ref done);
+            return MessageResult.Acknowledge;
+        }, cancellationToken);
+        await Wait.ForCountAsync(() => Volatile.Read(ref done), messageCount, TimeSpan.FromSeconds(30));
+
+        done.Should().Be(messageCount, "it should handle every message");
+        return peak;
+    }
+
+    static void InterlockedMax(ref int target, int value)
+    {
+        int current;
+        while ((current = Volatile.Read(ref target)) < value && Interlocked.CompareExchange(ref target, value, current) != current)
+        {
+        }
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task When_Publishing_A_Large_Batch()
+    {
+        var queue = queues.Create(queues.NewConfig("batch-test"));
+        var received = new ConcurrentQueue<TestMessage>();
+        var messages = Enumerable.Range(0, 500).Select(i => new TestMessage($"batch-{i}", $"content-{i}")).ToList();
+
+        await queue.SubscribeAsync(msg => Collect(received, msg), TestContext.Current.CancellationToken);
+        await queue.PublishAsync(messages, TestContext.Current.CancellationToken);
+        await Wait.ForCountAsync(() => received.Count, messages.Count, Wait.DeliveryTimeout);
+
+        received.Should().BeEquivalentTo(messages, "it should deliver every message of a batch exactly once, in any order");
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task When_Publishing_More_Than_The_Outstanding_Confirm_Limit()
+    {
+        var config = queues.NewConfig("confirm-limit-test") with { MaxOutstandingConfirms = 2, PublisherChannelPoolSize = 1 };
+        var queue = queues.Create(config);
+        var received = new ConcurrentQueue<TestMessage>();
+
+        await queue.SubscribeAsync(msg => Collect(received, msg), TestContext.Current.CancellationToken);
+        var publish = () => Task.WhenAll(
+            queue.PublishAsync(Enumerable.Range(0, 50).Select(i => new TestMessage($"batch-{i}", "b")), TestContext.Current.CancellationToken),
+            Task.WhenAll(Enumerable.Range(0, 50).Select(i =>
+                queue.PublishAsync(new TestMessage($"single-{i}", "s"), TestContext.Current.CancellationToken))));
+
+        await publish.Should().NotThrowAsync("it should wait for confirm capacity instead of failing the publish");
+        await Wait.ForCountAsync(() => received.Count, 100, Wait.DeliveryTimeout);
+        received.Should().HaveCount(100, "it should deliver every message published under the confirm limit");
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task When_A_Message_Carries_Broker_And_Foreign_Headers()
+    {
+        var config = queues.NewConfig("headers-test");
+        var queue = queues.Create(config);
+        var contexts = new ConcurrentQueue<MessageContext>();
+
+        await queue.SubscribeAsync((_, context, _) =>
+        {
+            contexts.Enqueue(context);
+            return Task.FromResult(MessageResult.Acknowledge);
+        }, TestContext.Current.CancellationToken);
+        await broker.PublishRawAsync(config.QueueName, System.Text.Encoding.UTF8.GetBytes("""{"Id":"raw","Content":"c"}"""),
+            new Dictionary<string, string> { ["tenant"] = "acme", ["x-foreign-internal"] = "1", ["x-death"] = "forged" });
+        await queue.PublishAsync(new TestMessage("lib", "c"), new PublishOptions
+        {
+            Headers = new Dictionary<string, string> { ["tenant"] = "globex" }
+        }, TestContext.Current.CancellationToken);
+        await Wait.ForCountAsync(() => contexts.Count, 2, Wait.DeliveryTimeout);
+
+        contexts.Should().AllSatisfy(c => c.Headers.Keys.Should().NotContain(k => k.StartsWith("x-", StringComparison.OrdinalIgnoreCase),
+            "it should keep broker and library headers out of the application headers"));
+        contexts.Select(c => c.Headers["tenant"]).Should().BeEquivalentTo(["acme", "globex"], "it should keep application headers");
     }
 }

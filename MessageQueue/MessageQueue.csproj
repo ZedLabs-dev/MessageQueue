@@ -21,6 +21,7 @@
         <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
         <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
         <PackageReference Include="RabbitMQ.Client" />
+        <PackageReference Include="System.Threading.RateLimiting" />
     </ItemGroup>
 
 </Project>

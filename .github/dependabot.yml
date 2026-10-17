@@ -19,10 +19,6 @@ updates:
           - "Testcontainers*"
       minor-and-patch:
         update-types: [minor, patch]
-    ignore:
-      # Major migration is planned work (OPTIMIZATION-PLAN Phase 5), not a bot bump.
-      - dependency-name: "RabbitMQ.Client"
-        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

@@ -16,8 +16,9 @@
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.13" />
-    <!-- Held at 6.x on purpose: 7.x is an async-only rewrite, migrated in OPTIMIZATION-PLAN Phase 5. -->
-    <PackageVersion Include="RabbitMQ.Client" Version="6.8.1" />
+    <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
+    <!-- Used directly for RabbitMQ publisher-confirm backpressure (ConcurrencyLimiter); RabbitMQ.Client only needs 8.0. -->
+    <PackageVersion Include="System.Threading.RateLimiting" Version="10.0.13" />
   </ItemGroup>
 
   <ItemGroup Label="Tests">

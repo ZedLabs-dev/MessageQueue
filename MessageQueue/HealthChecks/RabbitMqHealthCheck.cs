@@ -1,58 +1,70 @@
+using ESE.MessageQueue.RabbitMQ;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using RabbitMQ.Client;
 
 namespace ESE.MessageQueue.HealthChecks;
 
 /// <summary>
-/// Health check for RabbitMQ connectivity.
+/// Health check for RabbitMQ connectivity. Registered with <c>AddRabbitMqHealthCheck&lt;T&gt;()</c> it reuses the
+/// queue's connection; with a connection string it opens (and closes) a connection per probe. The result carries no
+/// broker address and no exception text (S5); the exception itself is attached for the host's logging.
 /// </summary>
 public class RabbitMqHealthCheck : IHealthCheck
 {
-    readonly string connectionString;
+    const string Healthy = "RabbitMQ connection is healthy.";
+    const string NotOpen = "RabbitMQ connection is not open.";
+    const string Failed = "RabbitMQ health check failed.";
 
-    public RabbitMqHealthCheck(string connectionString)
+    readonly string? connectionString;
+    readonly bool? requireTls;
+    readonly IRabbitMqConnectionProbe? probe;
+
+    /// <summary>
+    /// Probes by opening a connection per check, with the same TLS rules as the queue: unless
+    /// <paramref name="requireTls"/> is false, plain <c>amqp://</c> to a host other than localhost is refused.
+    /// </summary>
+    public RabbitMqHealthCheck(string connectionString, bool? requireTls = null)
     {
         this.connectionString = connectionString;
+        this.requireTls = requireTls;
     }
 
-    public Task<HealthCheckResult> CheckHealthAsync(
+    internal RabbitMqHealthCheck(IRabbitMqConnectionProbe probe)
+    {
+        this.probe = probe;
+    }
+
+    public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var factory = new ConnectionFactory
-            {
-                Uri = new Uri(connectionString),
-                RequestedConnectionTimeout = TimeSpan.FromSeconds(5)
-            };
+            var open = probe is not null
+                ? await probe.IsConnectedAsync(cancellationToken)
+                : await ProbeConnectionStringAsync(cancellationToken);
 
-            using var connection = factory.CreateConnection();
-            using var channel = connection.CreateModel();
-
-            if (connection.IsOpen && channel.IsOpen)
-            {
-                return Task.FromResult(HealthCheckResult.Healthy(
-                    "RabbitMQ connection is healthy.",
-                    new Dictionary<string, object>
-                    {
-                        ["server"] = connection.Endpoint.HostName,
-                        ["port"] = connection.Endpoint.Port
-                    }));
-            }
-
-            return Task.FromResult(HealthCheckResult.Unhealthy("RabbitMQ connection is not open."));
+            return open ? HealthCheckResult.Healthy(Healthy) : HealthCheckResult.Unhealthy(NotOpen);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            return Task.FromResult(HealthCheckResult.Unhealthy(
-                "RabbitMQ health check failed.",
-                ex,
-                new Dictionary<string, object>
-                {
-                    ["error"] = ex.Message
-                }));
+            return HealthCheckResult.Unhealthy(Failed, ex);
         }
     }
-}
 
+    async Task<bool> ProbeConnectionStringAsync(CancellationToken cancellationToken)
+    {
+        var factory = RabbitMqConnections.CreateFactory(new RabbitMqConfig
+        {
+            ConnectionString = connectionString!,
+            RequireTls = requireTls,
+            QueueName = "health-check"
+        });
+        factory.RequestedConnectionTimeout = TimeSpan.FromSeconds(5);
+        factory.AutomaticRecoveryEnabled = false;
+
+        await using var connection = await factory.CreateConnectionAsync(cancellationToken);
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        return connection.IsOpen && channel.IsOpen;
+    }
+}

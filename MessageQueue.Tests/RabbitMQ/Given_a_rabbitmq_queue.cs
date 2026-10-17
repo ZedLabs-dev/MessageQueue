@@ -1,4 +1,10 @@
 using AwesomeAssertions;
+using ESE.MessageQueue.Abstractions;
+using ESE.MessageQueue.Extensions;
+using ESE.MessageQueue.HealthChecks;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace ESE.MessageQueue.Tests.RabbitMQ;
 
@@ -21,20 +27,27 @@ public sealed class Given_a_rabbitmq_queue : IAsyncLifetime
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask DisposeAsync()
+    public ValueTask DisposeAsync() => queues.DisposeAsync();
+
+    [Fact]
+    public async Task When_Config_Is_Valid()
     {
-        queues.Dispose();
-        return ValueTask.CompletedTask;
+        var queue = queues.Create(queues.NewConfig("test-queue"));
+
+        var action = () => queue.InitializeAsync(TestContext.Current.CancellationToken);
+
+        await action.Should().NotThrowAsync("it should connect and declare its exchange and queues");
     }
 
     [Fact]
-    public void When_Config_Is_Valid()
+    public async Task When_Initializing_Twice()
     {
-        var config = queues.NewConfig("test-queue");
+        var queue = queues.Create(queues.NewConfig("test-queue"));
+        await queue.InitializeAsync(TestContext.Current.CancellationToken);
 
-        var action = () => queues.Create(config);
+        var action = () => queue.InitializeAsync(TestContext.Current.CancellationToken);
 
-        action.Should().NotThrow("it should create instance with valid configuration");
+        await action.Should().NotThrowAsync("it should treat a second initialization as a no-op");
     }
 
     [Fact]
@@ -45,7 +58,7 @@ public sealed class Given_a_rabbitmq_queue : IAsyncLifetime
 
         var action = () => queue.PublishAsync(message, TestContext.Current.CancellationToken);
 
-        await action.Should().NotThrowAsync("it should publish message without error");
+        await action.Should().NotThrowAsync("it should connect on first use and publish the message");
     }
 
     [Fact]
@@ -58,29 +71,75 @@ public sealed class Given_a_rabbitmq_queue : IAsyncLifetime
         await action.Should().NotThrowAsync("it should subscribe without error");
     }
 
-    [Fact]
-    public async Task When_Using_Quorum_Queues()
+    [Theory]
+    [InlineData(true, "quorum")]
+    [InlineData(false, "classic")]
+    public async Task When_Choosing_The_Queue_Type(bool useQuorumQueues, string expectedType)
     {
-        var quorumConfig = queues.NewConfig("test-queue") with { UseQuorumQueues = true };
+        var config = queues.NewConfig("test-queue") with { UseQuorumQueues = useQuorumQueues };
+        var queue = queues.Create(config);
+        var retried = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var action = () => queues.Create(quorumConfig);
+        await queue.SubscribeAsync((_, context, _) =>
+        {
+            if (context.DeliveryAttempt == 1)
+                return Task.FromResult(ESE.MessageQueue.Abstractions.MessageResult.Retry);
+            retried.TrySetResult();
+            return Task.FromResult(ESE.MessageQueue.Abstractions.MessageResult.Acknowledge);
+        }, TestContext.Current.CancellationToken);
+        await queue.PublishAsync(new TestMessage("1", "retried once"), TestContext.Current.CancellationToken);
+        await retried.Task.WaitAsync(Wait.DeliveryTimeout, TestContext.Current.CancellationToken);
 
-        action.Should().NotThrow("it should create instance with quorum queue configuration");
-        (await broker.GetQueueTypeAsync(quorumConfig.QueueName)).Should().Be("quorum", "it should declare a quorum queue");
-        (await broker.GetQueueTypeAsync($"{quorumConfig.QueueName}.deadletter")).Should()
-            .Be("quorum", "it should declare the dead-letter queue as a quorum queue too");
+        (await broker.GetQueueTypeAsync(config.QueueName)).Should().Be(expectedType, "it should declare the main queue with the configured type");
+        (await broker.GetQueueTypeAsync(config.EffectiveDeadLetterQueueName)).Should()
+            .Be(expectedType, "it should declare the dead-letter queue with the same type");
+        var retryQueues = await broker.ListQueuesAsync($"{config.QueueName}.retry.");
+        retryQueues.Should().ContainSingle("it should declare one retry queue for the one backoff delay used");
+        (await broker.GetQueueTypeAsync(retryQueues[0])).Should().Be(expectedType, "it should keep retries as durable as the main queue");
     }
 
     [Fact]
-    public async Task When_Using_Classic_Queues()
+    public async Task When_Checking_Health_Through_A_Registered_Queue()
     {
-        var classicConfig = queues.NewConfig("test-queue") with { UseQuorumQueues = false };
+        var config = queues.NewConfig("health-test");
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMessageQueue<TestMessage>(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["MessageQueue:Provider"] = "RabbitMq",
+            ["MessageQueue:ConnectionString"] = config.ConnectionString,
+            ["MessageQueue:RequireTls"] = "false",
+            ["MessageQueue:QueueName"] = config.QueueName,
+            ["MessageQueue:UseQuorumQueues"] = "false"
+        }).Build());
+        services.AddHealthChecks().AddRabbitMqHealthCheck<TestMessage>();
+        await using var provider = services.BuildServiceProvider();
+        queues.Track(config);
 
-        var action = () => queues.Create(classicConfig);
+        var report = await provider.GetRequiredService<HealthCheckService>().CheckHealthAsync(TestContext.Current.CancellationToken);
 
-        action.Should().NotThrow("it should create instance with classic queue configuration");
-        (await broker.GetQueueTypeAsync(classicConfig.QueueName)).Should().Be("classic", "it should declare a classic queue");
-        (await broker.GetQueueTypeAsync($"{classicConfig.QueueName}.deadletter")).Should()
-            .Be("classic", "it should declare the dead-letter queue as a classic queue too");
+        report.Entries["rabbitmq"].Status.Should().Be(HealthStatus.Healthy, "it should connect the registered queue and report it healthy");
+        report.Entries["rabbitmq"].Data.Should().BeEmpty("it should not publish broker details in the result");
+        var publish = () => provider.GetRequiredService<IMessagePublisher<TestMessage>>()
+            .PublishAsync(new TestMessage("1", "after probe"), TestContext.Current.CancellationToken);
+        await publish.Should().NotThrowAsync("it should share the connection the probe opened with the queue");
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task When_The_Consumer_Is_Cancelled_By_The_Broker()
+    {
+        var config = queues.NewConfig("consumer-cancelled-test");
+        var queue = queues.Create(config);
+        var check = new RabbitMqHealthCheck(queue);
+        var context = new HealthCheckContext { Registration = new HealthCheckRegistration("rabbitmq", check, null, null) };
+        await queue.SubscribeAsync(_ => Task.FromResult(true), TestContext.Current.CancellationToken);
+        (await check.CheckHealthAsync(context, TestContext.Current.CancellationToken)).Status.Should()
+            .Be(HealthStatus.Healthy, "it should report a running consumer as healthy");
+
+        await broker.DeleteQueuesAndExchangesAsync([config.QueueName], []);
+        await Task.Delay(500, TestContext.Current.CancellationToken);
+        var result = await check.CheckHealthAsync(context, TestContext.Current.CancellationToken);
+
+        result.Status.Should().Be(HealthStatus.Unhealthy, "it should notice that the broker cancelled the subscription's consumer");
     }
 }

@@ -22,6 +22,23 @@ public class RetryExecutor
             return TimeSpan.Zero;
 
         var maxMs = policy.MaxDelay.TotalMilliseconds;
+        var delayMs = ScheduledMilliseconds(retryNumber);
+
+        if (policy.UseJitter && policy.JitterFactor > 0)
+        {
+            var jitterRange = delayMs * policy.JitterFactor;
+            delayMs = Clamp(delayMs + (Random.Shared.NextDouble() * 2 - 1) * jitterRange, maxMs);
+        }
+
+        return TimeSpan.FromMilliseconds(delayMs);
+    }
+
+    /// <summary>The delay before retry <paramref name="retryNumber"/> without jitter, clamped to [0, MaxDelay].</summary>
+    internal TimeSpan ScheduledDelay(int retryNumber) =>
+        retryNumber < 1 ? TimeSpan.Zero : TimeSpan.FromMilliseconds(ScheduledMilliseconds(retryNumber));
+
+    double ScheduledMilliseconds(int retryNumber)
+    {
         var initialMs = policy.InitialDelay.TotalMilliseconds;
 
         // Computed in double and clamped before converting, so huge retry numbers cannot overflow.
@@ -35,15 +52,7 @@ public class RetryExecutor
             _ => initialMs
         };
 
-        delayMs = Clamp(delayMs, maxMs);
-
-        if (policy.UseJitter && policy.JitterFactor > 0)
-        {
-            var jitterRange = delayMs * policy.JitterFactor;
-            delayMs = Clamp(delayMs + (Random.Shared.NextDouble() * 2 - 1) * jitterRange, maxMs);
-        }
-
-        return TimeSpan.FromMilliseconds(delayMs);
+        return Clamp(delayMs, policy.MaxDelay.TotalMilliseconds);
     }
 
     /// <summary>

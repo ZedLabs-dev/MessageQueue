@@ -54,50 +54,145 @@ public sealed class RabbitMqBrokerFixture : IAsyncLifetime
 
     public void SkipUnlessAvailable() => Assert.SkipWhen(unavailableReason is not null, unavailableReason ?? string.Empty);
 
-    public void DeleteQueuesAndExchanges(IEnumerable<string> queues, IEnumerable<string> exchanges)
+    async Task<T> WithChannelAsync<T>(Func<IChannel, Task<T>> action)
     {
-        using var connection = new ConnectionFactory { Uri = new Uri(ConnectionString) }.CreateConnection();
-        using var channel = connection.CreateModel();
-        foreach (var queue in queues)
-        {
-            channel.QueueDelete(queue);
-        }
-        foreach (var exchange in exchanges)
-        {
-            channel.ExchangeDelete(exchange);
-        }
+        await using var connection = await new ConnectionFactory { Uri = new Uri(ConnectionString) }
+            .CreateConnectionAsync(TestContext.Current.CancellationToken);
+        await using var channel = await connection.CreateChannelAsync(
+            new CreateChannelOptions(publisherConfirmationsEnabled: true, publisherConfirmationTrackingEnabled: true),
+            TestContext.Current.CancellationToken);
+        return await action(channel);
     }
 
-    public void DeclareBoundQueue(string queue, string exchange, string routingKey)
+    public Task DeleteQueuesAndExchangesAsync(IEnumerable<string> queues, IEnumerable<string> exchanges) =>
+        WithChannelAsync(async channel =>
+        {
+            foreach (var queue in queues)
+            {
+                await channel.QueueDeleteAsync(queue, cancellationToken: TestContext.Current.CancellationToken);
+            }
+            foreach (var exchange in exchanges)
+            {
+                await channel.ExchangeDeleteAsync(exchange, cancellationToken: TestContext.Current.CancellationToken);
+            }
+            return true;
+        });
+
+    public Task DeclareBoundQueueAsync(string queue, string exchange, string routingKey) =>
+        WithChannelAsync(async channel =>
+        {
+            await channel.QueueDeclareAsync(queue, durable: true, exclusive: false, autoDelete: false,
+                cancellationToken: TestContext.Current.CancellationToken);
+            await channel.QueueBindAsync(queue, exchange, routingKey, cancellationToken: TestContext.Current.CancellationToken);
+            return true;
+        });
+
+    // Ready messages only (unacknowledged deliveries are not counted), read through AMQP so it is never stale.
+    public Task<uint> GetMessageCountAsync(string queue) =>
+        WithChannelAsync(channel => channel.MessageCountAsync(queue, TestContext.Current.CancellationToken));
+
+    // Publishes straight to `queue` through the default exchange, the way a foreign (non-library) publisher would.
+    public Task PublishRawAsync(string queue, byte[] body, IReadOnlyDictionary<string, string> headers) =>
+        WithChannelAsync(async channel =>
+        {
+            var properties = new BasicProperties
+            {
+                Persistent = true,
+                MessageId = Guid.NewGuid().ToString(),
+                Headers = headers.ToDictionary(h => h.Key, h => (object?)h.Value)
+            };
+            await channel.BasicPublishAsync(string.Empty, queue, mandatory: true, properties, body, TestContext.Current.CancellationToken);
+            return true;
+        });
+
+    // Takes the next message off `queue` (acknowledging it) and returns its headers as strings, or null when empty.
+    public Task<IReadOnlyDictionary<string, string>?> TakeMessageHeadersAsync(string queue) =>
+        WithChannelAsync<IReadOnlyDictionary<string, string>?>(async channel =>
+        {
+            var result = await channel.BasicGetAsync(queue, autoAck: true, TestContext.Current.CancellationToken);
+            if (result is null)
+                return null;
+            return (result.BasicProperties.Headers ?? new Dictionary<string, object?>())
+                .ToDictionary(h => h.Key, h => h.Value is byte[] bytes ? Encoding.UTF8.GetString(bytes) : h.Value?.ToString() ?? string.Empty);
+        });
+
+    // Simulates a consumer that crashes mid-handler: takes the next message without acknowledging it,
+    // then drops the connection so the broker requeues it.
+    public async Task TakeWithoutAckAndDisconnectAsync(string queue)
     {
-        using var connection = new ConnectionFactory { Uri = new Uri(ConnectionString) }.CreateConnection();
-        using var channel = connection.CreateModel();
-        channel.QueueDeclare(queue, durable: true, exclusive: false, autoDelete: false, arguments: null);
-        channel.QueueBind(queue, exchange, routingKey);
+        var connection = await new ConnectionFactory { Uri = new Uri(ConnectionString), AutomaticRecoveryEnabled = false }
+            .CreateConnectionAsync(TestContext.Current.CancellationToken);
+        var channel = await connection.CreateChannelAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var deadline = DateTime.UtcNow + Wait.DeliveryTimeout;
+        while (await channel.BasicGetAsync(queue, autoAck: false, TestContext.Current.CancellationToken) is null)
+        {
+            if (DateTime.UtcNow > deadline)
+                throw new TimeoutException($"No message arrived on {queue}");
+            await Task.Delay(50, TestContext.Current.CancellationToken);
+        }
+        await connection.AbortAsync(TestContext.Current.CancellationToken);
+        await connection.DisposeAsync();
     }
 
-    // Reads the queue type ("classic" or "quorum") from the management HTTP API.
-    public async Task<string?> GetQueueTypeAsync(string queue)
+    // Publishes straight to `queue` with properties a foreign publisher chose (e.g. malformed ones).
+    public Task PublishRawWithAsync(string queue, byte[] body, Action<BasicProperties> configure) =>
+        WithChannelAsync(async channel =>
+        {
+            var properties = new BasicProperties { Persistent = true, MessageId = Guid.NewGuid().ToString() };
+            configure(properties);
+            await channel.BasicPublishAsync(string.Empty, queue, mandatory: true, properties, body, TestContext.Current.CancellationToken);
+            return true;
+        });
+
+    // Declares `queue` with the given arguments, e.g. to put an incompatible queue where the library expects its own.
+    public Task DeclareQueueAsync(string queue, IDictionary<string, object?> arguments) =>
+        WithChannelAsync(async channel =>
+        {
+            await channel.QueueDeclareAsync(queue, durable: true, exclusive: false, autoDelete: false, arguments: arguments,
+                cancellationToken: TestContext.Current.CancellationToken);
+            return true;
+        });
+
+    // Raw JSON from the management HTTP API (topology and arguments; its message counters lag).
+    public async Task<string> GetRawJsonAsync(string path)
+    {
+        using var http = ManagementClient();
+        return await http.GetStringAsync(new Uri(path, UriKind.Relative), TestContext.Current.CancellationToken);
+    }
+
+    HttpClient ManagementClient()
     {
         var amqp = new Uri(ConnectionString);
-        using var http = new HttpClient
+        var http = new HttpClient
         {
             BaseAddress = new UriBuilder("http", amqp.Host, container!.GetMappedPublicPort(ManagementPort)).Uri
         };
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
             Convert.ToBase64String(Encoding.UTF8.GetBytes(Uri.UnescapeDataString(amqp.UserInfo))));
+        return http;
+    }
 
+    // Reads the queue type ("classic" or "quorum") from the management HTTP API.
+    public async Task<string?> GetQueueTypeAsync(string queue)
+    {
+        using var http = ManagementClient();
         await using var body = await http.GetStreamAsync(
             new Uri($"api/queues/%2F/{Uri.EscapeDataString(queue)}", UriKind.Relative), TestContext.Current.CancellationToken);
         using var json = await JsonDocument.ParseAsync(body, cancellationToken: TestContext.Current.CancellationToken);
         return json.RootElement.GetProperty("type").GetString();
     }
 
-    public uint GetMessageCount(string queue)
+    // Names of every queue whose name starts with `prefix` (topology only; the management API's counters lag).
+    public async Task<IReadOnlyList<string>> ListQueuesAsync(string prefix)
     {
-        using var connection = new ConnectionFactory { Uri = new Uri(ConnectionString) }.CreateConnection();
-        using var channel = connection.CreateModel();
-        return channel.MessageCount(queue);
+        using var http = ManagementClient();
+        await using var body = await http.GetStreamAsync(
+            new Uri("api/queues/%2F?columns=name", UriKind.Relative), TestContext.Current.CancellationToken);
+        using var json = await JsonDocument.ParseAsync(body, cancellationToken: TestContext.Current.CancellationToken);
+        return json.RootElement.EnumerateArray()
+            .Select(q => q.GetProperty("name").GetString()!)
+            .Where(name => name.StartsWith(prefix, StringComparison.Ordinal))
+            .ToList();
     }
 }
 
