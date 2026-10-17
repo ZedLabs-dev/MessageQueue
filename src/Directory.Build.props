@@ -24,6 +24,10 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <DebugType>portable</DebugType>
+    <!-- SourceLink needs a GitHub 'origin'; local clones, forks with other hosts and source archives must still
+         build under TreatWarningsAsErrors, so it runs only for CI builds, which produce the published packages. -->
+    <EnableSourceLink Condition="'$(ContinuousIntegrationBuild)' != 'true'">false</EnableSourceLink>
+    <EnableSourceControlManagerQueries Condition="'$(ContinuousIntegrationBuild)' != 'true'">false</EnableSourceControlManagerQueries>
   </PropertyGroup>
 
   <ItemGroup>
