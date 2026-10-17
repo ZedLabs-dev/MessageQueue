@@ -1,6 +1,6 @@
 # 0005. Provider packaging and extensibility
 
-- Status: Accepted (2026-10-16); implementation scheduled for Phase 7 (before the v1 API lock), not now
+- Status: Accepted (2026-10-16); implemented in Phase 7 (see ADR 0015)
 - Context: OPTIMIZATION-PLAN §3a (AWS SNS/SQS and MQTT may follow), §6.2 PublicApiAnalyzers, Phase 7
 
 ## Context

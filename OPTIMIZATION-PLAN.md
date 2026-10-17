@@ -316,6 +316,12 @@ rule.
   messages; RabbitMQ 4.3.6 delivers a client-supplied `x-death` unchanged, so only a signed header would close it.
   Accepted risk: the forger can only shorten its own messages' retries.
 - Release-grade benchmark runs (`docs/benchmarks.md` numbers come from `--job short`).
+- Minor follow-ups from the final re-check:
+  - nullable-oblivious (`~`) compiler-generated entries in `src/ESE.MessageQueue/PublicAPI.Shipped.txt`;
+  - the CS1591 exemption is per file, so "one settings class per file" is a convention, not an enforced rule;
+  - `ci.yml` `timeout-minutes: 20`: watch the first GitHub run (the full suite takes about 2.5 minutes locally);
+  - `release.yml` fetches `origin/main` without credentials, so it assumes a public repository;
+  - the format hook needs `python3` and does nothing without it (the Stop hook still gates).
 
 **Blocked on the owner:**
 - **Azure Service Bus live verification:** the integration specs have never run against a real namespace or the

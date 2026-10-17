@@ -34,6 +34,7 @@ import tempfile
 import time
 
 ROOT = os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
+MARKER = ".mq-mutate-workdir"
 EXCLUDE = {"bin", "obj", "TestResults", ".git", ".idea", ".vs", "artifacts", "BenchmarkDotNet.Artifacts"}
 # A copy without .git: SourceLink and deterministic CI settings would otherwise warn or fail.
 BUILD_PROPS = ["-p:TreatWarningsAsErrors=false", "-p:EnableSourceLink=false", "-p:EnableSourceControlManagerQueries=false",
@@ -96,11 +97,17 @@ def main():
         print(f"Refusing a work directory inside (or containing) the repository: {work}", file=sys.stderr)
         return 2
     if not args.no_copy:
-        # A reused --workdir is emptied first, so no mutant from an earlier run can survive in it.
+        # A reused --workdir is emptied first, so no mutant from an earlier run can survive in it. Only
+        # directories this script created (they carry MARKER) are ever deleted; any other non-empty one is refused.
         if os.path.isdir(work) and os.listdir(work):
+            if not os.path.isfile(os.path.join(work, MARKER)):
+                print(f"Refusing to empty {work}: it is not empty and was not created by this script", file=sys.stderr)
+                return 2
             shutil.rmtree(work)
         print(f"Copying {ROOT} -> {work}", flush=True)
         copy_repo(work)
+        with open(os.path.join(work, MARKER), "w") as marker:
+            marker.write("Created by scripts/mutate.py; safe to delete.\n")
 
     try:
         project = defaults["project"]
