@@ -16,7 +16,12 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\MessageQueue\MessageQueue.csproj" />
+        <None Include="..\..\docker\test-broker\Dockerfile" Link="test-broker.Dockerfile" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\ESE.MessageQueue\ESE.MessageQueue.csproj" />
+        <ProjectReference Include="..\..\src\ESE.MessageQueue.RabbitMQ\ESE.MessageQueue.RabbitMQ.csproj" />
     </ItemGroup>
 
 </Project>

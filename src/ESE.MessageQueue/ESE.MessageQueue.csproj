@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <AssemblyName>ESE.MessageQueue</AssemblyName>
+        <RootNamespace>ESE.MessageQueue</RootNamespace>
+        <Description>Provider-agnostic event messaging for .NET: IMessageQueue&lt;T&gt;, the shared consumer pipeline (retry, backoff, dead-lettering), JSON and MessagePack serialization, OpenTelemetry-compatible tracing and metrics, a hosted consumer service and the in-memory provider. Add ESE.MessageQueue.RabbitMQ or ESE.MessageQueue.AzureServiceBus for a broker.</Description>
+        <PackageTags>$(PackageTags);inmemory</PackageTags>
+    </PropertyGroup>
+
+    <!-- First-party providers share internal consumer helpers (ADR 0015); they depend on this exact package version. -->
+    <ItemGroup>
+        <InternalsVisibleTo Include="ESE.MessageQueue.RabbitMQ" />
+        <InternalsVisibleTo Include="ESE.MessageQueue.AzureServiceBus" />
+    </ItemGroup>
+
+    <!-- Tests and benchmarks see internals in development builds only; `dotnet pack` (which sets _IsPacking) builds the
+         shipped assembly without them (ADR 0016). -->
+    <ItemGroup Condition="'$(_IsPacking)' != 'true'">
+        <InternalsVisibleTo Include="ESE.MessageQueue.Tests" />
+        <InternalsVisibleTo Include="ESE.MessageQueue.Benchmarks" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="MessagePack" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.Options" />
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+        <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+    </ItemGroup>
+
+</Project>

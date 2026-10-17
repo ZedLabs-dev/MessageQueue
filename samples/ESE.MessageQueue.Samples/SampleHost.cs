@@ -16,7 +16,12 @@ public static class SampleHost
 
     public static HostApplicationBuilder CreateBuilder(string[] args)
     {
-        var builder = Host.CreateApplicationBuilder(args);
+        // The settings files are copied next to the binary; `dotnet run --project` starts elsewhere (the repository root).
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+        {
+            Args = args,
+            ContentRootPath = AppContext.BaseDirectory
+        });
         Configure(builder.Services, builder.Configuration);
         return builder;
     }
@@ -26,6 +31,9 @@ public static class SampleHost
         ThrowIfRabbitMqCredentialsMissing(configuration.GetSection("MessageQueue"));
 
         // The broker comes from MessageQueue:Provider (InMemory, RabbitMq or AzureServiceBus); the code is the same.
+        // InMemory is built in; the broker providers come from their packages and are registered first.
+        services.AddRabbitMqProvider();
+        services.AddAzureServiceBusProvider();
         services.AddMessageQueue<OrderCreated>(configuration);
         services.AddMessageProcessor<OrderCreated, OrderCreatedProcessor>();
         services.AddHostedService<MessageQueueHostedService<OrderCreated>>();
@@ -42,7 +50,7 @@ public static class SampleHost
         }
     }
 
-    // The dev broker has no default user (MessageQueue/.env sets one), and committed settings carry no credentials:
+    // The dev broker has no default user (docker/.env sets one), and committed settings carry no credentials:
     // say what to set instead of failing later with an authentication error.
     static void ThrowIfRabbitMqCredentialsMissing(IConfigurationSection section)
     {
@@ -53,6 +61,6 @@ public static class SampleHost
         if (string.IsNullOrWhiteSpace(section["UserName"]) || string.IsNullOrWhiteSpace(section["Password"]))
             throw new InvalidOperationException(
                 "The RabbitMQ sample needs credentials: set the environment variables MessageQueue__UserName and " +
-                "MessageQueue__Password to the user in MessageQueue/.env (or set MessageQueue__ConnectionString).");
+                "MessageQueue__Password to the user in docker/.env (or set MessageQueue__ConnectionString).");
     }
 }

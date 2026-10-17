@@ -1,0 +1,130 @@
+name: Release
+
+# Publishes the three packages when a version tag is pushed, after the full CI gates pass.
+#
+# Manual pre-release steps (.claude/skills/release/SKILL.md, also runnable as the /release skill):
+#   1. Set VersionPrefix / VersionSuffix in Directory.Build.props; the tag must be v<VersionPrefix>[-<VersionSuffix>].
+#   2. Move every src/*/PublicAPI.Unshipped.txt entry into PublicAPI.Shipped.txt (Unshipped keeps only "#nullable enable").
+#   3. Rename "## [Unreleased]" in CHANGELOG.md to "## [<version>] - <date>" and open a new empty Unreleased section.
+#   4. Commit on main, then: git tag v<version> && git push origin v<version>
+#
+# Publishing: NuGet trusted publishing (OIDC, NuGet/login) when the repository variable NUGET_USER is set (the
+# nuget.org profile that owns the trusted-publishing policy for release.yml); otherwise the NUGET_API_KEY secret.
+#
+# Repository setup (owner, once):
+#   - Environment `release` with required reviewers, and the NuGet secret or variable scoped to it, so a pushed tag
+#     waits for a person before anything is published.
+#   - A tag ruleset protecting `v*` (only maintainers create or move release tags).
+#   - Only commits already on main are released: the tag must point at an ancestor of origin/main.
+# Third-party actions that see secrets or mint OIDC tokens are pinned to commit SHAs (version in the comment).
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write   # create the GitHub release
+      id-token: write   # NuGet trusted publishing (OIDC)
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Check the tag is on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main; only commits on main are released"
+            exit 1
+          fi
+
+      - name: Check the tag, the API files and the changelog
+        id: version
+        shell: bash
+        run: |
+          prefix="$(dotnet msbuild src/ESE.MessageQueue/ESE.MessageQueue.csproj -getProperty:VersionPrefix)"
+          suffix="$(dotnet msbuild src/ESE.MessageQueue/ESE.MessageQueue.csproj -getProperty:VersionSuffix)"
+          version="$prefix${suffix:+-$suffix}"
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the project version v$version (Directory.Build.props)"
+            exit 1
+          fi
+          for unshipped in src/*/PublicAPI.Unshipped.txt; do
+            if grep -qv '^#nullable enable$' "$unshipped"; then
+              echo "::error::$unshipped is not empty: move its entries to PublicAPI.Shipped.txt before releasing"
+              exit 1
+            fi
+          done
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [[ ! -s release-notes.md ]]; then
+            echo "::error::CHANGELOG.md has no '## [$version]' section"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$([[ -n "$suffix" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      # The packages CI built, tested and packed in this run.
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages
+          path: artifacts
+
+      - name: NuGet login (trusted publishing)
+        id: login
+        if: vars.NUGET_USER != ''
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push to nuget.org
+        shell: bash
+        env:
+          NUGET_KEY: ${{ steps.login.outputs.NUGET_API_KEY || secrets.NUGET_API_KEY }}
+        run: |
+          if [[ -z "$NUGET_KEY" ]]; then
+            echo "::error::Set the NUGET_USER repository variable (trusted publishing) or the NUGET_API_KEY secret"
+            exit 1
+          fi
+          # Pushes the .nupkg files; dotnet nuget push sends the matching .snupkg symbol packages along.
+          dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_KEY" \
+            --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Create the GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          [[ "${{ steps.version.outputs.prerelease }}" == "true" ]] && flags+=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg artifacts/*.snupkg \
+            --title "ESE.MessageQueue ${{ steps.version.outputs.version }}" \
+            --notes-file release-notes.md "${flags[@]}"

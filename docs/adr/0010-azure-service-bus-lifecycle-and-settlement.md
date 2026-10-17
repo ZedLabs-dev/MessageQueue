@@ -37,3 +37,9 @@ The RabbitMQ provider had solved the same problems with code private to it.
 
 - At-least-once: a settlement failing after the broker applied it can redeliver; a handler that never returns holds
   its message until dispose closes the client. Abandons count towards MaxDeliveryCount, ending persistent failures.
+
+## Later changes
+
+- Phase 7: processor errors are also counted (`ITelemetryProvider.RecordTransportError`, metric
+  `ese.messagequeue.transport.errors` with `error.type` = failure reason or exception type), throttled in the log or
+  not. The shared helpers stay internal and reach the provider package through InternalsVisibleTo (ADR 0015).

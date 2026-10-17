@@ -34,3 +34,9 @@ and its `PublisherChannel` keyed confirms by `NextPublishSeqNo`, which recovery 
 
 - Breaking: a constructed queue no longer proves the broker is reachable; use `InitializeAsync`/`CreateAsync` to
   fail fast. `Dispose()` blocks on `DisposeAsync()`, as the client's own `Dispose` does.
+
+## Later changes
+
+- Phase 7 (S9): the connection factory caps inbound bodies at `max(MaxMessageSizeBytes, 16 MiB)` instead of the
+  client's 64 MiB default. The floor is RabbitMQ's default `max_message_size`: a body above the client cap would
+  close the connection and come back forever, so oversized bodies below it are dead-lettered by the pipeline.

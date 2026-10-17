@@ -29,3 +29,8 @@ Before the v1 API is locked, split into packages:
 - `MessageQueueProvider` (the enum) is replaced by provider names; `AddMessageQueue<T>` keeps its signature.
 - Apps add the package for the broker they use; the in-memory provider needs nothing extra.
 - Until Phase 7 the single assembly stays, and new provider code keeps to the seam so the split is a move, not a rewrite.
+
+## Later changes
+
+- Implemented in Phase 7 by ADR 0015. `MessageQueueProvider` is gone and the split is done; the "until Phase 7"
+  consequence no longer applies.

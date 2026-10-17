@@ -1,0 +1,92 @@
+#nullable enable
+ESE.MessageQueue.Extensions.RabbitMqServiceCollectionExtensions
+ESE.MessageQueue.HealthChecks.RabbitMqHealthCheckExtensions
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.ConfirmTimeout.get -> System.TimeSpan
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.ConfirmTimeout.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.ConnectionString.get -> string!
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.ConnectionString.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.DeadLetterQueueName.get -> string!
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.DeadLetterQueueName.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.EnablePublisherConfirms.get -> bool
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.EnablePublisherConfirms.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.Equals(ESE.MessageQueue.RabbitMQ.RabbitMqConfig? other) -> bool
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.ExchangeName.get -> string!
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.ExchangeName.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.ExchangeType.get -> string!
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.ExchangeType.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.HeartbeatInterval.get -> System.TimeSpan
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.HeartbeatInterval.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.HostName.get -> string!
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.HostName.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.MaxOutstandingConfirms.get -> int
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.MaxOutstandingConfirms.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.NetworkRecoveryInterval.get -> System.TimeSpan
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.NetworkRecoveryInterval.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.Password.get -> string!
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.Password.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.Port.get -> int
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.Port.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.PrefetchCount.get -> int
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.PrefetchCount.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.PublisherChannelPoolSize.get -> int
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.PublisherChannelPoolSize.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.QuorumInitialGroupSize.get -> int
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.QuorumInitialGroupSize.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.RabbitMqConfig() -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.RequireTls.get -> bool?
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.RequireTls.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.ShutdownTimeout.get -> System.TimeSpan
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.ShutdownTimeout.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.Tls.get -> ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig!
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.Tls.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.UseQuorumQueues.get -> bool
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.UseQuorumQueues.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.UserName.get -> string!
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.UserName.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.VirtualHost.get -> string!
+ESE.MessageQueue.RabbitMQ.RabbitMqConfig.VirtualHost.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.Capabilities.get -> ESE.MessageQueue.Abstractions.MessageQueueCapabilities!
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.Dispose() -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.InitializeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.PublishAsync(System.Collections.Generic.IEnumerable<T!>! messages, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.PublishAsync(T! message, ESE.MessageQueue.Abstractions.PublishOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.PublishAsync(T! message, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.RabbitMqMessageQueue(ESE.MessageQueue.RabbitMQ.RabbitMqConfig! config, ESE.MessageQueue.Telemetry.ITelemetryProvider? telemetry = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.SubscribeAsync(System.Func<T!, ESE.MessageQueue.Abstractions.MessageContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task<ESE.MessageQueue.Abstractions.MessageResult>!>! handler, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.SubscribeAsync(System.Func<T!, System.Threading.Tasks.Task<bool>!>! handler, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.UnsubscribeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.<Clone>$() -> ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig!
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.AcceptablePolicyErrors.get -> System.Net.Security.SslPolicyErrors
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.AcceptablePolicyErrors.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.AllowInsecureCertificates.get -> bool
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.AllowInsecureCertificates.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.Enabled.get -> bool
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.Enabled.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.Equals(ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig? other) -> bool
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.RabbitMqTlsConfig() -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ServerName.get -> string!
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ServerName.set -> void
+const ESE.MessageQueue.RabbitMQ.RabbitMqConfig.ProviderName = "RabbitMq" -> string!
+override ESE.MessageQueue.RabbitMQ.RabbitMqConfig.<Clone>$() -> ESE.MessageQueue.RabbitMQ.RabbitMqConfig!
+override ESE.MessageQueue.RabbitMQ.RabbitMqConfig.Equals(object? obj) -> bool
+override ESE.MessageQueue.RabbitMQ.RabbitMqConfig.GetHashCode() -> int
+override ESE.MessageQueue.RabbitMQ.RabbitMqConfig.Provider.get -> string!
+override ESE.MessageQueue.RabbitMQ.RabbitMqConfig.ToString() -> string!
+override ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.Equals(object? obj) -> bool
+override ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.GetHashCode() -> int
+override ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ToString() -> string!
+override sealed ESE.MessageQueue.RabbitMQ.RabbitMqConfig.Equals(ESE.MessageQueue.Configuration.MessageQueueConfig? other) -> bool
+static ESE.MessageQueue.Extensions.RabbitMqServiceCollectionExtensions.AddRabbitMqProvider(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static ESE.MessageQueue.HealthChecks.RabbitMqHealthCheckExtensions.AddRabbitMqHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! connectionString, string! name = "rabbitmq", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null, bool? requireTls = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ESE.MessageQueue.HealthChecks.RabbitMqHealthCheckExtensions.AddRabbitMqHealthCheck<T>(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! name = "rabbitmq", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ESE.MessageQueue.RabbitMQ.RabbitMqConfig.operator !=(ESE.MessageQueue.RabbitMQ.RabbitMqConfig? left, ESE.MessageQueue.RabbitMQ.RabbitMqConfig? right) -> bool
+static ESE.MessageQueue.RabbitMQ.RabbitMqConfig.operator ==(ESE.MessageQueue.RabbitMQ.RabbitMqConfig? left, ESE.MessageQueue.RabbitMQ.RabbitMqConfig? right) -> bool
+static ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue.CreateAsync<T>(ESE.MessageQueue.RabbitMQ.RabbitMqConfig! config, ESE.MessageQueue.Telemetry.ITelemetryProvider? telemetry = null, Microsoft.Extensions.Logging.ILogger? logger = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T!>!>!
+static ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.operator !=(ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig? left, ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig? right) -> bool
+static ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.operator ==(ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig? left, ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig? right) -> bool
+static readonly ESE.MessageQueue.RabbitMQ.RabbitMqConfig.DefaultShutdownTimeout -> System.TimeSpan

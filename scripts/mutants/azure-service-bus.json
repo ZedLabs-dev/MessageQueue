@@ -1,0 +1,30 @@
+{
+  "description": "Azure Service Bus provider (ADRs 0009-0012), unit specs through the SDK seams. Adapted from the ASB rework review set.",
+  "defaults": { "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus" },
+  "mutants": [
+    { "id": "A01", "name": "complete before sending the retry copy",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "find": "            await sender.SendAsync(copy, token);\n            await original.CompleteAsync(token);",
+      "replace": "            await original.CompleteAsync(token);\n            await sender.SendAsync(copy, token);" },
+    { "id": "A03", "name": "schedule ignores delay",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "find": "copy.ScheduledEnqueueTime = DateTimeOffset.UtcNow + delay;",
+      "replace": "copy.ScheduledEnqueueTime = DateTimeOffset.UtcNow;" },
+    { "id": "A04", "name": "copy keeps original MessageId",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
+      "find": "MessageId = Guid.CreateVersion7().ToString()",
+      "replace": "MessageId = original.MessageId" },
+    { "id": "A09", "name": "library headers leak into MessageContext.Headers",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
+      "find": "if (IsInternal(key) || Text(value) is not { } text)",
+      "replace": "if (Text(value) is not { } text)" },
+    { "id": "A17", "name": "no re-entrancy check on unsubscribe",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "find": "        if (HandlerScope.IsRunningHandlerOf(stopping))",
+      "replace": "        if (false)" },
+    { "id": "A22", "name": "settle-once guard removed",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusSettlement.cs",
+      "find": "        if (Interlocked.Exchange(ref state, 1) == 1)\n            return;\n",
+      "replace": "        Interlocked.Exchange(ref state, 1);\n" }
+  ]
+}

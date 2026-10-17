@@ -22,7 +22,7 @@ sealed class BenchmarkBroker : IAsyncDisposable
         if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(Variable)))
             return new BenchmarkBroker(null, available: true);
 
-        var container = new RabbitMqBuilder("rabbitmq:4.3.6-management").Build();
+        var container = new RabbitMqBuilder(TestBrokerImage()).Build();
         try
         {
             await container.StartAsync();
@@ -43,4 +43,10 @@ sealed class BenchmarkBroker : IAsyncDisposable
         if (container is not null)
             await container.DisposeAsync();
     }
+
+    // The tag lives in docker/test-broker/Dockerfile (copied next to the binary), where Dependabot sees it.
+    static string TestBrokerImage() =>
+        File.ReadLines(Path.Combine(AppContext.BaseDirectory, "test-broker.Dockerfile"))
+            .Select(line => line.Trim())
+            .First(line => line.StartsWith("FROM ", StringComparison.OrdinalIgnoreCase))[5..].Trim();
 }

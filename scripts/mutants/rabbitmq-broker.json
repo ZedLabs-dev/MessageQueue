@@ -1,0 +1,18 @@
+{
+  "description": "RabbitMQ behavior only a real broker shows (Testcontainers, Docker required): connection recovery and the size limit at the boundary.",
+  "defaults": { "filter": "Category=Integration&FullyQualifiedName~on_an_unreliable_broker" },
+  "mutants": [
+    { "id": "I1", "name": "no automatic connection recovery",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqConnections.cs",
+      "find": "AutomaticRecoveryEnabled = true,",
+      "replace": "AutomaticRecoveryEnabled = false," },
+    { "id": "I2", "name": "a body exactly at the limit is rejected",
+      "file": "src/ESE.MessageQueue/Providers/MessageDispatcher.cs",
+      "find": "if (body.Length > config.MaxMessageSizeBytes)",
+      "replace": "if (body.Length >= config.MaxMessageSizeBytes)" },
+    { "id": "I3", "name": "deserialization failures are retried instead of dead-lettered",
+      "file": "src/ESE.MessageQueue/Providers/MessageDispatcher.cs",
+      "find": "return await DeadLetterAsync(actions, activity, context.MessageId, new DeadLetterReason(DeadLetterReasons.DeserializationFailed, TypeName(ex)));",
+      "replace": "return await RetryOrDeadLetterAsync(actions, activity, context, ex, stopping);" }
+  ]
+}

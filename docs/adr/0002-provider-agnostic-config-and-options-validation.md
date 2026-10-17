@@ -36,3 +36,9 @@ RabbitMQ. Validation was hand-written `if`/`throw` at registration time, and onl
 
 - Invalid settings now fail at host start (`OptionsValidationException`) instead of at `AddMessageQueue`.
 - Apps that relied on RabbitMQ being the default must set `Provider` explicitly.
+
+## Later changes
+
+- Superseded in part by ADR 0015: `Provider` is no longer an enum name but the name of a registered provider
+  (`InMemory` built in, others via `Add…Provider()` before `AddMessageQueue<T>`); the error lists the registered names.
+  The provider validators are internal and derive from the public `MessageQueueConfigValidator<TConfig>`.

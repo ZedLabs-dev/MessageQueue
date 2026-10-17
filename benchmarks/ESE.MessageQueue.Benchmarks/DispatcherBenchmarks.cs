@@ -4,6 +4,7 @@ using BenchmarkDotNet.Attributes;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.InMemory;
 using ESE.MessageQueue.Processing;
+using ESE.MessageQueue.Providers;
 using ESE.MessageQueue.Serialization;
 using ESE.MessageQueue.Telemetry;
 using ESE.MessageQueue.Telemetry.OpenTelemetry;

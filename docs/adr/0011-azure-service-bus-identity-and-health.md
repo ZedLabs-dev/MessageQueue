@@ -34,3 +34,9 @@ Initialization errors echoed the client's exception text.
 - Breaking: `ConnectionString` is no longer `[Required]` alone; malformed strings fail at startup.
 - Azure.Identity (and MSAL) become dependencies of the core package until the provider split (ADR 0005).
 - Client-creation failures lose the inner exception; the type and the settings to check are in the message.
+
+## Later changes
+
+- Superseded in part (Phase 7): health results carry **no exception** at all; the exception is logged (event 6001)
+  instead of attached, because health endpoints may serialize it. Standalone checks validate the connection string
+  or namespace at registration. Azure.Identity is a dependency of `ESE.MessageQueue.AzureServiceBus` only (ADR 0015).

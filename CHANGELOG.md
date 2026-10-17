@@ -6,6 +6,102 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Version 1.0.0-rc.1 (Directory.Build.props). Not to be released as 1.0.0 final until the release blockers below are
+resolved.
+
+### Release blockers for 1.0.0
+- **The Azure Service Bus integration specs have never run against a real broker** (no namespace, and the emulator's
+  EULA is the owner's to accept). They skip without `MQ_ASB_CONNECTION_STRING`; the provider is verified only through
+  its unit specs over the SDK seams. Run `Category=Integration` with a namespace or the emulator, then remove this item.
+
+### Phase 7: package split, API lock, packaging, agentic tooling (OPTIMIZATION-PLAN Phase 7)
+
+Design records: `docs/adr/0015` (provider SPI and package split), `0016` (API lock and packaging), `0017` (tooling).
+
+#### Breaking
+- Three packages (ADR 0005): `ESE.MessageQueue` (core, in-memory provider; no broker SDK), `ESE.MessageQueue.RabbitMQ`
+  and `ESE.MessageQueue.AzureServiceBus`. Broker providers must be registered before `AddMessageQueue<T>`:
+  `services.AddRabbitMqProvider()` / `services.AddAzureServiceBusProvider()`. An unregistered `Provider` now fails with
+  "`<section>:Provider '<name>' is not registered. Registered providers: InMemory, ...`" (was "is not supported.
+  Supported providers: ..."). A provider registered as a type or factory instead of `AddMessageQueueProvider(instance)`
+  fails registration with a message saying so.
+- The core package no longer depends on RabbitMQ.Client, Azure.Messaging.ServiceBus or Azure.Identity. An app that
+  used those SDKs' types directly while getting them through `ESE.MessageQueue` must reference them itself (or the
+  provider package that brings them).
+- **Lockstep versions:** `ESE.MessageQueue.RabbitMQ` and `ESE.MessageQueue.AzureServiceBus` depend on the exact
+  `ESE.MessageQueue` version they were built with (`[1.0.0-rc.1]`), because they share its internals (ADR 0015).
+  Upgrade all `ESE.MessageQueue*` packages together.
+- `ESE.MessageQueue.Testing.TestingExtensions` (removed in Phase 4, listed here for completeness): use
+  `AddInMemoryMessageQueue<T>()` from `MessageQueueServiceCollectionExtensions`.
+- **Health checks attach no exception any more** (S5): `HealthCheckResult.Exception` is null and `Data` is empty on
+  failure (the generic check no longer puts the queue name in `Data`); the exception is logged with event id 6001
+  ("Health check {HealthCheck} failed with {ExceptionType}") through the container's `ILoggerFactory`.
+  `MessageQueueHealthCheck` takes an optional `ILogger`. The standalone Service Bus checks validate the connection
+  string or namespace at registration (`ArgumentException`, fixed message).
+- `DeadLetterReason` is a struct with a constructor (`new DeadLetterReason(code, detail)`, code required);
+  `default(DeadLetterReason).Code` reads `DeliveryFailed`. Positional deconstruction is gone.
+- `RetryStrategy` moved to its own file (same namespace); `RabbitMqTlsConfig` likewise.
+- The `MessageQueueProvider` enum is removed; `MessageQueueConfig.Provider` is a `string` (`InMemoryConfig.ProviderName`,
+  `RabbitMqConfig.ProviderName`, `AzureServiceBusConfig.ProviderName`).
+- Renamed: `ServiceCollectionExtensions` → `MessageQueueServiceCollectionExtensions`, `HealthCheckExtensions` →
+  `MessageQueueHealthCheckExtensions` (extension-method call sites are unchanged). The RabbitMQ and Service Bus health
+  check registrations moved to `RabbitMqHealthCheckExtensions` / `AzureServiceBusHealthCheckExtensions` in the provider
+  packages (same namespace, same method names).
+- No longer public: `RetryExecutor`, `OpenTelemetryActivity`, `RabbitMqHealthCheck`, `AzureServiceBusHealthCheck`,
+  `AzureServiceBusMetricsHealthCheck` (register them with the `Add…HealthCheck` extensions), and the config validators
+  (`RabbitMqConfigValidator`, `AzureServiceBusConfigValidator`, `InMemoryConfigValidator`).
+- Removed (unused): `QueueHealthStatus`, `TransientMessageException`.
+- Sealed: `RabbitMqMessageQueue<T>`, `AzureServiceBusMessageQueue<T>`, `MessageQueueHostedService<T>`,
+  `MessageQueueHealthCheck`, `OpenTelemetryProvider`, `NullTelemetryProvider`, `ConfigurationException`, and the
+  records `RabbitMqConfig`, `RabbitMqTlsConfig`, `AzureServiceBusConfig`, `InMemoryConfig`, `RetryPolicy`.
+- `TelemetryActivity.Dispose()` is no longer virtual: override `protected virtual Dispose(bool disposing)` instead
+  (standard dispose pattern; CA1816 is enforced again).
+- Moved to namespace `ESE.MessageQueue.Providers` and made public as the provider SPI: `MessageDispatcher<T>`,
+  `IDeliveryActions`, `DeadLetterReason`, `DispatchOutcome`, `PublishTelemetry`, `PublishValidation`,
+  `MessageSerializer` (was `ESE.MessageQueue.Serialization`, internal).
+
+#### Added
+- Provider SPI for third-party providers (ADR 0015): `IMessageQueueProvider`, `MessageQueueRegistration<T>` (strict
+  binding, shared validation and `ValidateOnStart` done by core), `QueueFactoryContext<TConfig>`,
+  `MessageQueueConfigValidator<TConfig>`, `MessageContextExtensions.WithTraceHeaders`, public `TraceHeaders`, and
+  `services.AddMessageQueueProvider(provider)`. `samples/ESE.MessageQueue.Samples.LoopbackProvider` is a provider
+  built on that SPI alone.
+- Public API lock: PublicApiAnalyzers with `PublicAPI.Shipped.txt` baselines; XML documentation on every public type
+  and member (options classes excepted, per the house rules).
+- NuGet packaging: MIT license (new `LICENSE`), README per package, SourceLink, deterministic builds, `.snupkg` symbols,
+  package validation; provider packages depend on the exact core version. `release.yml` publishes on `v*` tags (NuGet
+  trusted publishing or `NUGET_API_KEY`) and creates the GitHub release from this file.
+- Claude Code tooling: format-on-edit and build/unit-test Stop hooks, `test-writer`, `security-reviewer`,
+  `package-updater` and `adversarial-reviewer` agents, `update-packages`, `add-tests`, `release` and `mutation-test`
+  skills, and `scripts/mutate.py` (mutation testing in a scratch copy) with definitions in `scripts/mutants/`.
+- GitHub: optional `claude.yml` (`@claude` and pull request review), weekly `update-packages.yml` opening a pull request;
+  CI now packs and uploads the packages.
+
+#### Changed
+- Consumed messages (RabbitMQ, Service Bus, and anything through `MessageDispatcher<T>`): a broker-supplied message
+  id loses control characters and is cut to 128 characters before it reaches logs or handlers; application headers
+  get the publish-side caps on consume too (at most 64, names up to 128 and values up to 4096 characters; others are
+  dropped).
+- RabbitMQ: the client buffers at most `max(MaxMessageSizeBytes, 16 MiB)` per inbound body (was 64 MiB). The retry
+  attempt header counts only when the broker's `x-death` history says the message expired out of this queue's retry
+  queue (ADR 0006 note: a publisher can still forge both, for its own messages).
+- Service Bus processor errors are counted: `ITelemetryProvider.RecordTransportError` (default interface method, so
+  custom providers keep compiling) and the metric `ese.messagequeue.transport.errors` with `error.type` (B6).
+- `MessageDispatcher<T>` validates its arguments and snapshots the config it is given; JSON deserialization states
+  `MaxDepth = 64` explicitly (ADR 0018).
+- Packed assemblies grant `InternalsVisibleTo` only to the first-party provider packages; tests and benchmarks see
+  internals in development builds only.
+- Samples: settings are read from the output folder (`dotnet run --project samples/ESE.MessageQueue.Samples` works
+  from the repository root), and the broker is chosen with `-- --environment RabbitMq`.
+- The RabbitMQ test and benchmark image tag lives in `docker/test-broker/Dockerfile`, watched by Dependabot.
+- Repository layout: `MessageQueue/` → `src/ESE.MessageQueue*/`, `MessageQueue.Tests/` → `tests/ESE.MessageQueue.Tests/`,
+  the compose file, `.env.example` and emulator config → `docker/`, the API docs → `docs/`. The local `.env` now lives in
+  `docker/.env`.
+- Coverage is gated on the three packages together (87%) plus a per-assembly floor (`scripts/coverage.sh`).
+- §4.4: the library writes no `DateTimeOffset` application properties any more (the Service Bus rework removed
+  `PublishedAt` / `NextRetryAt`; `MessageContext.Timestamp` is the broker's `EnqueuedTime`), so nothing is left to
+  convert to native properties.
+
 ### Phase 6: telemetry, samples, benchmarks (OPTIMIZATION-PLAN B10, S8, §4, §4.5, §4.7)
 
 Design records: `docs/adr/0013` (telemetry), `docs/adr/0014` (samples and benchmarks). Numbers: `docs/benchmarks.md`.
@@ -167,7 +263,7 @@ Design records: `docs/adr/0006`–`0008`.
   `RabbitMqMessageQueue.CreateAsync<T>(config, telemetry, logger, cancellationToken)` constructs and connects in one
   call. Connection failures surface there as `MessageQueueException`, whose message names only the exception type
   (no client text, no credentials). A failed connect is retried on the next call.
-- TLS is required by default for any host other than `localhost`/`127.0.0.1`/`::1` (S7): a plain `amqp://`
+- TLS is required by default for any host other than a loopback host (`localhost`, `127.0.0.0/8`, `::1`) (S7): a plain `amqp://`
   connection string to a remote host now fails validation at startup and in the constructor. Use `amqps://` or set
   the new `RequireTls = false`. Connect-time re-checks throw `ConfigurationException`.
 - `RabbitMqConfig.ConnectionString` is no longer `[Required]` alone: exactly one of `ConnectionString` or the new

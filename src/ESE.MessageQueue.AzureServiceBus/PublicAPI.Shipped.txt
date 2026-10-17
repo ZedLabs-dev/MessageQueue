@@ -1,0 +1,58 @@
+#nullable enable
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.AzureServiceBusConfig() -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.ConnectionString.get -> string!
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.ConnectionString.set -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.EnableBatchedOperations.get -> bool
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.EnableBatchedOperations.set -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.Equals(ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig? other) -> bool
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.FullyQualifiedNamespace.get -> string!
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.FullyQualifiedNamespace.set -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.MaxAutoLockRenewalDuration.get -> System.TimeSpan
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.MaxAutoLockRenewalDuration.set -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.MaxBatchSize.get -> int
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.MaxBatchSize.set -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.MessageTimeToLive.get -> System.TimeSpan
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.MessageTimeToLive.set -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.PrefetchCount.get -> int
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.PrefetchCount.set -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.SendTimeout.get -> System.TimeSpan
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.SendTimeout.set -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.ShutdownTimeout.get -> System.TimeSpan
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.ShutdownTimeout.set -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.SubscriptionName.get -> string?
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.SubscriptionName.set -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.TopicName.get -> string?
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.TopicName.set -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.TransactionalRetries.get -> bool
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.TransactionalRetries.set -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.AzureServiceBusMessageQueue(ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig! config, Azure.Core.TokenCredential! credential, ESE.MessageQueue.Telemetry.ITelemetryProvider? telemetry = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.AzureServiceBusMessageQueue(ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig! config, ESE.MessageQueue.Telemetry.ITelemetryProvider? telemetry = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.Capabilities.get -> ESE.MessageQueue.Abstractions.MessageQueueCapabilities!
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.Dispose() -> void
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.PublishAsync(System.Collections.Generic.IEnumerable<T!>! messages, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.PublishAsync(T! message, ESE.MessageQueue.Abstractions.PublishOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.PublishAsync(T! message, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.SubscribeAsync(System.Func<T!, ESE.MessageQueue.Abstractions.MessageContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task<ESE.MessageQueue.Abstractions.MessageResult>!>! handler, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.SubscribeAsync(System.Func<T!, System.Threading.Tasks.Task<bool>!>! handler, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.UnsubscribeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ESE.MessageQueue.Extensions.AzureServiceBusServiceCollectionExtensions
+ESE.MessageQueue.HealthChecks.AzureServiceBusHealthCheckExtensions
+const ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.ProviderName = "AzureServiceBus" -> string!
+override ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.<Clone>$() -> ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig!
+override ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.Equals(object? obj) -> bool
+override ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.GetHashCode() -> int
+override ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.Provider.get -> string!
+override ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.ToString() -> string!
+override sealed ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.Equals(ESE.MessageQueue.Configuration.MessageQueueConfig? other) -> bool
+static ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.operator !=(ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig? left, ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig? right) -> bool
+static ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.operator ==(ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig? left, ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig? right) -> bool
+static ESE.MessageQueue.Extensions.AzureServiceBusServiceCollectionExtensions.AddAzureServiceBusProvider(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static ESE.MessageQueue.HealthChecks.AzureServiceBusHealthCheckExtensions.AddAzureServiceBusHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! connectionString, string! queueName, string! name = "azureservicebus", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null, string? subscriptionName = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ESE.MessageQueue.HealthChecks.AzureServiceBusHealthCheckExtensions.AddAzureServiceBusHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! fullyQualifiedNamespace, Azure.Core.TokenCredential! credential, string! queueName, string! name = "azureservicebus", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null, string? subscriptionName = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ESE.MessageQueue.HealthChecks.AzureServiceBusHealthCheckExtensions.AddAzureServiceBusHealthCheck<T>(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! name = "azureservicebus", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ESE.MessageQueue.HealthChecks.AzureServiceBusHealthCheckExtensions.AddAzureServiceBusMetricsHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! connectionString, string! queueName, string! name = "azureservicebus-metrics", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ESE.MessageQueue.HealthChecks.AzureServiceBusHealthCheckExtensions.AddAzureServiceBusMetricsHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! fullyQualifiedNamespace, Azure.Core.TokenCredential! credential, string! queueName, string! name = "azureservicebus-metrics", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static readonly ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig.DefaultShutdownTimeout -> System.TimeSpan

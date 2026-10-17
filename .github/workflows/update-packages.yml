@@ -1,0 +1,126 @@
+name: Weekly package update
+
+# Runs the update-packages flow (.claude/skills/update-packages) with Claude Code every Monday and opens a pull
+# request. The owner works on main; this pull request is how unattended changes get reviewed before they land.
+# Dependabot keeps opening its own grouped PRs for plain bumps; this job also handles majors that need code changes.
+#
+# Two jobs, so the agent never holds a token that can write: `update` runs Claude with `contents: read` and no
+# persisted git credentials and uploads the diff; `open-pr` applies that diff and opens the pull request.
+#
+# Secrets / variables:
+#   ANTHROPIC_API_KEY (secret)                                         required; without it the run does nothing
+#   AUTOMATION_APP_ID (variable), AUTOMATION_APP_PRIVATE_KEY (secret)  optional GitHub App. A pull request opened with
+#     the default GITHUB_TOKEN starts ci.yml only after someone with write access approves the run; an App token's
+#     pull request runs CI immediately.
+
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-packages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.repository == 'ericsewing/MessageQueue'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write   # claude-code-action's GitHub token exchange; it gets no write scope from this job
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      MQ_REQUIRE_DOCKER: 'true'
+    steps:
+      - name: Check for the Anthropic key
+        id: key
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: echo "present=$([ -n "$KEY" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        if: steps.key.outputs.present == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v6
+        if: steps.key.outputs.present == 'true'
+        with:
+          global-json-file: global.json
+
+      - name: Update packages with Claude Code
+        if: steps.key.outputs.present == 'true'
+        uses: anthropics/claude-code-action@f27be6b65a4652f08a2ba3cff79114829b588967 # v1.0.252
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Follow .claude/skills/update-packages/SKILL.md for this repository, unattended. Edit files only; do not
+            commit, push or create branches (a later job opens the pull request). When done, write the summary the
+            skill asks for (bumps, majors with their breaking changes and the code changes made, anything held back
+            and why, gate results) to update-packages-summary.md in the repository root.
+          claude_args: >-
+            --max-turns 120
+            --allowedTools "Read,Edit,Write,Glob,Grep,WebFetch(domain:nuget.org),WebFetch(domain:api.nuget.org),WebFetch(domain:github.com),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet list ESE.MessageQueue.sln package:*),Bash(dotnet format:*),Bash(dotnet add src/ESE.MessageQueue/ESE.MessageQueue.csproj package:*),Bash(dotnet add src/ESE.MessageQueue.RabbitMQ/ESE.MessageQueue.RabbitMQ.csproj package:*),Bash(dotnet add src/ESE.MessageQueue.AzureServiceBus/ESE.MessageQueue.AzureServiceBus.csproj package:*),Bash(dotnet add tests/ESE.MessageQueue.Tests/ESE.MessageQueue.Tests.csproj package:*),Bash(scripts/coverage.sh:*),Bash(git status:*),Bash(git diff:*)"
+
+      - name: Collect the changes
+        id: diff
+        if: steps.key.outputs.present == 'true'
+        run: |
+          git add -A -- . ':!TestResults' ':!artifacts' ':!**/bin/**' ':!**/obj/**'
+          git diff --cached --binary > update.patch
+          echo "changed=$([ -s update.patch ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          [ -f update-packages-summary.md ] || echo "Package update (no summary was written)." > update-packages-summary.md
+
+      - uses: actions/upload-artifact@v7
+        if: steps.diff.outputs.changed == 'true'
+        with:
+          name: package-update
+          path: |
+            update.patch
+            update-packages-summary.md
+
+  open-pr:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app
+        if: vars.AUTOMATION_APP_ID != ''
+        with:
+          app-id: ${{ vars.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: package-update
+          path: ${{ runner.temp }}/package-update
+
+      - name: Apply the changes
+        run: git apply --index "$RUNNER_TEMP/package-update/update.patch"
+
+      - name: Open the pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ steps.app.outputs.token || github.token }}
+          branch: automation/update-packages
+          delete-branch: true
+          commit-message: Update NuGet packages (weekly)
+          title: Weekly NuGet package update
+          body-path: ${{ runner.temp }}/package-update/update-packages-summary.md

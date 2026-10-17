@@ -6,8 +6,8 @@ next-env.d.ts
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
-[Rr]elease/
-[Rr]eleases/
+**/[Bb]in/[Rr]elease/
+**/[Oo]bj/[Rr]elease/
 x64/
 x86/
 [Ww][Ii][Nn]32/
@@ -20,10 +20,13 @@ bld/
 [Ll]ogs/
 *.user
 
-# Local secrets for docker-compose (template: MessageQueue/.env.example)
+# Local secrets for docker-compose (template: docker/.env.example)
 .env
 !.env.example
 
 # Coverage / test output
 TestResults/
 coverage/
+
+# dotnet pack output
+artifacts/

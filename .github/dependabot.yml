@@ -8,13 +8,16 @@ updates:
     groups:
       microsoft-extensions:
         patterns: ["Microsoft.Extensions.*"]
+      build-tooling:
+        patterns:
+          - "Microsoft.CodeAnalysis.PublicApiAnalyzers"
+          - "Microsoft.SourceLink.*"
       test-dependencies:
         patterns:
           - "Microsoft.NET.Test.Sdk"
           - "coverlet.*"
           - "NSubstitute*"
           - "xunit*"
-          - "FluentAssertions"
           - "AwesomeAssertions"
           - "Testcontainers*"
       minor-and-patch:
@@ -29,7 +32,16 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: docker-compose
-    directory: /MessageQueue
+    directory: /docker
+    schedule:
+      interval: weekly
+    groups:
+      docker:
+        patterns: ["*"]
+
+  # The Testcontainers image for the integration tests and benchmarks (read from this Dockerfile at run time).
+  - package-ecosystem: docker
+    directory: /docker/test-broker
     schedule:
       interval: weekly
     groups:

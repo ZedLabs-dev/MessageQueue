@@ -6,6 +6,8 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # release.yml runs the same gates before publishing.
+  workflow_call:
 
 permissions:
   contents: read
@@ -24,9 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
           cache: true
@@ -83,10 +85,22 @@ jobs:
             exit 1
           fi
 
+      # The three packages (ADR 0005): metadata, SourceLink, symbols and package validation; the provider packages pin
+      # the exact core version (ADR 0015). Not --no-build: pack rebuilds without the tests' InternalsVisibleTo (ADR 0016).
+      - name: Pack
+        run: dotnet pack ESE.MessageQueue.sln --no-restore --configuration Release --output artifacts
+
       - name: Upload test results and coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-and-coverage
           path: TestResults/
           if-no-files-found: warn
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages
+          path: artifacts/
+          if-no-files-found: error

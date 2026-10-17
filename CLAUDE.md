@@ -12,39 +12,44 @@ dotnet build ESE.MessageQueue.sln -warnaserror              # warnings are error
 dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m                             # full suite (RabbitMQ via Testcontainers; needs Docker)
 dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Unit      # fast loop: no Docker, no broker
 dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Integration
-scripts/coverage.sh                                         # full suite + coverage report + gate (TestResults/coverage-report/index.html)
+scripts/coverage.sh                                         # full suite + coverage report + gates (TestResults/coverage-report/index.html)
 dotnet format ESE.MessageQueue.sln                          # apply .editorconfig style
 dotnet format ESE.MessageQueue.sln --verify-no-changes      # what CI runs
 dotnet list ESE.MessageQueue.sln package --vulnerable --include-transitive   # must report none
+dotnet pack ESE.MessageQueue.sln -c Release -o artifacts    # the three packages + .snupkg symbols
+scripts/mutate.py scripts/mutants/<set>.json [ids]          # mutation testing in a scratch copy (never the working tree)
 
-dotnet run --project samples/ESE.MessageQueue.Samples                         # sample worker, in-memory (--environment RabbitMq|AzureServiceBus)
+dotnet run --project samples/ESE.MessageQueue.Samples                         # sample worker, in-memory (append `-- --environment RabbitMq|AzureServiceBus`)
 dotnet run -c Release --project benchmarks/ESE.MessageQueue.Benchmarks -- --filter '*' --job short   # docs/benchmarks.md
 
-cp MessageQueue/.env.example MessageQueue/.env              # once; .env is git-ignored
-docker compose -f MessageQueue/docker-compose.dev.yml up -d --wait                       # RabbitMQ 4.x
-docker compose -f MessageQueue/docker-compose.dev.yml --profile servicebus up -d          # + ASB emulator (ACCEPT_EULA=Y in .env)
+cp docker/.env.example docker/.env                          # once; .env is git-ignored
+docker compose -f docker/docker-compose.dev.yml up -d --wait                       # RabbitMQ 4.x
+docker compose -f docker/docker-compose.dev.yml --profile servicebus up -d          # + ASB emulator (ACCEPT_EULA=Y in .env)
 ```
 
 The compose file is for manual experiments only; the tests do not use it (see Testing below).
 
-## Architecture
+## Layout and architecture
 
-| Layer | Folder | Key types |
-|---|---|---|
-| Abstractions | `Abstractions/` | `IMessageQueue<T>` (= `IMessagePublisher<T>` + `IMessageSubscriber<T>` + `Capabilities`), `MessageContext`, `MessageResult`, `PublishOptions`, `MessageQueueCapabilities` |
-| Consumer pipeline | `Processing/` | internal `MessageDispatcher<T>` + `IDeliveryActions` transport seam (ADR 0004), `DeadLetterReasons`, `IMessageProcessor<T>`; shared consumer helpers `HandlerScope` (re-entrancy), `TransportBackoff`, `LogThrottle`, `BackgroundWork` (ADR 0010) |
-| Configuration | `Configuration/`, `Extensions/` | `MessageQueueConfig` (portable base record), `MessageQueueProvider`, per-provider `IValidateOptions` validators, `ServiceCollectionExtensions.AddMessageQueue<T>` / `AddInMemoryMessageQueue<T>` |
-| Providers | `RabbitMQ/`, `AzureServiceBus/`, `InMemory/` | `RabbitMqMessageQueue<T>` (RabbitMQ.Client 7, lazy async connect, `PublisherPool`, per-delay `RetryQueues`, `RabbitMqConnections` TLS rules; ADRs 0006–0008); `AzureServiceBusMessageQueue<T>` (thin SDK seams in `ServiceBusTransport.cs`, one sender, scheduled-copy retries on queues and lock-held retries on subscriptions in `ServiceBusMessages`, Entra ID identity; ADRs 0009–0012); `InMemoryMessageQueue<T>` (single-process, non-durable, ADR 0003) |
-| Cross-cutting | `Serialization/`, `Retry/`, `Exceptions/` | `MessageSerializer` (JSON / MessagePack, `UntrustedData`), `RetryPolicy` + `RetryExecutor` (`MaxRetries` semantics, ADR 0001), `MessageQueueException` |
-| Hosting & ops | `Hosting/`, `HealthChecks/`, `Telemetry/` | `MessageQueueHostedService<T>` (DI scope per message), health checks per broker (`AddRabbitMqHealthCheck<T>` / `AddAzureServiceBusHealthCheck<T>` reuse the queue's connection or client; no secrets or exception text in results), `ITelemetryProvider` + `OpenTelemetryProvider` (`System.Diagnostics` Activity/Meter, no exporter): `PublishTelemetry` producer spans inject W3C `traceparent`/`tracestate` (reserved headers), the dispatcher parents consume spans on them; strict `TraceContext.Parse`; semconv metrics (ADR 0013) |
-| Samples | `samples/ESE.MessageQueue.Samples` | Worker: `SampleHost` (in-memory by default, broker via `appsettings.{Env}.json`), processor showing Acknowledge/Retry/DeadLetter, OpenTelemetry console exporter (the only OTel package reference). Smoke-tested by `Samples/Given_the_sample_host` (ADR 0014) |
-| Benchmarks | `benchmarks/ESE.MessageQueue.Benchmarks` | BenchmarkDotNet: serializer, dispatcher overhead, in-memory throughput, RabbitMQ confirms (Testcontainers or `MQ_BENCH_RABBITMQ`, left out without Docker). Not a test project: `dotnet test` never runs it, CI only builds it |
+| Path | Contents |
+|---|---|
+| `src/ESE.MessageQueue` | Core package, no broker SDK. `Abstractions/` (`IMessageQueue<T>` = `IMessagePublisher<T>` + `IMessageSubscriber<T>` + `Capabilities`, `MessageContext`, `MessageResult`, `PublishOptions`), `Providers/` (public provider SPI: `IMessageQueueProvider`, `MessageQueueRegistration<T>`, `MessageDispatcher<T>`, `IDeliveryActions`, `PublishTelemetry`, `PublishValidation`, `MessageSerializer`, `MessageQueueConfigValidator<T>`), `Processing/` (internal consumer helpers `HandlerScope`, `TransportBackoff`, `LogThrottle`, `BackgroundWork`; `DeadLetterReasons`, `IMessageProcessor<T>`), `Configuration/`, `Extensions/` (`AddMessageQueue<T>`, `AddMessageQueueProvider`, `AddInMemoryMessageQueue<T>`), `Retry/`, `Hosting/` (`MessageQueueHostedService<T>`, DI scope per message), `Telemetry/` (`ITelemetryProvider`, `OpenTelemetryProvider`, W3C `TraceContext`; ADR 0013), `HealthChecks/` (generic check), `InMemory/` (built-in provider, ADR 0003) |
+| `src/ESE.MessageQueue.RabbitMQ` | RabbitMQ.Client 7 provider: lazy connect, `PublisherPool`, per-delay `RetryQueues`, TLS rules, health check, `AddRabbitMqProvider()` (ADRs 0006-0008) |
+| `src/ESE.MessageQueue.AzureServiceBus` | Service Bus provider: SDK seams in `ServiceBusTransport.cs`, scheduled-copy retries, Entra ID, peek health check, `AddAzureServiceBusProvider()` (ADRs 0009-0012) |
+| `tests/ESE.MessageQueue.Tests` | One test project for all three packages (ADR 0015) |
+| `samples/` | `ESE.MessageQueue.Samples` (worker; the only OpenTelemetry exporter reference, ADR 0014) and `ESE.MessageQueue.Samples.LoopbackProvider` (a provider built on the public SPI only, no InternalsVisibleTo) |
+| `benchmarks/` | BenchmarkDotNet; never run by `dotnet test`, CI only builds it |
+| `docker/` | Dev compose file, `.env.example`, ASB emulator config |
+| `docs/` | `adr/` (decisions: read before changing retry, config, dispatcher, packaging), API docs, `benchmarks.md` |
 
-Abstractions never reference a broker SDK. Provider-specific settings live on the provider config
-(`RabbitMqConfig`, `AzureServiceBusConfig`, `InMemoryConfig`), not on the base (ADR 0002). Every provider consumes
-through `MessageDispatcher<T>` and implements only `IDeliveryActions` (complete / reschedule / dead-letter) plus
-metadata mapping; retry, backoff, size limit and dead-letter decisions are never re-implemented in a provider.
-Design decisions live in `docs/adr/`; read them before changing retry, config, in-memory or dispatcher behavior.
+- Providers are selected by the `Provider` setting among registered providers (`InMemory` built in; brokers via
+  `Add…Provider()` **before** `AddMessageQueue<T>`). Core binds, validates and registers for every provider (ADR 0015).
+- Every provider consumes through `MessageDispatcher<T>` and implements only `IDeliveryActions` plus metadata
+  mapping; retry, backoff, size limit and dead-letter decisions are never re-implemented in a provider (ADR 0004).
+- Provider-specific settings live on the provider config (`RabbitMqConfig`, `AzureServiceBusConfig`, `InMemoryConfig`),
+  never on `MessageQueueConfig` (ADR 0002).
+- First-party providers use core internals through `InternalsVisibleTo` and pin the exact core version; a third-party
+  provider must work with the public SPI alone.
 
 ## Code conventions (enforced by `.editorconfig` + analyzers)
 
@@ -56,6 +61,9 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
   `IValidateOptions<T>` validator; `const` section names and defaults; register with `ValidateOnStart()`.
 - Make only the requested change. No speculative features. Validate at system boundaries, trust internal code.
   Reuse existing abstractions. Mock only external dependencies.
+- This file supersedes `messagequeue-refactoring-instructions.md` (the owner's original brief, kept unedited) where
+  they disagree: assertions use AwesomeAssertions, not FluentAssertions (decision D1), and provider settings live on
+  the provider configs, not on `MessageQueueConfig` (ADR 0002).
 
 ## Testing: behavior-driven, spec first
 
@@ -71,9 +79,9 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
 5. No `// Arrange` / `// Act` / `// Assert` comments.
 6. Every test class has `[Trait("Category","Unit")]` or `[Trait("Category","Integration")]`. Unit tests must not
    need a broker, Docker or the network.
-7. Layout: one folder per area (`Serialization/`, `Retry/`, `Telemetry/`, `HealthChecks/`, `InMemory/`, `RabbitMQ/`,
-   `AzureServiceBus/`, `Configuration/`, `Processing/`, `Hosting/`, `Abstractions/`, `Samples/`), one class under test
-   per file. Shared fixtures and helpers live in `Support/` (`SpanCapture` / `MetricCapture` listen to one
+7. Layout: one folder per area in `tests/ESE.MessageQueue.Tests` (`Serialization/`, `Retry/`, `Telemetry/`,
+   `HealthChecks/`, `InMemory/`, `RabbitMQ/`, `AzureServiceBus/`, `Configuration/`, `Processing/`, `Providers/`,
+   `Hosting/`, `Abstractions/`, `Packaging/`, `Samples/`), one class under test per file. Shared fixtures and helpers live in `Support/` (`SpanCapture` / `MetricCapture` listen to one
    ActivitySource / Meter: give each test its own source name).
 8. Pass `TestContext.Current.CancellationToken` to anything that takes a token (analyzer xUnit1051 fails the build).
    Async tests that could hang get `[Fact(Timeout = ...)]`; CI also runs with `--blame-hang-timeout 2m`.
@@ -88,7 +96,7 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
   (`IsTestingPlatformApplication=false` in the test project). That keeps `--filter Category=Unit` and
   `--collect:"XPlat Code Coverage"` working with plain `dotnet test`.
 - **RabbitMQ:** `Support/RabbitMqBrokerFixture` is an xunit collection fixture (`[Collection(RabbitMqCollection.Name)]`)
-  that starts one `rabbitmq:4.3.6-management` container via Testcontainers for the whole run and hands tests its
+  that starts one RabbitMQ container (image tag in `docker/test-broker/Dockerfile`, where Dependabot bumps it) via Testcontainers for the whole run and hands tests its
   connection string (Testcontainers supplies the credentials; test configs set `RequireTls = false`). It starts only when an integration test in that
   collection runs, so the unit loop never touches Docker. `Support/RabbitMqTestQueues` creates per-test queues and
   deletes them (and their dead-letter queues, lazily created `{queue}.retry.*` queues and exchanges) in the test
@@ -97,7 +105,7 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
 - **Azure Service Bus:** integration tests run only when `MQ_ASB_CONNECTION_STRING` is set (a real namespace, or the
   emulator from the compose file after the owner accepts its EULA). They use the predeclared queue
   `integration-test-queue` and `integration-test-topic`/`integration-test-subscription` from
-  `MessageQueue/servicebus-emulator-config.json` (`MQ_ASB_QUEUE_NAME`, `MQ_ASB_TOPIC_NAME`, `MQ_ASB_SUBSCRIPTION_NAME`
+  `docker/servicebus-emulator-config.json` (`MQ_ASB_QUEUE_NAME`, `MQ_ASB_TOPIC_NAME`, `MQ_ASB_SUBSCRIPTION_NAME`
   override them; `MQ_ASB_TRANSACTIONAL_RETRIES=false` for entities without transactions).
   Without a namespace, the provider's behavior is unit-tested through its internal SDK seams with
   `Support/FakeServiceBus` (async sends and settlements that enlist in the ambient transaction, a processor stop that
@@ -108,8 +116,8 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
   skip; any other container start failure fails the tests.
 - **Coverage:** coverlet.collector writes Cobertura; `scripts/coverage.sh` merges every
   `TestResults/**/coverage.cobertura.xml` with ReportGenerator (local tool in `.config/dotnet-tools.json`, run
-  `dotnet tool restore` once), prints line coverage for `ESE.MessageQueue`, writes an HTML report and fails below the
-  gate (`COVERAGE_THRESHOLD`, default in the script). The gate is measured on the merged unit + integration run with
+  `dotnet tool restore` once) for the three package assemblies, writes an HTML report and fails when their combined
+  line coverage is below `COVERAGE_THRESHOLD` or any one of them is below `COVERAGE_ASSEMBLY_FLOOR`. The gate is measured on the merged unit + integration run with
   Docker on and no ASB connection string; a unit-only run is lower. `--skip-tests` only merges existing results (CI).
 
 ## Hard rules
@@ -120,12 +128,16 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
   `Directory.Packages.props`; `PackageReference` has no `Version`. Commit the updated `packages.lock.json`.
 - **Never** suppress NU19xx (NuGet audit) warnings. Fix the vulnerable dependency instead.
 - **Never** blanket-disable analyzers. Deferring a rule needs an `.editorconfig` entry with a comment naming the phase.
-- Public API changes must update `PublicAPI.Unshipped.txt`. Those files and PublicApiAnalyzers arrive in Phase 7;
-  until then, record every public-surface change in `CHANGELOG.md` under Unreleased.
+- Public API changes must update `src/<package>/PublicAPI.Unshipped.txt` (RS0016/RS0017 fail the build otherwise)
+  and `CHANGELOG.md`. Every public type and member gets XML docs (CS1591 is an error), except the options classes
+  listed in `.editorconfig`. `PublicAPI.Shipped.txt` changes only in the release step (`/release`).
+- The core package never references RabbitMQ.Client or Azure.* (`Packaging/Given_the_package_split`).
 - Work on `main` only (owner's directive): phases land as commits on `main`. No feature branches, worktrees or PRs
   unless the owner asks.
 - Do not edit `.env` files or hand-edit lock files (regenerate them with `dotnet restore`).
-- Do not modify `PRODUCTION-READINESS-PLAN.md` or `MessageQueue/docs/azure-service-bus-implementation-guide.md`.
+- Do not modify `PRODUCTION-READINESS-PLAN.md` or `messagequeue-refactoring-instructions.md`. The untracked
+  `MessageQueue/docs/azure-service-bus-implementation-guide.md` is the owner's unmaintained draft left at the
+  pre-Phase 7 path: leave it alone, do not stage it, and do not treat it as current documentation.
 
 ## Definition of done
 
@@ -133,8 +145,25 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
 - [ ] `dotnet build ESE.MessageQueue.sln -warnaserror` is clean.
 - [ ] `dotnet format ESE.MessageQueue.sln --verify-no-changes` passes.
 - [ ] `dotnet test` reports 0 failed and **0 vacuous passes**; skips appear as skips.
-- [ ] `scripts/coverage.sh` passes: line coverage of `ESE.MessageQueue` at or above the gate (87% since Phase 6;
-      never lower it).
+- [ ] `scripts/coverage.sh` passes: combined line coverage of the three packages at or above the gate (87%) and each
+      package at or above its floor (85%); never lower either.
 - [ ] Vulnerable-package scan reports none.
 - [ ] `CHANGELOG.md` Unreleased updated for any behavior or public-API change.
+- [ ] Adversarial review done for changes to `src/` (below) and its survivors turned into specs.
 - [ ] Ticked the item in `OPTIMIZATION-PLAN.md` if the change completes one.
+
+## Claude Code tooling (`.claude/`, ADR 0017)
+
+- **Hooks:** every edited `.cs` file is formatted on the spot (`.claude/hooks/format-cs.sh`). The Stop hook
+  (`.claude/hooks/stop-gate.sh`) builds with `-warnaserror` and runs the Unit tests whenever C# or build files differ
+  from HEAD; while red, the turn cannot end (it lets go when `stop_hook_active` is set, and Claude Code caps repeats).
+  It does not run integration tests, coverage or the scan: the definition of done still applies.
+- **Agents:** `test-writer` (spec first, red shown), `security-reviewer` (section 2 checklist, scan, secrets grep),
+  `package-updater`, `adversarial-reviewer`. **Skills:** `/update-packages`, `/add-tests <file>`, `/release <version>`,
+  `/mutation-test`.
+- **Adversarial review before commit** (the owner's workflow): before committing a change to `src/`, run the
+  `adversarial-reviewer` agent (or `/mutation-test`). It lists the rules the change promises, mutates each one with
+  `scripts/mutate.py` in a scratch copy, probes concurrency, shutdown, hostile input and secret leaks there, and
+  reports survivors; each survivor becomes a spec before the commit. Never mutate or probe in the working tree.
+- Unattended work (weekly `update-packages.yml`, `@claude` in `claude.yml`) arrives as a pull request: the owner works
+  on `main`, and that pull request is the review vehicle.

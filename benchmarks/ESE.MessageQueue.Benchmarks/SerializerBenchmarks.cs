@@ -1,4 +1,5 @@
 using BenchmarkDotNet.Attributes;
+using ESE.MessageQueue.Providers;
 using ESE.MessageQueue.Serialization;
 
 namespace ESE.MessageQueue.Benchmarks;

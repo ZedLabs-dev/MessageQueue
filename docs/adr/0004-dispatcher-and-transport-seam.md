@@ -37,3 +37,10 @@ consumed/retried/dead-lettered counters; publish spans and `traceparent` come la
 ## Consequences
 
 Providers implement three actions plus metadata mapping; retries are unit-tested once; no native delay → `DelayedRedelivery = false`.
+
+## Later changes
+
+- Superseded in part by ADR 0015: `MessageDispatcher<T>`, `IDeliveryActions`, `DeadLetterReason` and `DispatchOutcome`
+  are public provider SPI in `ESE.MessageQueue.Providers` (no longer internal, no longer in `Processing`). The
+  dispatcher validates its arguments, snapshots its config and strips control characters from message ids it logs.
+  Publish spans and `traceparent` arrived in ADR 0013.

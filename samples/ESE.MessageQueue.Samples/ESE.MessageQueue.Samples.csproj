@@ -15,7 +15,9 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\MessageQueue\MessageQueue.csproj" />
+        <ProjectReference Include="..\..\src\ESE.MessageQueue\ESE.MessageQueue.csproj" />
+        <ProjectReference Include="..\..\src\ESE.MessageQueue.RabbitMQ\ESE.MessageQueue.RabbitMQ.csproj" />
+        <ProjectReference Include="..\..\src\ESE.MessageQueue.AzureServiceBus\ESE.MessageQueue.AzureServiceBus.csproj" />
     </ItemGroup>
 
     <ItemGroup>

@@ -345,11 +345,9 @@
         "resolved": "4.5.0",
         "contentHash": "wLBKzFnDCxP12VL9ANydSYhk59fC4cvOr9ypYQLPnAj48NQIhqnjdD2yhP8yEKyBJEjERWS9DisKL7rX5eU25Q=="
       },
-      "ESE.MessageQueue": {
+      "ese.messagequeue": {
         "type": "Project",
         "dependencies": {
-          "Azure.Identity": "[1.21.0, )",
-          "Azure.Messaging.ServiceBus": "[7.21.0, )",
           "MessagePack": "[3.1.12, )",
           "Microsoft.Extensions.Configuration.Binder": "[10.0.13, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
@@ -358,7 +356,21 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )",
           "Microsoft.Extensions.Options": "[10.0.13, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.13, )",
-          "Microsoft.Extensions.Options.DataAnnotations": "[10.0.13, )",
+          "Microsoft.Extensions.Options.DataAnnotations": "[10.0.13, )"
+        }
+      },
+      "ese.messagequeue.azureservicebus": {
+        "type": "Project",
+        "dependencies": {
+          "Azure.Identity": "[1.21.0, )",
+          "Azure.Messaging.ServiceBus": "[7.21.0, )",
+          "ESE.MessageQueue": "[1.0.0, )"
+        }
+      },
+      "ese.messagequeue.rabbitmq": {
+        "type": "Project",
+        "dependencies": {
+          "ESE.MessageQueue": "[1.0.0, )",
           "RabbitMQ.Client": "[7.2.2, )",
           "System.Threading.RateLimiting": "[10.0.13, )"
         }

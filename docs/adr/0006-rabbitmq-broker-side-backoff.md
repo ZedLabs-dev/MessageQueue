@@ -37,3 +37,11 @@ wait behind long ones. The delayed-message-exchange plugin is not in the stock i
 
 - A waiting retry holds no slot or memory. At-least-once: a crash between confirm and ack duplicates, never loses.
   Classic queues count at most one crash per cycle; the quorum `delivery-limit` (20) dead-letters via the broker DLX.
+
+## Later changes
+
+- Phase 7: the attempt header is trusted only when the broker's `x-death` history records that the message
+  **expired** out of one of this queue's retry queues (`x-first-death-queue` alone no longer counts). This does not
+  stop forgery: an integration probe against RabbitMQ 4.3.6 showed that a client-published `x-death` header is
+  delivered as sent, so a publisher can still set its own message's attempt. The accepted risk is unchanged: a
+  forger can shorten the retries of its own messages only, and they still end in the dead-letter queue.
