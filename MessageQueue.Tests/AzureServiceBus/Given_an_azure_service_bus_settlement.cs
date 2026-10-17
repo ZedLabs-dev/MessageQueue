@@ -12,9 +12,12 @@ namespace ESE.MessageQueue.Tests.AzureServiceBus;
 
 // Every message is settled exactly once; poison messages and failing settlements never wedge the processor (S6 too).
 [Trait("Category", "Unit")]
-public class Given_an_azure_service_bus_settlement
+public class Given_an_azure_service_bus_settlement : IAsyncDisposable
 {
     readonly FakeServiceBus bus = new();
+
+    // The fake stands in for the SDK client; disposing it with the test class keeps CA1001 honest.
+    public ValueTask DisposeAsync() => bus.DisposeAsync();
     readonly RecordingLogger logger = new();
 
     async Task<AzureServiceBusMessageQueue<TestMessage>> SubscribedAsync(

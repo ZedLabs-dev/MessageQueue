@@ -10,9 +10,12 @@ namespace ESE.MessageQueue.Tests.AzureServiceBus;
 
 // Queue mode (B5): a retry is a scheduled copy of the message on the same queue, then the original is completed.
 [Trait("Category", "Unit")]
-public class Given_an_azure_service_bus_queue_retrying
+public class Given_an_azure_service_bus_queue_retrying : IAsyncDisposable
 {
     readonly FakeServiceBus bus = new();
+
+    // The fake stands in for the SDK client; disposing it with the test class keeps CA1001 honest.
+    public ValueTask DisposeAsync() => bus.DisposeAsync();
 
     async Task<FakeServiceBusDelivery> RetryOnceAsync(AzureServiceBusConfig config, ServiceBusReceivedMessage message, CancellationToken cancellationToken)
     {

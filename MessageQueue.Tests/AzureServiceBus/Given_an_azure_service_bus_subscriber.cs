@@ -7,9 +7,12 @@ namespace ESE.MessageQueue.Tests.AzureServiceBus;
 
 // B6: one subscriber at a time, re-subscribing works, and processor errors are logged instead of swallowed.
 [Trait("Category", "Unit")]
-public class Given_an_azure_service_bus_subscriber
+public class Given_an_azure_service_bus_subscriber : IAsyncDisposable
 {
     readonly FakeServiceBus bus = new();
+
+    // The fake stands in for the SDK client; disposing it with the test class keeps CA1001 honest.
+    public ValueTask DisposeAsync() => bus.DisposeAsync();
     readonly RecordingLogger logger = new();
 
     [Fact]

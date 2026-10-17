@@ -10,11 +10,13 @@ services:
     container_name: rabbitmq-dev
     restart: unless-stopped
     ports:
-      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
-      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+      # Loopback only: the dev broker is not reachable from the network.
+      - "127.0.0.1:${RABBITMQ_AMQP_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+      # No defaults: copy .env.example to .env and choose your own user and password.
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER in MessageQueue/.env (copy .env.example)}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:?Set RABBITMQ_PASS in MessageQueue/.env (copy .env.example)}
     volumes:
       - rabbitmq_dev_data:/var/lib/rabbitmq
     healthcheck:
@@ -36,11 +38,11 @@ services:
     restart: unless-stopped
     ports:
       # Host port differs from 5672 so it can run alongside RabbitMQ.
-      - "${ASB_EMULATOR_AMQP_PORT:-5673}:5672"
-      - "${ASB_EMULATOR_MANAGEMENT_PORT:-5300}:5300"
+      - "127.0.0.1:${ASB_EMULATOR_AMQP_PORT:-5673}:5672"
+      - "127.0.0.1:${ASB_EMULATOR_MANAGEMENT_PORT:-5300}:5300"
     environment:
       SQL_SERVER: servicebus-sql
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in MessageQueue/.env (copy .env.example)}
       ACCEPT_EULA: ${ACCEPT_EULA:-N}
       SQL_WAIT_INTERVAL: ${SQL_WAIT_INTERVAL:-15}
     volumes:
@@ -61,7 +63,7 @@ services:
     restart: unless-stopped
     environment:
       ACCEPT_EULA: ${ACCEPT_EULA:-N}
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in MessageQueue/.env (copy .env.example)}
     networks:
       - dev_network
 

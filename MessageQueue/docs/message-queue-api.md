@@ -327,9 +327,67 @@ never written to the broker. Reason codes are listed in `DeadLetterReasons`.
 
 ## Observability
 
-- `services.AddMessageQueueTelemetry("MyApp.Messaging")` registers an `ActivitySource`/`Meter`-based provider.
-  Consume spans and the `messagequeue.messages.consumed|retried|deadlettered` counters come from the pipeline.
-  Spans record `exception.type`; pass `recordExceptionDetails: true` to also record messages and stack traces.
+### Telemetry (traces and metrics, ADR 0013)
+
+The library emits spans and metrics through `System.Diagnostics` (`ActivitySource` and `Meter`) only; it references
+no OpenTelemetry package or exporter. Register the provider, then subscribe your OpenTelemetry pipeline to the same
+name:
+
+```csharp
+services.AddMessageQueueTelemetry("MyApp.Messaging");          // OpenTelemetryProvider, one ActivitySource + Meter
+services.AddMessageQueue<OrderCreated>(configuration);         // every provider resolves ITelemetryProvider from DI
+
+services.AddOpenTelemetry()                                    // in the host, not the library
+    .WithTracing(t => t.AddSource("MyApp.Messaging").AddOtlpExporter())
+    .WithMetrics(m => m.AddMeter("MyApp.Messaging").AddOtlpExporter());
+```
+
+Without a registered `ITelemetryProvider` the queues use `NullTelemetryProvider` (no spans, no metrics, no
+propagation). `AddMessageQueueTelemetry<TProvider>()` registers a custom implementation; directly constructed queues
+take one as a constructor argument. `samples/ESE.MessageQueue.Samples` shows the full wiring with a console exporter.
+
+- **Destination** (the same on publish and consume, so the two join): the queue (in-memory, Service Bus queue), the
+  topic (Service Bus subscription mode, plus `messaging.destination.subscription.name` on consume), or
+  `{exchange}:{queue}` on RabbitMQ (exchange and routing key, plus `messaging.rabbitmq.destination.routing_key`).
+- **Publish:** one `Producer` span per `PublishAsync` call (`publish {destination}`, `send {destination}` on Service
+  Bus; a batch is one span with `messaging.batch.message_count`, a single message's span has `messaging.message.id`).
+  Its W3C context is written to every message as `traceparent` / `tracestate`. Those header names are reserved:
+  `PublishOptions.Headers` cannot set them and `MessageContext.Headers` never shows them. On consume they match in
+  any case, as strings or UTF-8 bytes, and on Service Bus the SDK's `Diagnostic-Id` is used when `traceparent` is absent.
+- **Consume:** one `Consumer` span per delivery (`process {destination}`), a child of the publish span, so publisher and
+  consumer share one trace ID across RabbitMQ, Azure Service Bus and the in-memory queue. Retries keep the original
+  trace: every attempt is a child of the same publish span (`ese.messagequeue.delivery_attempt` tells them apart).
+  The span is `Activity.Current` while your handler runs, so its own spans nest under it. A message without valid
+  trace headers starts a new trace. It never joins whatever span was current when you subscribed.
+- **Outcome:** every delivery that is not acknowledged gets Error status and the same `error.type` as the metrics
+  (a `DeadLetterReasons` code, `Retry`, or the exception type), plus `ese.messagequeue.retry.next_attempt` /
+  `ese.messagequeue.retry.delay_ms` on retries, `ese.messagequeue.dead_letter.reason` on dead letters, and an
+  `exception` event when the handler throws. Spans record the exception type only; pass
+  `recordExceptionDetails: true` to also record messages and stack traces (truncated to 4096 characters).
+- **Malformed headers:** `traceparent` is parsed strictly (W3C Trace Context level 1; at most 256 characters,
+  `tracestate` at most 512 characters and 32 members). Invalid values are ignored, never thrown, and never stop a
+  message. The sampled and random (level 2) flags are kept; an unsampled publisher stays unsampled.
+- **Metrics** (OpenTelemetry messaging semantic conventions where they define one). Every metric is tagged with
+  `messaging.system` (`rabbitmq`, `servicebus` or `ese.inmemory`), `messaging.destination.name`,
+  `messaging.operation.name` and `ese.messagequeue.message_type`, plus `error.type` when the operation did not succeed
+  and the subscription on consumer metrics. Nothing per message (no ids) is used as a metric tag.
+
+| Instrument | Type | Meaning |
+|---|---|---|
+| `messaging.client.sent.messages` | counter `{message}` | messages published (`error.type` = exception type on failure) |
+| `messaging.client.operation.duration` | histogram `s` | duration of each publish call |
+| `messaging.client.consumed.messages` | counter `{message}` | deliveries handed to the pipeline; `error.type` = reason code, `Retry` or exception type unless acknowledged |
+| `messaging.process.duration` | histogram `s` | receipt to settlement, per delivery |
+| `ese.messagequeue.messages.retried` | counter `{message}` | deliveries rescheduled for a retry |
+| `ese.messagequeue.messages.dead_lettered` | counter `{message}` | dead-lettered deliveries, tagged `ese.messagequeue.dead_letter.reason` |
+
+Telemetry never changes what happens to a message: a throwing provider is logged (event 1005 or 1009) and the
+publish or delivery proceeds. Nothing is parsed, formatted or tagged while nobody listens to the source or meter.
+The container disposes the `OpenTelemetryProvider` it created (its `ActivitySource` and `Meter`); dispose one you
+construct yourself.
+
+### Logging and health
+
 - Logging uses `Microsoft.Extensions.Logging` with source-generated `LoggerMessage` methods.
 - Health checks: `AddRabbitMqHealthCheck<T>()` (reuses the registered RabbitMQ queue's connection),
   `AddRabbitMqHealthCheck(connectionString)` (opens a connection per probe), `AddAzureServiceBusHealthCheck<T>()`

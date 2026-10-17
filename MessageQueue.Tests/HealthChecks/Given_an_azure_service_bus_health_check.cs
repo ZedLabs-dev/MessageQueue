@@ -13,9 +13,12 @@ namespace ESE.MessageQueue.Tests.HealthChecks;
 // S4: the default check needs only Listen rights (a peek on the queue's own client), never Manage, and never creates
 // a client per probe. S5: no exception text, host or namespace in the result.
 [Trait("Category", "Unit")]
-public class Given_an_azure_service_bus_health_check
+public class Given_an_azure_service_bus_health_check : IAsyncDisposable
 {
     readonly FakeServiceBus bus = new();
+
+    // The fake stands in for the SDK client; disposing it with the test class keeps CA1001 honest.
+    public ValueTask DisposeAsync() => bus.DisposeAsync();
 
     static Task<HealthCheckResult> CheckAsync(AzureServiceBusHealthCheck check) =>
         check.CheckHealthAsync(new HealthCheckContext { Registration = new HealthCheckRegistration("asb", check, null, null) },

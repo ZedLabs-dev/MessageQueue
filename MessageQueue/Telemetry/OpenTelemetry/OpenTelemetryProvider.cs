@@ -1,14 +1,26 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using ESE.MessageQueue.Abstractions;
 
 namespace ESE.MessageQueue.Telemetry.OpenTelemetry;
 
-public class OpenTelemetryProvider : ITelemetryProvider
+/// <summary>
+/// <see cref="ITelemetryProvider"/> on <see cref="ActivitySource"/> and <see cref="Meter"/> (both named
+/// <c>sourceName</c>), following the OpenTelemetry messaging semantic conventions where they define something.
+/// The library references no OpenTelemetry package or exporter; the host subscribes with
+/// <c>AddSource(sourceName)</c> / <c>AddMeter(sourceName)</c>.
+/// </summary>
+public class OpenTelemetryProvider : ITelemetryProvider, IDisposable
 {
+    // Semantic conventions' advice for messaging duration histograms, in seconds.
+    static readonly double[] DurationBuckets = [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10];
+
     readonly ActivitySource activitySource;
     readonly Meter meter;
-    readonly Counter<long> messagesPublished;
+    readonly Counter<long> messagesSent;
+    readonly Histogram<double> operationDuration;
     readonly Counter<long> messagesConsumed;
+    readonly Histogram<double> processDuration;
     readonly Counter<long> messagesRetried;
     readonly Counter<long> messagesDeadLettered;
     readonly bool recordExceptionDetails;
@@ -20,112 +32,154 @@ public class OpenTelemetryProvider : ITelemetryProvider
         this.recordExceptionDetails = recordExceptionDetails;
         activitySource = new ActivitySource(sourceName);
         meter = new Meter(sourceName);
+        var durationAdvice = new InstrumentAdvice<double> { HistogramBucketBoundaries = DurationBuckets };
 
-        messagesPublished = meter.CreateCounter<long>(
-            "messagequeue.messages.published",
-            unit: "messages",
-            description: "Number of messages published");
-
-        messagesConsumed = meter.CreateCounter<long>(
-            "messagequeue.messages.consumed",
-            unit: "messages",
-            description: "Number of messages consumed");
-
-        messagesRetried = meter.CreateCounter<long>(
-            "messagequeue.messages.retried",
-            unit: "messages",
-            description: "Number of messages retried");
-
-        messagesDeadLettered = meter.CreateCounter<long>(
-            "messagequeue.messages.deadlettered",
-            unit: "messages",
-            description: "Number of messages sent to dead letter queue");
+        messagesSent = meter.CreateCounter<long>(TelemetryNames.SentMessages, "{message}", "Number of messages published");
+        operationDuration = meter.CreateHistogram(TelemetryNames.OperationDuration, "s",
+            "Duration of publish operations", advice: durationAdvice);
+        messagesConsumed = meter.CreateCounter<long>(TelemetryNames.ConsumedMessages, "{message}", "Number of deliveries handed to the pipeline");
+        processDuration = meter.CreateHistogram(TelemetryNames.ProcessDuration, "s",
+            "Duration of processing one delivery, from receipt to settlement", advice: durationAdvice);
+        messagesRetried = meter.CreateCounter<long>(TelemetryNames.RetriedMessages, "{message}", "Number of deliveries rescheduled for a retry");
+        messagesDeadLettered = meter.CreateCounter<long>(TelemetryNames.DeadLetteredMessages, "{message}", "Number of deliveries dead-lettered");
     }
 
-    public TelemetryActivity? StartPublishActivity(string queueName, string messageType)
+    public TelemetryActivity? StartPublishActivity(TelemetryTarget target, int messageCount, string? messageId)
     {
-        var activity = activitySource.StartActivity($"{queueName} publish", ActivityKind.Producer);
+        if (!activitySource.HasListeners())
+            return null;
+
+        var activity = activitySource.StartActivity($"{target.PublishOperation} {target.Destination}", ActivityKind.Producer);
         if (activity == null)
             return null;
 
-        activity.SetTag("messaging.system", "messagequeue");
-        activity.SetTag("messaging.destination.name", queueName);
-        activity.SetTag("messaging.message.type", messageType);
-        activity.SetTag("messaging.operation.type", "publish");
+        SetCommonTags(activity, target, target.PublishOperation, "send");
+        if (messageCount > 1)
+            activity.SetTag(TelemetryNames.BatchMessageCount, messageCount);
+        else if (!string.IsNullOrEmpty(messageId))
+            activity.SetTag(TelemetryNames.MessageId, messageId);
 
-        return new OpenTelemetryActivity(activity, "publish", queueName, messageType, recordExceptionDetails);
+        return new OpenTelemetryActivity(activity, "publish", target.Destination, target.MessageType, recordExceptionDetails);
     }
 
-    public TelemetryActivity? StartConsumeActivity(string queueName, string messageType, string? messageId)
+    // The publisher's context is the parent (it arrived with the message, so it is remote). Without one the span
+    // falls back to the ambient Activity.Current; the dispatcher clears that, so a message without trace headers
+    // starts a new trace instead of joining whatever span was current on the consumer thread.
+    public TelemetryActivity? StartConsumeActivity(TelemetryTarget target, MessageContext context, TraceContext? parent)
     {
-        var activity = activitySource.StartActivity($"{queueName} consume", ActivityKind.Consumer);
+        // Nothing records the span: skip formatting and parsing the parent.
+        if (!activitySource.HasListeners())
+            return null;
+
+        var parentContext = default(ActivityContext);
+        if (parent is not null)
+            ActivityContext.TryParse(parent.ToTraceParent(), parent.TraceState, isRemote: true, out parentContext);
+
+        var activity = activitySource.StartActivity($"process {target.Destination}", ActivityKind.Consumer, parentContext);
         if (activity == null)
             return null;
 
-        activity.SetTag("messaging.system", "messagequeue");
-        activity.SetTag("messaging.destination.name", queueName);
-        activity.SetTag("messaging.message.type", messageType);
-        activity.SetTag("messaging.operation.type", "consume");
-        if (messageId != null)
-            activity.SetTag("messaging.message.id", messageId);
+        SetCommonTags(activity, target, "process", "process");
+        if (target.Subscription is not null)
+            activity.SetTag(TelemetryNames.SubscriptionName, target.Subscription);
+        if (!string.IsNullOrEmpty(context.MessageId))
+            activity.SetTag(TelemetryNames.MessageId, context.MessageId);
+        if (context.CorrelationId is not null)
+            activity.SetTag(TelemetryNames.ConversationId, context.CorrelationId);
+        activity.SetTag(TelemetryNames.DeliveryAttempt, context.DeliveryAttempt);
 
-        return new OpenTelemetryActivity(activity, "consume", queueName, messageType, recordExceptionDetails) { MessageId = messageId };
+        return new OpenTelemetryActivity(activity, "consume", target.Destination, target.MessageType, recordExceptionDetails)
+        {
+            MessageId = context.MessageId
+        };
     }
 
-    public void RecordMessagePublished(string queueName, string messageType)
+    // Instruments nobody listens to are skipped before any tags are built.
+    public void RecordMessagePublished(TelemetryTarget target, int messageCount, TimeSpan duration, string? errorType)
     {
-        messagesPublished.Add(1,
-            new KeyValuePair<string, object?>("queue", queueName),
-            new KeyValuePair<string, object?>("message_type", messageType));
-    }
-
-    public void RecordMessageConsumed(string queueName, string messageType, bool success)
-    {
-        messagesConsumed.Add(1,
-            new KeyValuePair<string, object?>("queue", queueName),
-            new KeyValuePair<string, object?>("message_type", messageType),
-            new KeyValuePair<string, object?>("success", success));
-    }
-
-    public void RecordMessageRetried(string queueName, string messageType, int attemptNumber)
-    {
-        messagesRetried.Add(1,
-            new KeyValuePair<string, object?>("queue", queueName),
-            new KeyValuePair<string, object?>("message_type", messageType),
-            new KeyValuePair<string, object?>("attempt", attemptNumber));
-    }
-
-    public void RecordMessageDeadLettered(string queueName, string messageType, string reason)
-    {
-        messagesDeadLettered.Add(1,
-            new KeyValuePair<string, object?>("queue", queueName),
-            new KeyValuePair<string, object?>("message_type", messageType),
-            new KeyValuePair<string, object?>("reason", reason));
-    }
-
-    public TraceContext? ExtractTraceContext(IDictionary<string, object> headers)
-    {
-        if (!headers.TryGetValue("traceparent", out var value) || value is not string traceparent)
-            return null;
-
-        var parts = traceparent.Split('-');
-        if (parts.Length < 3)
-            return null;
-
-        return new TraceContext(parts[1], parts[2]);
-    }
-
-    public void InjectTraceContext(IDictionary<string, object> headers)
-    {
-        var activity = Activity.Current;
-        if (activity == null)
+        if (!messagesSent.Enabled && !operationDuration.Enabled)
             return;
 
-        var traceparent = $"00-{activity.TraceId}-{activity.SpanId}-{(activity.Recorded ? "01" : "00")}";
-        headers["traceparent"] = traceparent;
+        var tags = Tags(target, target.PublishOperation, errorType, consumer: false);
+        messagesSent.Add(messageCount, tags);
+        operationDuration.Record(duration.TotalSeconds, tags);
+    }
 
+    public void RecordMessageConsumed(TelemetryTarget target, TimeSpan duration, string? errorType)
+    {
+        if (!messagesConsumed.Enabled && !processDuration.Enabled)
+            return;
+
+        var tags = Tags(target, "process", errorType, consumer: true);
+        messagesConsumed.Add(1, tags);
+        processDuration.Record(duration.TotalSeconds, tags);
+    }
+
+    public void RecordMessageRetried(TelemetryTarget target, int nextAttempt)
+    {
+        if (messagesRetried.Enabled)
+            messagesRetried.Add(1, Tags(target, "process", null, consumer: true));
+    }
+
+    public void RecordMessageDeadLettered(TelemetryTarget target, string reason)
+    {
+        if (!messagesDeadLettered.Enabled)
+            return;
+
+        var tags = Tags(target, "process", null, consumer: true);
+        tags.Add(TelemetryNames.DeadLetterReason, reason);
+        messagesDeadLettered.Add(1, tags);
+    }
+
+    // Only consume spans use the parent, so nothing is parsed while no span would be recorded.
+    public TraceContext? ExtractTraceContext(IReadOnlyDictionary<string, string> headers) =>
+        activitySource.HasListeners()
+            ? TraceContext.Parse(headers.GetValueOrDefault(TraceHeaders.TraceParent), headers.GetValueOrDefault(TraceHeaders.TraceState))
+            : null;
+
+    public void InjectTraceContext(IDictionary<string, string> headers)
+    {
+        var activity = Activity.Current;
+        if (activity == null || activity.IdFormat != ActivityIdFormat.W3C)
+            return;
+
+        headers[TraceHeaders.TraceParent] = $"00-{activity.TraceId}-{activity.SpanId}-{(activity.Recorded ? "01" : "00")}";
         if (!string.IsNullOrEmpty(activity.TraceStateString))
-            headers["tracestate"] = activity.TraceStateString;
+            headers[TraceHeaders.TraceState] = activity.TraceStateString;
+    }
+
+    public void Dispose()
+    {
+        activitySource.Dispose();
+        meter.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    static void SetCommonTags(Activity activity, TelemetryTarget target, string operationName, string operationType)
+    {
+        activity.SetTag(TelemetryNames.System, target.System);
+        activity.SetTag(TelemetryNames.DestinationName, target.Destination);
+        activity.SetTag(TelemetryNames.OperationName, operationName);
+        activity.SetTag(TelemetryNames.OperationType, operationType);
+        activity.SetTag(TelemetryNames.MessageType, target.MessageType);
+        if (target.RoutingKey is not null)
+            activity.SetTag(TelemetryNames.RoutingKey, target.RoutingKey);
+    }
+
+    static TagList Tags(TelemetryTarget target, string operationName, string? errorType, bool consumer)
+    {
+        var tags = new TagList
+        {
+            { TelemetryNames.System, target.System },
+            { TelemetryNames.DestinationName, target.Destination },
+            { TelemetryNames.OperationName, operationName },
+            { TelemetryNames.MessageType, target.MessageType }
+        };
+        if (consumer && target.Subscription is not null)
+            tags.Add(TelemetryNames.SubscriptionName, target.Subscription);
+        if (errorType is not null)
+            tags.Add(TelemetryNames.ErrorType, errorType);
+        return tags;
     }
 }
 
@@ -160,9 +214,22 @@ public class OpenTelemetryActivity : TelemetryActivity
             tags.Add("exception.stacktrace", Truncate(exception.ToString()));
         }
 
+        activity.SetTag(TelemetryNames.ErrorType, exceptionType);
         activity.SetStatus(ActivityStatusCode.Error, Truncate(recordExceptionDetails ? exception.Message : exceptionType));
         activity.AddEvent(new ActivityEvent("exception", tags: tags));
     }
+
+    // An outcome that is not a success (a retry, a dead letter): error.type and Error status, as on the metrics. A span
+    // already failed by SetError keeps its status description.
+    public override void SetErrorType(string errorType)
+    {
+        base.SetErrorType(errorType);
+        activity.SetTag(TelemetryNames.ErrorType, errorType);
+        if (activity.Status != ActivityStatusCode.Error)
+            activity.SetStatus(ActivityStatusCode.Error, errorType);
+    }
+
+    public override void SetTag(string name, object? value) => activity.SetTag(name, value);
 
     // Exporters and backends cap attribute sizes; long values are cut here so the span is still exported.
     static string? Truncate(string? value) =>

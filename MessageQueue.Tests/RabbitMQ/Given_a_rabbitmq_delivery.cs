@@ -112,6 +112,51 @@ public class Given_a_rabbitmq_delivery
     }
 
     [Fact]
+    public void When_The_Delivery_Carries_A_Trace_Context()
+    {
+        var context = RabbitMqMessageQueue<TestMessage>.ToContext(Delivery(false,
+            ("traceparent", Utf8("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")),
+            ("tracestate", Utf8("rojo=00f067aa0ba902b7"))), RetryPrefix, quorum: true);
+
+        context.TraceParent.Should().Be("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", "it should hand the traceparent to the pipeline");
+        context.TraceState.Should().Be("rojo=00f067aa0ba902b7", "it should hand the tracestate to the pipeline");
+        context.Headers.Should().BeEmpty("it should keep trace headers out of the application headers");
+    }
+
+    [Fact]
+    public void When_Trace_Headers_Differ_In_Case()
+    {
+        var context = RabbitMqMessageQueue<TestMessage>.ToContext(Delivery(false,
+            ("TraceParent", "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
+            ("TRACESTATE", Utf8("rojo=00f067aa0ba902b7"))), RetryPrefix, quorum: true);
+
+        context.TraceParent.Should().Be("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", "it should match trace headers case-insensitively and read strings");
+        context.TraceState.Should().Be("rojo=00f067aa0ba902b7", "it should match the tracestate case-insensitively");
+    }
+
+    [Fact]
+    public void When_A_Trace_Header_Is_Oversized()
+    {
+        var context = RabbitMqMessageQueue<TestMessage>.ToContext(Delivery(false,
+            ("traceparent", new byte[100_000]),
+            ("tracestate", Utf8(new string('a', 10_000)))), RetryPrefix, quorum: true);
+
+        context.TraceParent.Should().BeNull("it should not decode an oversized traceparent");
+        context.TraceState.Should().BeNull("it should not decode an oversized tracestate");
+    }
+
+    [Fact]
+    public void When_An_Oversized_Trace_Header_Arrives_As_A_String()
+    {
+        var context = RabbitMqMessageQueue<TestMessage>.ToContext(Delivery(false,
+            ("traceparent", new string('0', 100_000)),
+            ("tracestate", new string('a', 10_000))), RetryPrefix, quorum: true);
+
+        context.TraceParent.Should().BeNull("it should drop an oversized traceparent whatever its AMQP type");
+        context.TraceState.Should().BeNull("it should drop an oversized tracestate whatever its AMQP type");
+    }
+
+    [Fact]
     public void When_Copying_A_Message_For_A_Retry()
     {
         var original = new BasicProperties

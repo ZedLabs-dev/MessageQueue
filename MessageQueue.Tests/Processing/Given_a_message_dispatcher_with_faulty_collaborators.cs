@@ -35,7 +35,7 @@ public class Given_a_message_dispatcher_with_faulty_collaborators
         bool enableDeadLetterQueue = true)
     {
         var config = new InMemoryConfig { QueueName = "orders", Retry = retry ?? ThreeRetries, EnableDeadLetterQueue = enableDeadLetterQueue };
-        var dispatcher = new MessageDispatcher<TestMessage>(config,
+        var dispatcher = new MessageDispatcher<TestMessage>(config, new ESE.MessageQueue.Telemetry.TelemetryTarget("test", "orders", nameof(TestMessage)),
             (_, _, _) => throws is null ? Task.FromResult(result) : throw throws, telemetry, logger);
         return dispatcher.DispatchAsync(MessageSerializer.Serialize(message, SerializationFormat.Json),
             new MessageContext { MessageId = "m-1", DeliveryAttempt = attempt }, actions, TestContext.Current.CancellationToken);

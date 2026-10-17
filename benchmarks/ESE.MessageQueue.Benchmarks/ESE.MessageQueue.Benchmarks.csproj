@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- BenchmarkDotNet suite (OPTIMIZATION-PLAN section 4). Not a test project: `dotnet test` never runs it and CI
+         only builds it. How to run it: docs/benchmarks.md. -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>false</IsTestProject>
+        <AssemblyName>ESE.MessageQueue.Benchmarks</AssemblyName>
+        <RootNamespace>ESE.MessageQueue.Benchmarks</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="BenchmarkDotNet" />
+        <PackageReference Include="Testcontainers.RabbitMq" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\MessageQueue\MessageQueue.csproj" />
+    </ItemGroup>
+
+</Project>

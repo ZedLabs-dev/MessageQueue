@@ -17,6 +17,9 @@ dotnet format ESE.MessageQueue.sln                          # apply .editorconfi
 dotnet format ESE.MessageQueue.sln --verify-no-changes      # what CI runs
 dotnet list ESE.MessageQueue.sln package --vulnerable --include-transitive   # must report none
 
+dotnet run --project samples/ESE.MessageQueue.Samples                         # sample worker, in-memory (--environment RabbitMq|AzureServiceBus)
+dotnet run -c Release --project benchmarks/ESE.MessageQueue.Benchmarks -- --filter '*' --job short   # docs/benchmarks.md
+
 cp MessageQueue/.env.example MessageQueue/.env              # once; .env is git-ignored
 docker compose -f MessageQueue/docker-compose.dev.yml up -d --wait                       # RabbitMQ 4.x
 docker compose -f MessageQueue/docker-compose.dev.yml --profile servicebus up -d          # + ASB emulator (ACCEPT_EULA=Y in .env)
@@ -33,7 +36,9 @@ The compose file is for manual experiments only; the tests do not use it (see Te
 | Configuration | `Configuration/`, `Extensions/` | `MessageQueueConfig` (portable base record), `MessageQueueProvider`, per-provider `IValidateOptions` validators, `ServiceCollectionExtensions.AddMessageQueue<T>` / `AddInMemoryMessageQueue<T>` |
 | Providers | `RabbitMQ/`, `AzureServiceBus/`, `InMemory/` | `RabbitMqMessageQueue<T>` (RabbitMQ.Client 7, lazy async connect, `PublisherPool`, per-delay `RetryQueues`, `RabbitMqConnections` TLS rules; ADRs 0006–0008); `AzureServiceBusMessageQueue<T>` (thin SDK seams in `ServiceBusTransport.cs`, one sender, scheduled-copy retries on queues and lock-held retries on subscriptions in `ServiceBusMessages`, Entra ID identity; ADRs 0009–0012); `InMemoryMessageQueue<T>` (single-process, non-durable, ADR 0003) |
 | Cross-cutting | `Serialization/`, `Retry/`, `Exceptions/` | `MessageSerializer` (JSON / MessagePack, `UntrustedData`), `RetryPolicy` + `RetryExecutor` (`MaxRetries` semantics, ADR 0001), `MessageQueueException` |
-| Hosting & ops | `Hosting/`, `HealthChecks/`, `Telemetry/` | `MessageQueueHostedService<T>` (DI scope per message), health checks per broker (`AddRabbitMqHealthCheck<T>` / `AddAzureServiceBusHealthCheck<T>` reuse the queue's connection or client; no secrets or exception text in results), `ITelemetryProvider` (`System.Diagnostics` Activity/Meter) |
+| Hosting & ops | `Hosting/`, `HealthChecks/`, `Telemetry/` | `MessageQueueHostedService<T>` (DI scope per message), health checks per broker (`AddRabbitMqHealthCheck<T>` / `AddAzureServiceBusHealthCheck<T>` reuse the queue's connection or client; no secrets or exception text in results), `ITelemetryProvider` + `OpenTelemetryProvider` (`System.Diagnostics` Activity/Meter, no exporter): `PublishTelemetry` producer spans inject W3C `traceparent`/`tracestate` (reserved headers), the dispatcher parents consume spans on them; strict `TraceContext.Parse`; semconv metrics (ADR 0013) |
+| Samples | `samples/ESE.MessageQueue.Samples` | Worker: `SampleHost` (in-memory by default, broker via `appsettings.{Env}.json`), processor showing Acknowledge/Retry/DeadLetter, OpenTelemetry console exporter (the only OTel package reference). Smoke-tested by `Samples/Given_the_sample_host` (ADR 0014) |
+| Benchmarks | `benchmarks/ESE.MessageQueue.Benchmarks` | BenchmarkDotNet: serializer, dispatcher overhead, in-memory throughput, RabbitMQ confirms (Testcontainers or `MQ_BENCH_RABBITMQ`, left out without Docker). Not a test project: `dotnet test` never runs it, CI only builds it |
 
 Abstractions never reference a broker SDK. Provider-specific settings live on the provider config
 (`RabbitMqConfig`, `AzureServiceBusConfig`, `InMemoryConfig`), not on the base (ADR 0002). Every provider consumes
@@ -67,8 +72,9 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
 6. Every test class has `[Trait("Category","Unit")]` or `[Trait("Category","Integration")]`. Unit tests must not
    need a broker, Docker or the network.
 7. Layout: one folder per area (`Serialization/`, `Retry/`, `Telemetry/`, `HealthChecks/`, `InMemory/`, `RabbitMQ/`,
-   `AzureServiceBus/`, `Configuration/`, `Processing/`, `Hosting/`, `Abstractions/`), one class under test per file. Shared
-   fixtures and helpers live in `Support/`.
+   `AzureServiceBus/`, `Configuration/`, `Processing/`, `Hosting/`, `Abstractions/`, `Samples/`), one class under test
+   per file. Shared fixtures and helpers live in `Support/` (`SpanCapture` / `MetricCapture` listen to one
+   ActivitySource / Meter: give each test its own source name).
 8. Pass `TestContext.Current.CancellationToken` to anything that takes a token (analyzer xUnit1051 fails the build).
    Async tests that could hang get `[Fact(Timeout = ...)]`; CI also runs with `--blame-hang-timeout 2m`.
 9. Before asserting an exact count of asynchronously delivered messages, use `Wait.ForCountAsync`: it waits for the
@@ -127,8 +133,8 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
 - [ ] `dotnet build ESE.MessageQueue.sln -warnaserror` is clean.
 - [ ] `dotnet format ESE.MessageQueue.sln --verify-no-changes` passes.
 - [ ] `dotnet test` reports 0 failed and **0 vacuous passes**; skips appear as skips.
-- [ ] `scripts/coverage.sh` passes: line coverage of `ESE.MessageQueue` at or above the gate (84% since the Azure
-      Service Bus review fixes; never lower it).
+- [ ] `scripts/coverage.sh` passes: line coverage of `ESE.MessageQueue` at or above the gate (87% since Phase 6;
+      never lower it).
 - [ ] Vulnerable-package scan reports none.
 - [ ] `CHANGELOG.md` Unreleased updated for any behavior or public-API change.
 - [ ] Ticked the item in `OPTIMIZATION-PLAN.md` if the change completes one.

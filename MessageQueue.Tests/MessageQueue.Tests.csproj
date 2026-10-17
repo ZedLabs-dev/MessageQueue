@@ -32,6 +32,8 @@
 
     <ItemGroup>
       <ProjectReference Include="..\MessageQueue\MessageQueue.csproj" />
+      <!-- Smoke-tested in Samples/: the sample host boots on the in-memory provider and processes a message. -->
+      <ProjectReference Include="..\samples\ESE.MessageQueue.Samples\ESE.MessageQueue.Samples.csproj" />
     </ItemGroup>
 
 </Project>

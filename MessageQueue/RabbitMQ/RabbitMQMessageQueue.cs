@@ -36,6 +36,7 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
     static readonly TimeSpan DrainQuietPeriod = TimeSpan.FromMilliseconds(100);
 
     static readonly TimeSpan CloseGrace = TimeSpan.FromSeconds(1);
+    static readonly IReadOnlyDictionary<string, string> EmptyHeaders = new Dictionary<string, string>();
 
     readonly RabbitMqConfig config;
     readonly ITelemetryProvider telemetry;
@@ -44,6 +45,7 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
     readonly string exchangeName;
     readonly string deadLetterQueueName;
     readonly string retryQueuePrefix;
+    readonly TelemetryTarget publishTarget;
     readonly SemaphoreSlim connectLock = new(1, 1);
     readonly SemaphoreSlim subscriptionLock = new(1, 1);
     readonly ConcurrentDictionary<long, RetryQueue> retryQueues = new();
@@ -68,6 +70,9 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
             : config.ExchangeName;
         deadLetterQueueName = config.EffectiveDeadLetterQueueName;
         retryQueuePrefix = RetryQueues.Prefix(queueName);
+        // Semantic conventions: destination "{exchange}:{routing key}" on publish and "{exchange}:{routing key}:{queue}"
+        // on consume, collapsed when the routing key is the queue name, as it is here; so both sides join.
+        publishTarget = new TelemetryTarget(MessagingSystems.RabbitMq, $"{exchangeName}:{queueName}", typeof(T).Name) { RoutingKey = queueName };
 
         if (config.MaxConcurrentCalls > config.PrefetchCount)
             RabbitMqLog.ConcurrencyAbovePrefetch(this.logger, queueName, config.MaxConcurrentCalls, config.PrefetchCount);
@@ -227,8 +232,18 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
     {
         PublishValidation.Validate(message, options);
         var body = Serialize(message);
-        var current = await ConnectAsync(cancellationToken);
-        await PublishCoreAsync(current, body, options, cancellationToken);
+        var messageId = options.MessageId ?? Guid.CreateVersion7().ToString();
+        using var trace = PublishTelemetry.Start(telemetry, publishTarget, 1, logger, messageId);
+        try
+        {
+            var current = await ConnectAsync(cancellationToken);
+            await PublishCoreAsync(current, body, options with { MessageId = messageId }, trace.TraceHeaders, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            trace.Failed(ex);
+            throw;
+        }
     }
 
     // Publishes every message, then awaits their confirms together (§4.2). At most MaxOutstandingConfirms per
@@ -245,12 +260,28 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
         if (bodies.Count == 0)
             return;
 
-        var current = await ConnectAsync(cancellationToken);
-        var window = (int)Math.Min(int.MaxValue, (long)config.MaxOutstandingConfirms * config.PublisherChannelPoolSize);
-        await BatchPublisher.PublishAllAsync(bodies, window, (body, ct) => PublishCoreAsync(current, body, options, ct), cancellationToken);
+        // One producer span for the whole call; every message carries it as the parent of its consume span.
+        using var trace = PublishTelemetry.Start(telemetry, publishTarget, bodies.Count, logger);
+        try
+        {
+            var current = await ConnectAsync(cancellationToken);
+            var window = (int)Math.Min(int.MaxValue, (long)config.MaxOutstandingConfirms * config.PublisherChannelPoolSize);
+            await BatchPublisher.PublishAllAsync(bodies, window,
+                (body, ct) => PublishCoreAsync(current, body, options, trace.TraceHeaders, ct), cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            trace.Failed(ex);
+            throw;
+        }
     }
 
-    async Task PublishCoreAsync(Connection current, byte[] body, PublishOptions options, CancellationToken cancellationToken)
+    async Task PublishCoreAsync(
+        Connection current,
+        byte[] body,
+        PublishOptions options,
+        IReadOnlyDictionary<string, string> traceHeaders,
+        CancellationToken cancellationToken)
     {
         var properties = new BasicProperties
         {
@@ -260,9 +291,12 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
             ContentType = MessageSerializer.GetContentType(config.SerializationFormat),
             CorrelationId = options.CorrelationId
         };
-        if (options.Headers is { Count: > 0 })
+        if (options.Headers is { Count: > 0 } || traceHeaders.Count > 0)
         {
-            properties.Headers = options.Headers.ToDictionary(h => h.Key, h => (object?)h.Value);
+            var headers = new Dictionary<string, object?>();
+            foreach (var (key, value) in (options.Headers ?? EmptyHeaders).Concat(traceHeaders))
+                headers[key] = value;
+            properties.Headers = headers;
         }
 
         try
@@ -314,7 +348,7 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
                 await channel.BasicQosAsync(prefetchSize: 0, prefetchCount: (ushort)config.PrefetchCount, global: false, cancellationToken);
 
                 var consumer = new AsyncEventingBasicConsumer(channel);
-                var started = new Subscription(channel, consumer, new MessageDispatcher<T>(config, handler, telemetry, logger));
+                var started = new Subscription(channel, consumer, new MessageDispatcher<T>(config, publishTarget, handler, telemetry, logger));
                 consumer.ReceivedAsync += (_, delivery) => OnReceivedAsync(started, delivery);
                 started.ConsumerTag = await channel.BasicConsumeAsync(queueName, autoAck: false, consumer, cancellationToken);
                 Volatile.Write(ref subscription, started);
@@ -563,6 +597,8 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
     {
         var properties = delivery.BasicProperties;
         var headers = new Dictionary<string, string>();
+        string? traceParent = null;
+        string? traceState = null;
         long? libraryAttempt = null;
         long? brokerDeliveryCount = null;
         var fromRetryQueue = false;
@@ -571,6 +607,20 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
         {
             foreach (var (key, value) in properties.Headers)
             {
+                var isTraceParent = key.Equals(TraceHeaders.TraceParent, StringComparison.OrdinalIgnoreCase);
+                if (isTraceParent || key.Equals(TraceHeaders.TraceState, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Bounded before decoding: any publisher can set these. Names match case-insensitively.
+                    var bound = isTraceParent ? TraceContext.MaxTraceParentLength : TraceContext.MaxTraceStateLength;
+                    var trace = value is byte[] { Length: var length } && length > bound ? null : HeaderText(value);
+                    trace = trace is { Length: > 0 } && trace.Length <= bound ? trace : null;
+                    if (isTraceParent)
+                        traceParent = trace;
+                    else
+                        traceState = trace;
+                    continue;
+                }
+
                 var text = HeaderText(value);
                 if (text is null)
                     continue;
@@ -597,7 +647,9 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
             CorrelationId = properties.CorrelationId,
             Timestamp = ToTimestamp(properties.Timestamp),
             DeliveryAttempt = (int)Math.Min(attempt, int.MaxValue),
-            Headers = headers
+            Headers = headers,
+            TraceParent = traceParent,
+            TraceState = traceState
         };
     }
 

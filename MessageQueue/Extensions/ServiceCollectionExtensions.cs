@@ -111,7 +111,8 @@ public static class ServiceCollectionExtensions
         string sourceName = "ESE.MessageQueue",
         bool recordExceptionDetails = false)
     {
-        return services.AddSingleton<ITelemetryProvider>(new OpenTelemetryProvider(sourceName, recordExceptionDetails));
+        // A factory registration, so the container disposes the provider's ActivitySource and Meter.
+        return services.AddSingleton<ITelemetryProvider>(_ => new OpenTelemetryProvider(sourceName, recordExceptionDetails));
     }
 
     public static IServiceCollection AddMessageQueueTelemetry<TProvider>(

@@ -8,9 +8,12 @@ namespace ESE.MessageQueue.Tests.AzureServiceBus;
 
 // B7: idempotent, bounded shutdown; cancelled handlers abandon their message; re-entrant calls do not deadlock.
 [Trait("Category", "Unit")]
-public class Given_an_azure_service_bus_queue_shutting_down
+public class Given_an_azure_service_bus_queue_shutting_down : IAsyncDisposable
 {
     readonly FakeServiceBus bus = new();
+
+    // The fake stands in for the SDK client; disposing it with the test class keeps CA1001 honest.
+    public ValueTask DisposeAsync() => bus.DisposeAsync();
 
     [Fact]
     public async Task When_Disposed_Twice()

@@ -325,7 +325,7 @@ public class RabbitMQIntegrationTests : IDisposable
     {
         var config = new MessageQueueConfig
         {
-            ConnectionString = "amqp://admin:password123@localhost:5672/",
+            ConnectionString = broker.ConnectionString, // from Testcontainers; never hardcode credentials
             QueueName = $"integration-test-{Guid.NewGuid():N}"
         };
         

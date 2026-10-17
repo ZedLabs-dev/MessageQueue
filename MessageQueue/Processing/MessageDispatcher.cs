@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Configuration;
 using ESE.MessageQueue.Retry;
@@ -13,9 +14,10 @@ namespace ESE.MessageQueue.Processing;
 //   size limit -> deserialize -> handler -> retry policy -> complete / reschedule / dead-letter (or drop).
 sealed class MessageDispatcher<T> where T : class
 {
-    static readonly string MessageType = typeof(T).Name;
+    const string RetryRequested = "Retry";
 
     readonly MessageQueueConfig config;
+    readonly TelemetryTarget target;
     readonly Func<T, MessageContext, CancellationToken, Task<MessageResult>> handler;
     readonly ITelemetryProvider telemetry;
     readonly ILogger logger;
@@ -23,11 +25,13 @@ sealed class MessageDispatcher<T> where T : class
 
     public MessageDispatcher(
         MessageQueueConfig config,
+        TelemetryTarget target,
         Func<T, MessageContext, CancellationToken, Task<MessageResult>> handler,
         ITelemetryProvider? telemetry = null,
         ILogger? logger = null)
     {
         this.config = config;
+        this.target = target;
         this.handler = handler;
         this.telemetry = telemetry ?? NullTelemetryProvider.Instance;
         this.logger = new SafeLogger(logger ?? NullLogger.Instance);
@@ -43,14 +47,29 @@ sealed class MessageDispatcher<T> where T : class
         IDeliveryActions actions,
         CancellationToken stopping)
     {
-        var activity = StartActivity(context);
+        // A consume span continues the publisher's trace, never the span that happened to be current on the consumer
+        // thread (the subscriber's, captured when the transport started its loop). This async method's change to
+        // Activity.Current does not leak to the caller.
+        Activity.Current = null;
+        var started = Stopwatch.GetTimestamp();
+        var outcome = new DeliveryOutcome();
+        var activity = StartActivity(context, ExtractParent(context));
         try
         {
-            return await DispatchCoreAsync(body, context, actions, activity, stopping);
+            return await DispatchCoreAsync(body, context, actions, activity, outcome, stopping);
         }
         finally
         {
-            Guard(() => activity?.Dispose());
+            if (outcome.Counted)
+            {
+                // The span reports the same outcome as the metrics: error.type and Error status unless acknowledged.
+                if (outcome.ErrorType is { } errorType && activity is not null)
+                    Guard((activity, errorType), static s => s.activity.SetErrorType(s.errorType));
+                Guard((telemetry, target, Stopwatch.GetElapsedTime(started), outcome.ErrorType),
+                    static s => s.telemetry.RecordMessageConsumed(s.target, s.Item3, s.ErrorType));
+            }
+            if (activity is not null)
+                Guard(activity, static a => a.Dispose());
         }
     }
 
@@ -59,12 +78,13 @@ sealed class MessageDispatcher<T> where T : class
         MessageContext context,
         IDeliveryActions actions,
         TelemetryActivity? activity,
+        DeliveryOutcome outcome,
         CancellationToken stopping)
     {
         if (body.Length > config.MaxMessageSizeBytes)
         {
-            RecordConsumed(success: false);
-            return await DeadLetterAsync(actions, context.MessageId, new DeadLetterReason(DeadLetterReasons.MessageTooLarge));
+            outcome.Fail(DeadLetterReasons.MessageTooLarge);
+            return await DeadLetterAsync(actions, activity, context.MessageId, new DeadLetterReason(DeadLetterReasons.MessageTooLarge));
         }
 
         T? message;
@@ -75,14 +95,14 @@ sealed class MessageDispatcher<T> where T : class
         catch (Exception ex)
         {
             SetError(activity, ex);
-            RecordConsumed(success: false);
-            return await DeadLetterAsync(actions, context.MessageId, new DeadLetterReason(DeadLetterReasons.DeserializationFailed, TypeName(ex)));
+            outcome.Fail(DeadLetterReasons.DeserializationFailed);
+            return await DeadLetterAsync(actions, activity, context.MessageId, new DeadLetterReason(DeadLetterReasons.DeserializationFailed, TypeName(ex)));
         }
 
         if (message is null)
         {
-            RecordConsumed(success: false);
-            return await DeadLetterAsync(actions, context.MessageId, new DeadLetterReason(DeadLetterReasons.DeserializationFailed));
+            outcome.Fail(DeadLetterReasons.DeserializationFailed);
+            return await DeadLetterAsync(actions, activity, context.MessageId, new DeadLetterReason(DeadLetterReasons.DeserializationFailed));
         }
 
         MessageResult result;
@@ -103,24 +123,26 @@ sealed class MessageDispatcher<T> where T : class
             DispatcherLog.HandlerFailed(logger, config.QueueName, context.MessageId, context.DeliveryAttempt, TypeName(ex), ex);
         }
 
-        RecordConsumed(success: result == MessageResult.Acknowledge);
-
         switch (result)
         {
             case MessageResult.Acknowledge:
+                outcome.Succeed();
                 await actions.CompleteAsync(CancellationToken.None);
                 return DispatchOutcome.Completed;
 
             case MessageResult.DeadLetter:
-                return await DeadLetterAsync(actions, context.MessageId, new DeadLetterReason(DeadLetterReasons.Rejected));
+                outcome.Fail(DeadLetterReasons.Rejected);
+                return await DeadLetterAsync(actions, activity, context.MessageId, new DeadLetterReason(DeadLetterReasons.Rejected));
 
             default:
-                return await RetryOrDeadLetterAsync(actions, context, failure, stopping);
+                outcome.Fail(failure is null ? RetryRequested : TypeName(failure));
+                return await RetryOrDeadLetterAsync(actions, activity, context, failure, stopping);
         }
     }
 
     async Task<DispatchOutcome> RetryOrDeadLetterAsync(
         IDeliveryActions actions,
+        TelemetryActivity? activity,
         MessageContext context,
         Exception? failure,
         CancellationToken stopping)
@@ -130,12 +152,20 @@ sealed class MessageDispatcher<T> where T : class
         if (!retry.ShouldRetry(attempt, failure))
         {
             var code = attempt > config.Retry.MaxRetries ? DeadLetterReasons.MaxRetriesExceeded : DeadLetterReasons.NonRetryableError;
-            return await DeadLetterAsync(actions, context.MessageId, new DeadLetterReason(code, failure is null ? null : TypeName(failure)));
+            return await DeadLetterAsync(actions, activity, context.MessageId, new DeadLetterReason(code, failure is null ? null : TypeName(failure)));
         }
 
         var delay = DelayBeforeRetry(attempt);
         await actions.RescheduleAsync(delay, attempt + 1, stopping);
-        Guard(() => telemetry.RecordMessageRetried(config.QueueName, MessageType, attempt + 1));
+        if (activity is not null)
+        {
+            Guard((activity, attempt, delay), static s =>
+            {
+                s.activity.SetTag(TelemetryNames.RetryNextAttempt, s.attempt + 1);
+                s.activity.SetTag(TelemetryNames.RetryDelay, (long)s.delay.TotalMilliseconds);
+            });
+        }
+        Guard((telemetry, target, attempt), static s => s.telemetry.RecordMessageRetried(s.target, s.attempt + 1));
         DispatcherLog.Rescheduled(logger, config.QueueName, context.MessageId, attempt + 1, delay);
         return DispatchOutcome.Rescheduled;
     }
@@ -146,8 +176,8 @@ sealed class MessageDispatcher<T> where T : class
     {
         var detail = TypeName(error);
         DispatcherLog.DeliveryUnreadable(logger, config.QueueName, messageId, detail, error);
-        RecordConsumed(success: false);
-        return DeadLetterAsync(actions, messageId, new DeadLetterReason(DeadLetterReasons.DeliveryFailed, detail));
+        Guard((telemetry, target), static s => s.telemetry.RecordMessageConsumed(s.target, TimeSpan.Zero, DeadLetterReasons.DeliveryFailed));
+        return DeadLetterAsync(actions, null, messageId, new DeadLetterReason(DeadLetterReasons.DeliveryFailed, detail));
     }
 
     TimeSpan DelayBeforeRetry(int attempt)
@@ -165,8 +195,10 @@ sealed class MessageDispatcher<T> where T : class
         }
     }
 
-    async Task<DispatchOutcome> DeadLetterAsync(IDeliveryActions actions, string messageId, DeadLetterReason reason)
+    async Task<DispatchOutcome> DeadLetterAsync(IDeliveryActions actions, TelemetryActivity? activity, string messageId, DeadLetterReason reason)
     {
+        if (activity is not null)
+            Guard((activity, reason.Code), static s => s.activity.SetTag(TelemetryNames.DeadLetterReason, s.Code));
         if (!config.EnableDeadLetterQueue)
         {
             DispatcherLog.Dropped(logger, config.QueueName, messageId, reason.Code, reason.Detail);
@@ -175,16 +207,21 @@ sealed class MessageDispatcher<T> where T : class
         }
 
         await actions.DeadLetterAsync(reason, CancellationToken.None);
-        Guard(() => telemetry.RecordMessageDeadLettered(config.QueueName, MessageType, reason.Code));
+        Guard((telemetry, target, reason.Code), static s => s.telemetry.RecordMessageDeadLettered(s.target, s.Code));
         DispatcherLog.DeadLettered(logger, config.QueueName, messageId, reason.Code, reason.Detail);
         return DispatchOutcome.DeadLettered;
     }
 
-    TelemetryActivity? StartActivity(MessageContext context)
+    // The publisher's trace context, read from the headers the transport found on the message. Malformed or missing
+    // headers mean no parent: the consume span then starts a new trace.
+    TraceContext? ExtractParent(MessageContext context)
     {
+        if (context.TraceParent is null || telemetry is NullTelemetryProvider)
+            return null;
+
         try
         {
-            return telemetry.StartConsumeActivity(config.QueueName, MessageType, context.MessageId);
+            return telemetry.ExtractTraceContext(new TraceHeaderCarrier(context.TraceParent, context.TraceState));
         }
         catch (Exception ex)
         {
@@ -193,16 +230,32 @@ sealed class MessageDispatcher<T> where T : class
         }
     }
 
-    void RecordConsumed(bool success) => Guard(() => telemetry.RecordMessageConsumed(config.QueueName, MessageType, success));
-
-    void SetError(TelemetryActivity? activity, Exception exception) => Guard(() => activity?.SetError(exception));
-
-    // Telemetry must never change what happens to a message.
-    void Guard(Action telemetryCall)
+    TelemetryActivity? StartActivity(MessageContext context, TraceContext? parent)
     {
         try
         {
-            telemetryCall();
+            return telemetry.StartConsumeActivity(target, context, parent);
+        }
+        catch (Exception ex)
+        {
+            DispatcherLog.TelemetryFailed(logger, config.QueueName, ex);
+            return null;
+        }
+    }
+
+    void SetError(TelemetryActivity? activity, Exception exception)
+    {
+        if (activity is not null)
+            Guard((activity, exception), static s => s.activity.SetError(s.exception));
+    }
+
+    // Telemetry must never change what happens to a message.
+    // Static lambdas with explicit state: no closure is allocated per message.
+    void Guard<TState>(TState state, Action<TState> telemetryCall)
+    {
+        try
+        {
+            telemetryCall(state);
         }
         catch (Exception ex)
         {
@@ -211,6 +264,65 @@ sealed class MessageDispatcher<T> where T : class
     }
 
     static string TypeName(Exception exception) => exception.GetType().FullName ?? exception.GetType().Name;
+
+    // The two trace headers as a read-only dictionary, without allocating a hash table per message.
+    sealed class TraceHeaderCarrier : IReadOnlyDictionary<string, string>
+    {
+        readonly string traceParent;
+        readonly string? traceState;
+
+        public TraceHeaderCarrier(string traceParent, string? traceState)
+        {
+            this.traceParent = traceParent;
+            this.traceState = traceState;
+        }
+
+        public int Count => traceState is null ? 1 : 2;
+
+        public string this[string key] => TryGetValue(key, out var value) ? value : throw new KeyNotFoundException(key);
+
+        public IEnumerable<string> Keys => this.Select(pair => pair.Key);
+
+        public IEnumerable<string> Values => this.Select(pair => pair.Value);
+
+        public bool ContainsKey(string key) => TryGetValue(key, out _);
+
+        public bool TryGetValue(string key, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out string value)
+        {
+            value = key switch
+            {
+                TraceHeaders.TraceParent => traceParent,
+                TraceHeaders.TraceState => traceState,
+                _ => null
+            };
+            return value is not null;
+        }
+
+        public IEnumerator<KeyValuePair<string, string>> GetEnumerator()
+        {
+            yield return new(TraceHeaders.TraceParent, traceParent);
+            if (traceState is not null)
+                yield return new(TraceHeaders.TraceState, traceState);
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    // What the consumed-messages metric reports: null (acknowledged), a dead-letter reason code, "Retry" (the handler
+    // asked for one) or the type of the exception the handler threw. Unset when the delivery was cancelled by shutdown.
+    sealed class DeliveryOutcome
+    {
+        public bool Counted { get; private set; }
+        public string? ErrorType { get; private set; }
+
+        public void Succeed() => Counted = true;
+
+        public void Fail(string errorType)
+        {
+            Counted = true;
+            ErrorType = errorType;
+        }
+    }
 }
 
 static partial class DispatcherLog
@@ -243,4 +355,8 @@ static partial class DispatcherLog
     [LoggerMessage(EventId = 1007, Level = LogLevel.Error,
         Message = "Message {MessageId} on queue {QueueName} could not be read ({ExceptionType}); dead-lettering it as DeliveryFailed")]
     public static partial void DeliveryUnreadable(ILogger logger, string queueName, string messageId, string exceptionType, Exception exception);
+
+    [LoggerMessage(EventId = 1009, Level = LogLevel.Warning,
+        Message = "Publish telemetry for queue {QueueName} failed; the message is published regardless")]
+    public static partial void PublishTelemetryFailed(ILogger logger, string queueName, Exception exception);
 }

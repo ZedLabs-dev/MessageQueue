@@ -40,6 +40,8 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureServiceBus
     readonly MessageQueueCapabilities capabilities;
     readonly bool subscriptionMode;
     readonly string publishEntity;
+    readonly TelemetryTarget publishTarget;
+    readonly TelemetryTarget consumeTarget;
     readonly SemaphoreSlim subscriptionLock = new(1, 1);
     readonly BackgroundWork draining = new();
     readonly TransportBackoff transportFailures = new();
@@ -77,6 +79,9 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureServiceBus
         this.logger = new SafeLogger(logger ?? NullLogger.Instance);
         subscriptionMode = config.UsesSubscription;
         publishEntity = subscriptionMode ? config.TopicName! : config.QueueName;
+        // Publish and consume name the same entity (the topic in subscription mode), so their telemetry joins.
+        publishTarget = new TelemetryTarget(MessagingSystems.ServiceBus, publishEntity, typeof(T).Name) { PublishOperation = "send" };
+        consumeTarget = publishTarget with { Subscription = subscriptionMode ? config.SubscriptionName : null };
         capabilities = new MessageQueueCapabilities(Durable: true, DeadLetter: true, DelayedRedelivery: !subscriptionMode);
 
         CapabilityChecks.WarnIfBackoffUnsupported(capabilities, config, this.logger);
@@ -120,7 +125,17 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureServiceBus
         PublishValidation.Validate(message, options);
         ThrowIfDisposed();
         var serviceBusMessage = CreateMessage(message, options);
-        await SendAsync(token => sender.SendAsync(serviceBusMessage, token), cancellationToken);
+        using var trace = PublishTelemetry.Start(telemetry, publishTarget, 1, logger, serviceBusMessage.MessageId);
+        AddTraceHeaders(serviceBusMessage, trace);
+        try
+        {
+            await SendAsync(token => sender.SendAsync(serviceBusMessage, token), cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            trace.Failed(ex);
+            throw;
+        }
     }
 
     /// <summary>
@@ -138,7 +153,26 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureServiceBus
             PublishValidation.Validate(message, options);
             return CreateMessage(message, options);
         }).ToList();
+        if (pending.Count == 0)
+            return;
 
+        // One producer span for the whole call; every message carries it as the parent of its consume span.
+        using var trace = PublishTelemetry.Start(telemetry, publishTarget, pending.Count, logger);
+        foreach (var each in pending)
+            AddTraceHeaders(each, trace);
+        try
+        {
+            await PublishPendingAsync(pending, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            trace.Failed(ex);
+            throw;
+        }
+    }
+
+    async Task PublishPendingAsync(List<ServiceBusMessage> pending, CancellationToken cancellationToken)
+    {
         if (!config.EnableBatchedOperations)
         {
             foreach (var single in pending)
@@ -181,6 +215,12 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureServiceBus
         {
             throw new MessageQueueException($"Failed to publish to '{publishEntity}' ({ex.GetType().Name})", ex);
         }
+    }
+
+    static void AddTraceHeaders(ServiceBusMessage message, PublishTelemetry trace)
+    {
+        foreach (var (key, value) in trace.TraceHeaders)
+            message.ApplicationProperties[key] = value;
     }
 
     ServiceBusMessage CreateMessage(T message, PublishOptions options)
@@ -243,7 +283,7 @@ public class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureServiceBus
                     ReceiveMode = ServiceBusReceiveMode.PeekLock,
                     MaxAutoLockRenewalDuration = config.MaxAutoLockRenewalDuration
                 });
-                var started = new Subscription(processor, new MessageDispatcher<T>(config, handler, telemetry, logger));
+                var started = new Subscription(processor, new MessageDispatcher<T>(config, consumeTarget, handler, telemetry, logger));
                 await processor.StartAsync(delivery => OnMessageAsync(started, delivery), OnErrorAsync, cancellationToken);
                 Volatile.Write(ref subscription, started);
             }

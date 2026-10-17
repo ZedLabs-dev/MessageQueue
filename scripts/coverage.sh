@@ -9,7 +9,7 @@
 # (target: 80, OPTIMIZATION-PLAN.md section 5).
 set -euo pipefail
 
-THRESHOLD="${COVERAGE_THRESHOLD:-84}"
+THRESHOLD="${COVERAGE_THRESHOLD:-87}"
 RESULTS_DIR="${RESULTS_DIR:-TestResults}"
 REPORT_DIR="$RESULTS_DIR/coverage-report"
 

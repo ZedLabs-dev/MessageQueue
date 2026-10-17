@@ -21,6 +21,12 @@ public sealed record MessageContext
     /// <summary>Which delivery this is, 1-based: 1 for the first attempt, 2 for the first retry, and so on.</summary>
     public int DeliveryAttempt { get; init; } = 1;
 
+    // The W3C trace headers the message arrived with. Internal: the pipeline parents the consume span on them, and
+    // handlers see that span as Activity.Current.
+    internal string? TraceParent { get; init; }
+
+    internal string? TraceState { get; init; }
+
     /// <summary>
     /// Application headers supplied by the publisher through <see cref="PublishOptions.Headers"/>. Immutable: the
     /// given dictionary is copied, so a handler cannot change what a retry or another handler sees.

@@ -2,6 +2,7 @@ using System.Globalization;
 using Azure.Messaging.ServiceBus;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Processing;
+using ESE.MessageQueue.Telemetry;
 
 namespace ESE.MessageQueue.AzureServiceBus;
 
@@ -31,6 +32,10 @@ static class ServiceBusMessages
         var library = LibraryState(message);
         return new MessageContext
         {
+            // W3C traceparent, else the SDK's own Diagnostic-Id (also W3C when the SDK's tracing wrote it).
+            TraceParent = TraceText(Property(message, TraceHeaders.TraceParent), TraceContext.MaxTraceParentLength)
+                ?? TraceText(Property(message, DiagnosticIdProperty), TraceContext.MaxTraceParentLength),
+            TraceState = TraceText(Property(message, TraceHeaders.TraceState), TraceContext.MaxTraceStateLength),
             MessageId = library is not null && Text(message.ApplicationProperties.GetValueOrDefault(OriginalMessageIdProperty)) is { Length: > 0 } original
                 ? original
                 : message.MessageId ?? string.Empty,
@@ -66,14 +71,15 @@ static class ServiceBusMessages
 
     // A queue-mode retry: a copy for the same queue, with its own message id (so duplicate detection cannot drop it as
     // a repeat of the original), the original id, the next attempt and the delivery count its first delivery will have.
-    // Application properties survive; SDK tracing, foreign "x-" and earlier library properties do not.
+    // Application and W3C trace properties survive; SDK tracing, foreign "x-" and earlier library properties do not.
     public static ServiceBusMessage RetryCopy(ServiceBusReceivedMessage original, MessageContext context, int nextAttempt)
     {
         var copy = new ServiceBusMessage(original)
         {
             MessageId = Guid.CreateVersion7().ToString()
         };
-        foreach (var key in copy.ApplicationProperties.Keys.Where(IsInternal).ToList())
+        // The trace headers stay: every attempt continues the original publisher's trace.
+        foreach (var key in copy.ApplicationProperties.Keys.Where(key => IsInternal(key) && !IsTraceHeader(key)).ToList())
             copy.ApplicationProperties.Remove(key);
 
         copy.ApplicationProperties[OriginalMessageIdProperty] = context.MessageId;
@@ -106,6 +112,28 @@ static class ServiceBusMessages
 
     static bool IsInternal(string key) =>
         PublishValidation.IsReserved(key) || string.Equals(key, DiagnosticIdProperty, StringComparison.OrdinalIgnoreCase);
+
+    static bool IsTraceHeader(string key) =>
+        key.Equals(TraceHeaders.TraceParent, StringComparison.OrdinalIgnoreCase) || key.Equals(TraceHeaders.TraceState, StringComparison.OrdinalIgnoreCase);
+
+    // Header names are matched case-insensitively: other instrumentations do not agree on case.
+    static object? Property(ServiceBusReceivedMessage message, string name)
+    {
+        foreach (var (key, value) in message.ApplicationProperties)
+        {
+            if (key.Equals(name, StringComparison.OrdinalIgnoreCase))
+                return value;
+        }
+        return null;
+    }
+
+    // Trace headers are strings or UTF-8 bytes, read only up to the parser's bound (they come from any publisher).
+    static string? TraceText(object? value, int maxLength) => value switch
+    {
+        string { Length: > 0 } text when text.Length <= maxLength => text,
+        byte[] { Length: > 0 } bytes when bytes.Length <= maxLength => System.Text.Encoding.UTF8.GetString(bytes),
+        _ => null
+    };
 
     // A positive whole number, capped at int.MaxValue (larger values, forged or not, saturate).
     static long? Number(object? value) =>

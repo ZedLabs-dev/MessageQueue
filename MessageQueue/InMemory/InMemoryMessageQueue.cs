@@ -26,6 +26,7 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
     readonly InMemoryConfig config;
     readonly ITelemetryProvider telemetry;
     readonly ILogger logger;
+    readonly TelemetryTarget publishTarget;
     readonly Channel<Envelope> queue = Channel.CreateUnbounded<Envelope>(new UnboundedChannelOptions { SingleReader = true });
     readonly CancellationTokenSource lifetime = new();
     readonly CancellationToken stopping;
@@ -44,6 +45,7 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
         ConfigValidation.ThrowIfInvalid(this.config, new InMemoryConfigValidator());
         this.telemetry = telemetry ?? NullTelemetryProvider.Instance;
         this.logger = logger ?? NullLogger.Instance;
+        publishTarget = new TelemetryTarget(MessagingSystems.InMemory, this.config.QueueName, typeof(T).Name);
         stopping = lifetime.Token;
     }
 
@@ -98,22 +100,55 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
         PublishValidation.Validate(message, options);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) == 1, this);
 
-        byte[] body;
+        var body = Serialize(message);
+        var messageId = options.MessageId ?? Guid.CreateVersion7().ToString();
+        using var trace = PublishTelemetry.Start(telemetry, publishTarget, 1, logger, messageId);
+        Enqueue(message, body, messageId, options, trace);
+        return Task.CompletedTask;
+    }
+
+    // One producer span for the whole call (ADR 0013); every message carries it as its parent.
+    public Task PublishAsync(IEnumerable<T> messages, CancellationToken cancellationToken = default)
+    {
+        PublishValidation.Validate(messages);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) == 1, this);
+        var options = new PublishOptions();
+        var batch = messages.Select(message =>
+        {
+            PublishValidation.Validate(message, options);
+            return (Message: message, Body: Serialize(message));
+        }).ToList();
+        if (batch.Count == 0)
+            return Task.CompletedTask;
+
+        using var trace = PublishTelemetry.Start(telemetry, publishTarget, batch.Count, logger);
+        foreach (var (message, body) in batch)
+            Enqueue(message, body, Guid.CreateVersion7().ToString(), options, trace);
+        return Task.CompletedTask;
+    }
+
+    byte[] Serialize(T message)
+    {
         try
         {
-            body = MessageSerializer.Serialize(message, config.SerializationFormat);
+            return MessageSerializer.Serialize(message, config.SerializationFormat);
         }
         catch (Exception ex)
         {
             throw new MessageQueueException($"Failed to serialize message of type {typeof(T).Name}", ex);
         }
+    }
 
+    void Enqueue(T message, byte[] body, string messageId, PublishOptions options, PublishTelemetry trace)
+    {
         var context = new MessageContext
         {
-            MessageId = options.MessageId ?? Guid.CreateVersion7().ToString(),
+            MessageId = messageId,
             CorrelationId = options.CorrelationId,
             Timestamp = DateTimeOffset.UtcNow,
-            DeliveryAttempt = 1
+            DeliveryAttempt = 1,
+            TraceParent = trace.TraceHeaders.GetValueOrDefault(TraceHeaders.TraceParent),
+            TraceState = trace.TraceHeaders.GetValueOrDefault(TraceHeaders.TraceState)
         };
         if (options.Headers is not null)
         {
@@ -128,16 +163,6 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
         }
 
         queue.Writer.TryWrite(new Envelope(body, context));
-        return Task.CompletedTask;
-    }
-
-    public async Task PublishAsync(IEnumerable<T> messages, CancellationToken cancellationToken = default)
-    {
-        PublishValidation.Validate(messages);
-        foreach (var message in messages)
-        {
-            await PublishAsync(message, cancellationToken);
-        }
     }
 
     public Task SubscribeAsync(Func<T, Task<bool>> handler, CancellationToken cancellationToken = default) =>
@@ -153,7 +178,7 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
             if (subscription is not null)
                 throw new InvalidOperationException("This queue already has a subscriber. Call UnsubscribeAsync first.");
 
-            var dispatcher = new MessageDispatcher<T>(config, RecordAcknowledged(handler), telemetry, logger);
+            var dispatcher = new MessageDispatcher<T>(config, publishTarget, RecordAcknowledged(handler), telemetry, logger);
             var cancellation = CancellationTokenSource.CreateLinkedTokenSource(stopping);
             try
             {

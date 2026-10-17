@@ -10,9 +10,12 @@ namespace ESE.MessageQueue.Tests.AzureServiceBus;
 // Topic/subscription mode: a scheduled copy sent to the topic would reach every subscription, so a retry waits
 // under the message lock (when the lock-renewal budget allows) and then abandons with the next attempt number.
 [Trait("Category", "Unit")]
-public class Given_an_azure_service_bus_subscription_retrying
+public class Given_an_azure_service_bus_subscription_retrying : IAsyncDisposable
 {
     readonly FakeServiceBus bus = new();
+
+    // The fake stands in for the SDK client; disposing it with the test class keeps CA1001 honest.
+    public ValueTask DisposeAsync() => bus.DisposeAsync();
 
     static AzureServiceBusConfig WithDelay(TimeSpan delay) => AzureServiceBusTestConfigs.Subscription() with
     {

@@ -6,6 +6,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 6: telemetry, samples, benchmarks (OPTIMIZATION-PLAN B10, S8, §4, §4.5, §4.7)
+
+Design records: `docs/adr/0013` (telemetry), `docs/adr/0014` (samples and benchmarks). Numbers: `docs/benchmarks.md`.
+
+#### Breaking
+- `ITelemetryProvider` is redesigned (B10). Every member takes a `TelemetryTarget(System, Destination, MessageType)`
+  (with optional `Subscription`, `RoutingKey`, `PublishOperation`).
+  - `StartPublishActivity(target, messageCount, messageId)`
+  - `StartConsumeActivity(target, MessageContext, TraceContext? parent)`
+  - `RecordMessagePublished(target, count, duration, errorType)`
+  - `RecordMessageConsumed(target, duration, errorType)`
+  - `RecordMessageRetried(target, nextAttempt)`
+  - `RecordMessageDeadLettered(target, reason)`
+  - `ExtractTraceContext(IReadOnlyDictionary<string, string>)`
+  - `InjectTraceContext(IDictionary<string, string>)`
+
+  Custom providers must be updated. `NullTelemetryProvider` and `OpenTelemetryProvider` implement the new shape.
+- `OpenTelemetryProvider` metric names follow the OpenTelemetry messaging semantic conventions:
+  - `messaging.client.sent.messages` (was `messagequeue.messages.published`)
+  - `messaging.client.consumed.messages` (was `messagequeue.messages.consumed`; `error.type` replaces `success`)
+  - `ese.messagequeue.messages.retried` and `ese.messagequeue.messages.dead_lettered` (with
+    `ese.messagequeue.dead_letter.reason`)
+  
+  Attributes are now `messaging.system`, `messaging.destination.name`, `messaging.operation.name`,
+  `ese.messagequeue.message_type`, `error.type` (and `messaging.destination.subscription.name` on Service Bus
+  subscriptions), replacing `queue`, `message_type` and `success`. Span names are `{operation} {destination}`
+  (`send` on Service Bus), and `messaging.system` is the broker (`rabbitmq`, `servicebus`, `ese.inmemory`) instead of
+  `messagequeue`. The RabbitMQ destination is `{exchange}:{queue}` (exchange and routing key), and Service Bus
+  subscription consumers report the topic, so publish and consume telemetry join.
+- `OpenTelemetryProvider` implements `IDisposable` (disposes its `ActivitySource` and `Meter`);
+  `AddMessageQueueTelemetry` registers it with a factory so the container disposes it.
+- `TraceContext` parsing is strict W3C Trace Context. Values that used to "parse" (`00-abc-def-01`, uppercase hex,
+  all-zero ids) are now ignored.
+- In-memory `PublishAsync(IEnumerable<T>)` validates and serializes every message before queueing any (as RabbitMQ
+  and Service Bus do) and traces the batch as one span.
+- The sample classes in `ESE.MessageQueue.Examples` (`OrderCreated`, `OrderCreatedProcessor`, `OrderService`, ...) are
+  removed from the library; see `samples/ESE.MessageQueue.Samples` (§4.7).
+- `MessageQueue/.env.example` and `docker-compose.dev.yml` no longer have default RabbitMQ credentials or a working
+  SQL Server password (S8). Compose refuses to start until `RABBITMQ_USER` / `RABBITMQ_PASS` / `MSSQL_SA_PASSWORD`
+  are set in `MessageQueue/.env`; the example ships placeholders to replace. Ports bind to `127.0.0.1` only.
+
+#### Added
+- End-to-end tracing on every provider (B10):
+  - Every publish (batch: one span) creates an `ActivityKind.Producer` span and writes W3C `traceparent` /
+    `tracestate` to the message. Those header names stay reserved.
+  - Every delivery creates an `ActivityKind.Consumer` span parented on the publisher's context, with the same trace ID
+    across RabbitMQ, Azure Service Bus and in-memory. Retry copies keep the original trace. Deliveries that are not
+    acknowledged get Error status and the metrics' `error.type`.
+  - Trace headers match case-insensitively and may be strings or UTF-8 bytes; on Service Bus the SDK's `Diagnostic-Id`
+    is the fallback for `traceparent`.
+  - Retries and dead letters are tagged on the span (`ese.messagequeue.retry.next_attempt`,
+    `ese.messagequeue.dead_letter.reason`).
+  - The consume span is `Activity.Current` inside the handler.
+  - A message without valid trace headers starts a new trace instead of joining the subscriber's ambient span.
+- Duration histograms `messaging.client.operation.duration` (publish) and `messaging.process.duration` (receipt to
+  settlement), in seconds, with the conventions' bucket advice.
+- `TraceContext.Parse(traceparent, tracestate)` (strict, bounded: traceparent at most 256 characters, tracestate 512
+  characters / 32 members; never throws), `TraceContext.ToTraceParent()`, `TraceFlags` (sampled and random flags
+  kept), `Sampled`, `TraceState`, and `TelemetryActivity.SetTag` / `SetErrorType` / `ErrorType`.
+- Publish telemetry is guarded like the consumer pipeline: a throwing provider is logged (event 1009) and never fails
+  or changes a publish. Without a telemetry provider, publishing allocates nothing for telemetry; with one, nothing is
+  parsed, formatted or tagged while no listener is attached.
+- `samples/ESE.MessageQueue.Samples`: a worker on the in-memory provider by default (RabbitMQ / Azure Service Bus via
+  `--environment`), a processor showing Acknowledge / Retry / DeadLetter, and OpenTelemetry console-exporter wiring.
+  The sample only references `OpenTelemetry.Extensions.Hosting` / `OpenTelemetry.Exporter.Console` 1.20.0 and
+  `Microsoft.Extensions.Hosting` 10.0.13. A Unit smoke test boots it.
+- `benchmarks/ESE.MessageQueue.Benchmarks` (BenchmarkDotNet 0.15.8): serializer, dispatcher overhead, in-memory
+  throughput, RabbitMQ confirms. CI builds it, and `dotnet test` does not run it.
+
+#### Changed
+- CA1848 / CA1873 are errors again (the Phase 6 deferral in `.editorconfig` is removed). All library logging uses
+  `LoggerMessage` source generation.
+
 ### Azure Service Bus provider rework (OPTIMIZATION-PLAN B5–B8, S3–S6, S10, §4.3)
 
 Design records: `docs/adr/0009`–`0012`.

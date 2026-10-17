@@ -7,9 +7,12 @@ namespace ESE.MessageQueue.Tests.AzureServiceBus;
 
 // Publishing through one ServiceBusSender (§4.3), bounded by SendTimeout, with no client text in errors.
 [Trait("Category", "Unit")]
-public class Given_an_azure_service_bus_publisher
+public class Given_an_azure_service_bus_publisher : IAsyncDisposable
 {
     readonly FakeServiceBus bus = new();
+
+    // The fake stands in for the SDK client; disposing it with the test class keeps CA1001 honest.
+    public ValueTask DisposeAsync() => bus.DisposeAsync();
 
     [Fact]
     public async Task When_Publishing_A_Message()

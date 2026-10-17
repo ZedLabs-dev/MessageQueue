@@ -32,7 +32,7 @@ public class Given_a_message_dispatcher
     MessageDispatcher<TestMessage> Dispatcher(
         Func<TestMessage, MessageContext, CancellationToken, Task<MessageResult>> handler,
         InMemoryConfig? overrides = null) =>
-        new(overrides ?? config, async (m, c, ct) =>
+        new(overrides ?? config, new ESE.MessageQueue.Telemetry.TelemetryTarget("test", "orders", nameof(TestMessage)), async (m, c, ct) =>
         {
             handlerCalls++;
             return await handler(m, c, ct);

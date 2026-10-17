@@ -13,10 +13,13 @@ namespace ESE.MessageQueue.Tests.AzureServiceBus;
 // S3: identity (FullyQualifiedNamespace + TokenCredential) or a SAS connection string, exactly one of them.
 // S10: no SharedAccessKey in any exception, whatever goes wrong with the connection settings.
 [Trait("Category", "Unit")]
-public class Given_an_azure_service_bus_config
+public class Given_an_azure_service_bus_config : IAsyncDisposable
 {
     const string Namespace = "contoso.servicebus.windows.net";
     readonly FakeServiceBus bus = new();
+
+    // The fake stands in for the SDK client; disposing it with the test class keeps CA1001 honest.
+    public ValueTask DisposeAsync() => bus.DisposeAsync();
 
     static AzureServiceBusConfig WithNamespace() => AzureServiceBusTestConfigs.Queue() with { ConnectionString = "", FullyQualifiedNamespace = Namespace };
 

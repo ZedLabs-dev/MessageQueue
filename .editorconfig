@@ -141,14 +141,6 @@ dotnet_diagnostic.IDE1006.severity = warning
 # are the public API and intentionally end in "Queue".
 dotnet_diagnostic.CA1711.severity = none
 
-# Deferred to OPTIMIZATION-PLAN Phase 6 (§4.5: LoggerMessage source-generated logging).
-dotnet_diagnostic.CA1848.severity = suggestion
-dotnet_diagnostic.CA1873.severity = suggestion
-
-# Deferred to OPTIMIZATION-PLAN Phase 4/6 (telemetry wiring B9/B10): making OpenTelemetryProvider
-# IDisposable is a public-API/lifetime change, out of scope for the guardrails phase.
-dotnet_diagnostic.CA1001.severity = suggestion
-
 # Deferred to OPTIMIZATION-PLAN Phase 4 (B7: dispose rework / IAsyncDisposable / idempotent dispose).
 # TelemetryActivity needs a proper protected Dispose(bool) pattern, which is a public-API change.
 dotnet_diagnostic.CA1816.severity = suggestion

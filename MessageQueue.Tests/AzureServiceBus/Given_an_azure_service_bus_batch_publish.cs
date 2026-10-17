@@ -5,9 +5,12 @@ namespace ESE.MessageQueue.Tests.AzureServiceBus;
 
 // B8: batches are built with CreateMessageBatchAsync + TryAddMessage and split by byte size, not message count alone.
 [Trait("Category", "Unit")]
-public class Given_an_azure_service_bus_batch_publish
+public class Given_an_azure_service_bus_batch_publish : IAsyncDisposable
 {
     readonly FakeServiceBus bus = new();
+
+    // The fake stands in for the SDK client; disposing it with the test class keeps CA1001 honest.
+    public ValueTask DisposeAsync() => bus.DisposeAsync();
 
     static TestMessage[] Messages(int count, int contentLength = 20) =>
         Enumerable.Range(0, count).Select(i => new TestMessage($"{i}", new string('c', contentLength))).ToArray();
