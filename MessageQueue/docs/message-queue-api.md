@@ -65,7 +65,7 @@ startup too. Constructing a provider directly applies the same validation. One q
 {
   "MessageQueue": {
     "Provider": "AzureServiceBus",
-    "ConnectionString": "Endpoint=sb://your-namespace.servicebus.windows.net/;...",
+    "FullyQualifiedNamespace": "your-namespace.servicebus.windows.net",
     "QueueName": "order-created",
     "MaxConcurrentCalls": 10,
     "MessageTimeToLive": "7.00:00:00",
@@ -148,12 +148,13 @@ Both of the above plus `MessageQueueCapabilities Capabilities`:
 | Provider | `Durable` | `DeadLetter` | `DelayedRedelivery` |
 |---|---|---|---|
 | RabbitMQ | yes | yes (`{QueueName}.deadletter`) | yes: per-delay retry queues `{QueueName}.retry.{ms}` (ADR 0006) |
-| Azure Service Bus | yes | yes (`$deadletterqueue`) | no: retries are currently abandoned for immediate redelivery |
+| Azure Service Bus (queue) | yes | yes (`$deadletterqueue`) | yes: scheduled retry copies (ADR 0009) |
+| Azure Service Bus (topic subscription) | yes | yes (`$deadletterqueue`) | no: a retry waits under the message lock, then is abandoned (ADR 0009) |
 | In-memory | **no** | yes (`DeadLetters`) | yes |
 
-**Interim:** the retry *count* behaves the same everywhere, and RabbitMQ and in-memory honour the backoff *delay*
-without holding the message. Azure Service Bus logs a startup warning when the retry policy has a backoff;
-broker-side delayed redelivery arrives with its provider rework.
+The retry *count* behaves the same everywhere. RabbitMQ, in-memory and Azure Service Bus queues honour the backoff
+*delay* without holding the message; an Azure Service Bus topic subscription holds it under its lock (when the delay
+fits the lock-renewal budget) and logs a startup warning when the retry policy has a backoff.
 
 ### `PublishOptions` Record
 
@@ -175,7 +176,7 @@ for every message, so scoped dependencies (a `DbContext`, say) live for one mess
 
 ### `MessageContext` Record
 
-- `MessageId` (string): broker message id
+- `MessageId` (string): the publisher's message id (stays the same across retries)
 - `CorrelationId` (string?)
 - `Timestamp` (DateTimeOffset): publish time (ASB: enqueue time)
 - `DeliveryAttempt` (int): 1 for the first delivery, 2 for the first retry, and so on
@@ -190,7 +191,8 @@ for every message, so scoped dependencies (a `DbContext`, say) live for one mess
 ### Provider classes
 
 `RabbitMqMessageQueue<T>(RabbitMqConfig, ITelemetryProvider? = null, ILogger? = null)`,
-`AzureServiceBusMessageQueue<T>(AzureServiceBusConfig, ITelemetryProvider? = null, ILogger? = null)` and
+`AzureServiceBusMessageQueue<T>(AzureServiceBusConfig, ITelemetryProvider? = null, ILogger? = null)` (or with a
+`TokenCredential` after the config) and
 `InMemoryMessageQueue<T>(InMemoryConfig? = null, ITelemetryProvider? = null, ILogger? = null)`. All are
 `IAsyncDisposable`; `AddMessageQueue<T>` registers them as container-owned singletons.
 
@@ -279,16 +281,21 @@ The default waits 2 + 4 + 8 + 16 + 30 ≈ 60 s across five retries, then dead-le
 
 | Property | Default | Description |
 |---|---|---|
-| ConnectionString | (required) | SAS connection string |
+| FullyQualifiedNamespace | (one of the two) | Namespace host name for Entra ID identity (production default; `DefaultAzureCredential` unless a `TokenCredential` is supplied or registered) |
+| ConnectionString | (one of the two) | Shared access connection string (local development, emulator) |
 | TopicName / SubscriptionName | null | Publish to a topic and consume from a subscription; `SubscriptionName` is required when `TopicName` is set |
 | MessageTimeToLive | 14 days | Message TTL |
 | PrefetchCount | 10 | Receiver prefetch |
-| MaxAutoLockRenewalDuration | 5 minutes | Lock renewal while a handler runs |
-| EnableBatchedOperations / MaxBatchSize | true / 100 | Batch publishing |
-| SenderPoolSize / MaxConcurrentSends / SendTimeout | 2 / 1000 / 30 s | Sender pool |
+| MaxAutoLockRenewalDuration | 5 minutes | Lock renewal while a handler runs (also a subscription retry's wait budget) |
+| EnableBatchedOperations / MaxBatchSize | true / 100 | Batch publishing, split by byte size and at most `MaxBatchSize` messages per batch |
+| SendTimeout | 30 s | Bounds every send and settlement |
+| ShutdownTimeout | 30 s | How long unsubscribe and dispose wait for running handlers |
+| TransactionalRetries | true | Queue retries send the copy and complete the original in one transaction |
 
-Entity settings (partitioning, duplicate detection, max delivery count) belong to the queue's infrastructure
-definition, not to this library. Keep the entity's `MaxDeliveryCount` above `Retry.MaxRetries + 1`.
+Identity needs the **Azure Service Bus Data Sender** and **Data Receiver** roles, never Owner or Manage. Entity settings
+(partitioning, duplicate detection, max delivery count) belong to the queue's infrastructure definition, not to this
+library. On a topic subscription keep the entity's `MaxDeliveryCount` above `Retry.MaxRetries + 1`. Details:
+`azure-service-bus-api.md`.
 
 ## Error Handling
 
@@ -314,7 +321,7 @@ never written to the broker. Reason codes are listed in `DeadLetterReasons`.
 
 ## Threading and Concurrency
 
-- Publishing is thread-safe; RabbitMQ and ASB use publisher pools.
+- Publishing is thread-safe; RabbitMQ uses a publisher channel pool, ASB one thread-safe sender per queue.
 - One subscriber per queue instance. Every provider runs up to `MaxConcurrentCalls` handlers at once.
 - Handlers must be idempotent: delivery is at least once. Use `MessageContext.MessageId` to de-duplicate.
 
@@ -325,5 +332,7 @@ never written to the broker. Reason codes are listed in `DeadLetterReasons`.
   Spans record `exception.type`; pass `recordExceptionDetails: true` to also record messages and stack traces.
 - Logging uses `Microsoft.Extensions.Logging` with source-generated `LoggerMessage` methods.
 - Health checks: `AddRabbitMqHealthCheck<T>()` (reuses the registered RabbitMQ queue's connection),
-  `AddRabbitMqHealthCheck(connectionString)` (opens a connection per probe), `AddAzureServiceBusHealthCheck`,
-  `AddMessageQueueHealthCheck`. The RabbitMQ checks put no exception text, host or port in the result.
+  `AddRabbitMqHealthCheck(connectionString)` (opens a connection per probe), `AddAzureServiceBusHealthCheck<T>()`
+  (reuses the registered queue's client; a peek, Listen rights only), `AddAzureServiceBusHealthCheck(connectionString,
+  queueName)` (one client for every probe), the opt-in `AddAzureServiceBusMetricsHealthCheck` (needs Manage), and
+  `AddMessageQueueHealthCheck`. No check puts exception text, host, port or namespace in the result.

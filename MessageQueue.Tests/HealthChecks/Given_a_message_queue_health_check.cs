@@ -54,6 +54,22 @@ public class Given_a_message_queue_health_check
     }
 
     [Fact]
+    public async Task When_Health_Check_Throws_An_Exception_With_Sensitive_Text()
+    {
+        var healthCheck = new MessageQueueHealthCheck("test-queue",
+            _ => throw new InvalidOperationException("amqps://user:hunter2@broker.internal refused"));
+        var context = new HealthCheckContext
+        {
+            Registration = new HealthCheckRegistration("test", healthCheck, null, null)
+        };
+
+        var result = await healthCheck.CheckHealthAsync(context, TestContext.Current.CancellationToken);
+
+        result.Data.Values.Select(v => v.ToString()).Should().NotContain(v => v!.Contains("hunter2"), "it should not put exception text in the data");
+        result.Description.Should().NotContain("hunter2", "it should not put exception text in the description");
+    }
+
+    [Fact]
     public void When_Registering_Health_Check_Via_DI()
     {
         var services = new ServiceCollection();

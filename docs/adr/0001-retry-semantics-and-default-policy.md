@@ -31,5 +31,6 @@ shared across threads.
 - The retry *count* means the same on every provider: the shared dispatcher (ADR 0004) alone decides retry vs
   dead-letter. The *delay* does not yet: only in-memory has `DelayedRedelivery`. Until the provider steps land
   broker-side delay, RabbitMQ waits out the backoff in process and Azure Service Bus redelivers immediately; both log
-  a startup warning when the policy has a backoff. (RabbitMQ: superseded by ADR 0006, broker-side retry queues.) An `IsRetryable` that throws counts as non-retryable.
+  a startup warning when the policy has a backoff. (RabbitMQ: superseded by ADR 0006, broker-side retry queues; Azure
+  Service Bus: superseded by ADR 0009, scheduled copies on queues.) An `IsRetryable` that throws counts as non-retryable.
 - A 60 s default makes failure paths slow in tests: tests set a millisecond policy explicitly.

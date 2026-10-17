@@ -27,7 +27,7 @@ public class Given_a_message_queue_configuration
     static readonly Dictionary<string, string?> ValidAzureServiceBus = new()
     {
         ["MessageQueue:Provider"] = "AzureServiceBus",
-        ["MessageQueue:ConnectionString"] = "Endpoint=sb://test.servicebus.windows.net/",
+        ["MessageQueue:ConnectionString"] = "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=" + AzureServiceBusTestConfigs.Secret,
         ["MessageQueue:QueueName"] = "test-queue"
     };
 
@@ -271,10 +271,38 @@ public class Given_a_message_queue_configuration
         ShouldFailStartup(With(ValidAzureServiceBus, ("MaxBatchSize", "0")), "*MaxBatchSize*",
             "it should require a batch size of at least 1");
 
+    [Theory]
+    [InlineData("SenderPoolSize")]
+    [InlineData("MaxConcurrentSends")]
+    public void When_Using_A_Removed_AzureServiceBus_Sender_Pool_Setting(string setting)
+    {
+        using var provider = Register(With(ValidAzureServiceBus, (setting, "4")));
+
+        StartupValidation(provider).Should().Throw<InvalidOperationException>(
+            "it should reject sender-pool settings that no longer exist").WithMessage($"*{setting}*");
+    }
+
     [Fact]
-    public void When_AzureServiceBus_SenderPoolSize_Is_Zero() =>
-        ShouldFailStartup(With(ValidAzureServiceBus, ("SenderPoolSize", "0")), "*SenderPoolSize*",
-            "it should require at least one sender");
+    public void When_AzureServiceBus_Uses_A_Namespace()
+    {
+        using var provider = Register(With(ValidAzureServiceBus, ("ConnectionString", ""), ("FullyQualifiedNamespace", "contoso.servicebus.windows.net")));
+
+        StartupValidation(provider).Should().NotThrow("it should accept identity instead of a connection string");
+    }
+
+    [Fact]
+    public void When_AzureServiceBus_ShutdownTimeout_Is_Zero() =>
+        ShouldFailStartup(With(ValidAzureServiceBus, ("ShutdownTimeout", "00:00:00")), "*ShutdownTimeout*",
+            "it should need time to drain handlers");
+
+    [Fact]
+    public void When_AzureServiceBus_ConnectionString_Has_A_Secret_And_Is_Malformed()
+    {
+        using var provider = Register(With(ValidAzureServiceBus, ("ConnectionString", "Endpoint=not a uri;SharedAccessKey=" + AzureServiceBusTestConfigs.Secret)));
+
+        StartupValidation(provider).Should().Throw<OptionsValidationException>("it should reject the connection string at startup")
+            .Which.ToString().Should().NotContain(AzureServiceBusTestConfigs.Secret, "it should never leak the SharedAccessKey");
+    }
 
     [Fact]
     public void When_AzureServiceBus_Topic_Has_No_Subscription() =>

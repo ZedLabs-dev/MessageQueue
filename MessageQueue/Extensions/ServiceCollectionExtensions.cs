@@ -1,3 +1,4 @@
+using Azure.Core;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.AzureServiceBus;
 using ESE.MessageQueue.Configuration;
@@ -29,14 +30,21 @@ public static class ServiceCollectionExtensions
         return provider switch
         {
             MessageQueueProvider.RabbitMq => AddQueue<T, RabbitMqConfig, RabbitMqConfigValidator, RabbitMqMessageQueue<T>>(
-                services, builder => BindStrictly(builder, section), (config, telemetry, logger) => new RabbitMqMessageQueue<T>(config, telemetry, logger)),
+                services, builder => BindStrictly(builder, section), (_, config, telemetry, logger) => new RabbitMqMessageQueue<T>(config, telemetry, logger)),
             MessageQueueProvider.AzureServiceBus => AddQueue<T, AzureServiceBusConfig, AzureServiceBusConfigValidator, AzureServiceBusMessageQueue<T>>(
-                services, builder => BindStrictly(builder, section), (config, telemetry, logger) => new AzureServiceBusMessageQueue<T>(config, telemetry, logger)),
+                services, builder => BindStrictly(builder, section), CreateAzureServiceBusQueue<T>),
             MessageQueueProvider.InMemory => AddQueue<T, InMemoryConfig, InMemoryConfigValidator, InMemoryMessageQueue<T>>(
-                services, builder => BindStrictly(builder, section), (config, telemetry, logger) => new InMemoryMessageQueue<T>(config, telemetry, logger)),
+                services, builder => BindStrictly(builder, section), (_, config, telemetry, logger) => new InMemoryMessageQueue<T>(config, telemetry, logger)),
             _ => throw new ConfigurationException($"Provider '{provider}' is not supported")
         };
     }
+
+    // A TokenCredential registered in the container is used with FullyQualifiedNamespace (and ignored with a
+    // ConnectionString); without one the queue uses DefaultAzureCredential. (The transport factory is an internal test seam.)
+    static AzureServiceBusMessageQueue<T> CreateAzureServiceBusQueue<T>(
+        IServiceProvider services, AzureServiceBusConfig config, ITelemetryProvider telemetry, ILogger logger) where T : class =>
+        new(config, string.IsNullOrWhiteSpace(config.FullyQualifiedNamespace) ? null : services.GetService<TokenCredential>(), telemetry, logger,
+            services.GetService<IServiceBusTransportFactory>() ?? ServiceBusTransportFactory.Instance);
 
     // Unknown keys (typos, or settings removed such as RetryAttempts) fail at startup instead of being ignored,
     // and enum settings must be spelled as names.
@@ -73,7 +81,7 @@ public static class ServiceCollectionExtensions
                 config.QueueName = typeof(T).Name;
                 configure?.Invoke(config);
             }),
-            (config, telemetry, logger) => new InMemoryMessageQueue<T>(config, telemetry, logger));
+            (_, config, telemetry, logger) => new InMemoryMessageQueue<T>(config, telemetry, logger));
     }
 
     public static IServiceCollection AddInMemoryMessageQueue<T>(
@@ -119,7 +127,7 @@ public static class ServiceCollectionExtensions
     static IServiceCollection AddQueue<T, TConfig, TValidator, TQueue>(
         IServiceCollection services,
         Action<OptionsBuilder<TConfig>> configure,
-        Func<TConfig, ITelemetryProvider, ILogger, TQueue> create)
+        Func<IServiceProvider, TConfig, ITelemetryProvider, ILogger, TQueue> create)
         where T : class
         where TConfig : MessageQueueConfig
         where TValidator : class, IValidateOptions<TConfig>
@@ -134,6 +142,7 @@ public static class ServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<TConfig>, TValidator>());
 
         services.AddSingleton(sp => create(
+            sp,
             sp.GetRequiredService<IOptionsMonitor<TConfig>>().Get(name),
             sp.GetService<ITelemetryProvider>() ?? NullTelemetryProvider.Instance,
             sp.GetService<ILoggerFactory>()?.CreateLogger<TQueue>() ?? (ILogger)NullLogger.Instance));

@@ -29,11 +29,11 @@ The compose file is for manual experiments only; the tests do not use it (see Te
 | Layer | Folder | Key types |
 |---|---|---|
 | Abstractions | `Abstractions/` | `IMessageQueue<T>` (= `IMessagePublisher<T>` + `IMessageSubscriber<T>` + `Capabilities`), `MessageContext`, `MessageResult`, `PublishOptions`, `MessageQueueCapabilities` |
-| Consumer pipeline | `Processing/` | internal `MessageDispatcher<T>` + `IDeliveryActions` transport seam (ADR 0004), `DeadLetterReasons`, `IMessageProcessor<T>` |
+| Consumer pipeline | `Processing/` | internal `MessageDispatcher<T>` + `IDeliveryActions` transport seam (ADR 0004), `DeadLetterReasons`, `IMessageProcessor<T>`; shared consumer helpers `HandlerScope` (re-entrancy), `TransportBackoff`, `LogThrottle`, `BackgroundWork` (ADR 0010) |
 | Configuration | `Configuration/`, `Extensions/` | `MessageQueueConfig` (portable base record), `MessageQueueProvider`, per-provider `IValidateOptions` validators, `ServiceCollectionExtensions.AddMessageQueue<T>` / `AddInMemoryMessageQueue<T>` |
-| Providers | `RabbitMQ/`, `AzureServiceBus/`, `InMemory/` | `RabbitMqMessageQueue<T>` (RabbitMQ.Client 7, lazy async connect, `PublisherPool`, per-delay `RetryQueues`, `RabbitMqConnections` TLS rules; ADRs 0006–0008); `AzureServiceBusMessageQueue<T>` + `PublisherSender` pool; `InMemoryMessageQueue<T>` (single-process, non-durable, ADR 0003) |
+| Providers | `RabbitMQ/`, `AzureServiceBus/`, `InMemory/` | `RabbitMqMessageQueue<T>` (RabbitMQ.Client 7, lazy async connect, `PublisherPool`, per-delay `RetryQueues`, `RabbitMqConnections` TLS rules; ADRs 0006–0008); `AzureServiceBusMessageQueue<T>` (thin SDK seams in `ServiceBusTransport.cs`, one sender, scheduled-copy retries on queues and lock-held retries on subscriptions in `ServiceBusMessages`, Entra ID identity; ADRs 0009–0012); `InMemoryMessageQueue<T>` (single-process, non-durable, ADR 0003) |
 | Cross-cutting | `Serialization/`, `Retry/`, `Exceptions/` | `MessageSerializer` (JSON / MessagePack, `UntrustedData`), `RetryPolicy` + `RetryExecutor` (`MaxRetries` semantics, ADR 0001), `MessageQueueException` |
-| Hosting & ops | `Hosting/`, `HealthChecks/`, `Telemetry/` | `MessageQueueHostedService<T>` (DI scope per message), health checks per broker (`AddRabbitMqHealthCheck<T>` reuses the queue's connection), `ITelemetryProvider` (`System.Diagnostics` Activity/Meter) |
+| Hosting & ops | `Hosting/`, `HealthChecks/`, `Telemetry/` | `MessageQueueHostedService<T>` (DI scope per message), health checks per broker (`AddRabbitMqHealthCheck<T>` / `AddAzureServiceBusHealthCheck<T>` reuse the queue's connection or client; no secrets or exception text in results), `ITelemetryProvider` (`System.Diagnostics` Activity/Meter) |
 
 Abstractions never reference a broker SDK. Provider-specific settings live on the provider config
 (`RabbitMqConfig`, `AzureServiceBusConfig`, `InMemoryConfig`), not on the base (ADR 0002). Every provider consumes
@@ -90,7 +90,12 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
   topology.
 - **Azure Service Bus:** integration tests run only when `MQ_ASB_CONNECTION_STRING` is set (a real namespace, or the
   emulator from the compose file after the owner accepts its EULA). They use the predeclared queue
-  `integration-test-queue` from `MessageQueue/servicebus-emulator-config.json`; `MQ_ASB_QUEUE_NAME` overrides it.
+  `integration-test-queue` and `integration-test-topic`/`integration-test-subscription` from
+  `MessageQueue/servicebus-emulator-config.json` (`MQ_ASB_QUEUE_NAME`, `MQ_ASB_TOPIC_NAME`, `MQ_ASB_SUBSCRIPTION_NAME`
+  override them; `MQ_ASB_TRANSACTIONAL_RETRIES=false` for entities without transactions).
+  Without a namespace, the provider's behavior is unit-tested through its internal SDK seams with
+  `Support/FakeServiceBus` (async sends and settlements that enlist in the ambient transaction, a processor stop that
+  waits for running handlers, deliveries that refuse a second settlement, like the SDK) and `ServiceBusModelFactory` messages. Never accept the emulator's EULA on the owner's behalf.
 - **Skips are skips:** no Docker means the RabbitMQ tests report **Skipped** (`Assert.SkipWhen` in the test class's
   `InitializeAsync`); no `MQ_ASB_CONNECTION_STRING` means the ASB tests report **Skipped**. `MQ_REQUIRE_DOCKER=true` (or `1`;
   set in CI) turns missing Docker into a failure. Only Testcontainers' `DockerUnavailableException` is turned into a
@@ -122,8 +127,8 @@ Design decisions live in `docs/adr/`; read them before changing retry, config, i
 - [ ] `dotnet build ESE.MessageQueue.sln -warnaserror` is clean.
 - [ ] `dotnet format ESE.MessageQueue.sln --verify-no-changes` passes.
 - [ ] `dotnet test` reports 0 failed and **0 vacuous passes**; skips appear as skips.
-- [ ] `scripts/coverage.sh` passes: line coverage of `ESE.MessageQueue` at or above the gate (79% since Phase 5,
-      ratcheted up toward 80%; never lower it).
+- [ ] `scripts/coverage.sh` passes: line coverage of `ESE.MessageQueue` at or above the gate (84% since the Azure
+      Service Bus review fixes; never lower it).
 - [ ] Vulnerable-package scan reports none.
 - [ ] `CHANGELOG.md` Unreleased updated for any behavior or public-API change.
 - [ ] Ticked the item in `OPTIMIZATION-PLAN.md` if the change completes one.

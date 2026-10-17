@@ -64,7 +64,7 @@ sealed class MessageDispatcher<T> where T : class
         if (body.Length > config.MaxMessageSizeBytes)
         {
             RecordConsumed(success: false);
-            return await DeadLetterAsync(actions, context, new DeadLetterReason(DeadLetterReasons.MessageTooLarge));
+            return await DeadLetterAsync(actions, context.MessageId, new DeadLetterReason(DeadLetterReasons.MessageTooLarge));
         }
 
         T? message;
@@ -76,13 +76,13 @@ sealed class MessageDispatcher<T> where T : class
         {
             SetError(activity, ex);
             RecordConsumed(success: false);
-            return await DeadLetterAsync(actions, context, new DeadLetterReason(DeadLetterReasons.DeserializationFailed, TypeName(ex)));
+            return await DeadLetterAsync(actions, context.MessageId, new DeadLetterReason(DeadLetterReasons.DeserializationFailed, TypeName(ex)));
         }
 
         if (message is null)
         {
             RecordConsumed(success: false);
-            return await DeadLetterAsync(actions, context, new DeadLetterReason(DeadLetterReasons.DeserializationFailed));
+            return await DeadLetterAsync(actions, context.MessageId, new DeadLetterReason(DeadLetterReasons.DeserializationFailed));
         }
 
         MessageResult result;
@@ -112,7 +112,7 @@ sealed class MessageDispatcher<T> where T : class
                 return DispatchOutcome.Completed;
 
             case MessageResult.DeadLetter:
-                return await DeadLetterAsync(actions, context, new DeadLetterReason(DeadLetterReasons.Rejected));
+                return await DeadLetterAsync(actions, context.MessageId, new DeadLetterReason(DeadLetterReasons.Rejected));
 
             default:
                 return await RetryOrDeadLetterAsync(actions, context, failure, stopping);
@@ -130,7 +130,7 @@ sealed class MessageDispatcher<T> where T : class
         if (!retry.ShouldRetry(attempt, failure))
         {
             var code = attempt > config.Retry.MaxRetries ? DeadLetterReasons.MaxRetriesExceeded : DeadLetterReasons.NonRetryableError;
-            return await DeadLetterAsync(actions, context, new DeadLetterReason(code, failure is null ? null : TypeName(failure)));
+            return await DeadLetterAsync(actions, context.MessageId, new DeadLetterReason(code, failure is null ? null : TypeName(failure)));
         }
 
         var delay = DelayBeforeRetry(attempt);
@@ -138,6 +138,16 @@ sealed class MessageDispatcher<T> where T : class
         Guard(() => telemetry.RecordMessageRetried(config.QueueName, MessageType, attempt + 1));
         DispatcherLog.Rescheduled(logger, config.QueueName, context.MessageId, attempt + 1, delay);
         return DispatchOutcome.Rescheduled;
+    }
+
+    // A delivery the transport could not even read (its metadata or body): dead-letter it as DeliveryFailed with the
+    // exception type, or drop it with a warning when dead-lettering is disabled. Only a failing action propagates.
+    public Task<DispatchOutcome> RejectUnreadableAsync(string messageId, IDeliveryActions actions, Exception error)
+    {
+        var detail = TypeName(error);
+        DispatcherLog.DeliveryUnreadable(logger, config.QueueName, messageId, detail, error);
+        RecordConsumed(success: false);
+        return DeadLetterAsync(actions, messageId, new DeadLetterReason(DeadLetterReasons.DeliveryFailed, detail));
     }
 
     TimeSpan DelayBeforeRetry(int attempt)
@@ -155,18 +165,18 @@ sealed class MessageDispatcher<T> where T : class
         }
     }
 
-    async Task<DispatchOutcome> DeadLetterAsync(IDeliveryActions actions, MessageContext context, DeadLetterReason reason)
+    async Task<DispatchOutcome> DeadLetterAsync(IDeliveryActions actions, string messageId, DeadLetterReason reason)
     {
         if (!config.EnableDeadLetterQueue)
         {
-            DispatcherLog.Dropped(logger, config.QueueName, context.MessageId, reason.Code, reason.Detail);
+            DispatcherLog.Dropped(logger, config.QueueName, messageId, reason.Code, reason.Detail);
             await actions.CompleteAsync(CancellationToken.None);
             return DispatchOutcome.Dropped;
         }
 
         await actions.DeadLetterAsync(reason, CancellationToken.None);
         Guard(() => telemetry.RecordMessageDeadLettered(config.QueueName, MessageType, reason.Code));
-        DispatcherLog.DeadLettered(logger, config.QueueName, context.MessageId, reason.Code, reason.Detail);
+        DispatcherLog.DeadLettered(logger, config.QueueName, messageId, reason.Code, reason.Detail);
         return DispatchOutcome.DeadLettered;
     }
 
@@ -229,4 +239,8 @@ static partial class DispatcherLog
     [LoggerMessage(EventId = 1006, Level = LogLevel.Warning,
         Message = "Retry delay calculator for queue {QueueName} failed; retrying after {FallbackDelay} instead")]
     public static partial void DelayCalculatorFailed(ILogger logger, string queueName, TimeSpan fallbackDelay, Exception exception);
+
+    [LoggerMessage(EventId = 1007, Level = LogLevel.Error,
+        Message = "Message {MessageId} on queue {QueueName} could not be read ({ExceptionType}); dead-lettering it as DeliveryFailed")]
+    public static partial void DeliveryUnreadable(ILogger logger, string queueName, string messageId, string exceptionType, Exception exception);
 }

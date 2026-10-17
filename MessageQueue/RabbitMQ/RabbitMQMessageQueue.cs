@@ -33,16 +33,9 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
 
     static readonly MessageQueueCapabilities RabbitMqCapabilities = new(Durable: true, DeadLetter: true, DelayedRedelivery: true);
     static readonly TimeSpan MaxConnectBackoff = TimeSpan.FromSeconds(30);
-    static readonly TimeSpan MaxTransportBackoff = TimeSpan.FromSeconds(30);
-    static readonly TimeSpan TransportBackoffStep = TimeSpan.FromMilliseconds(100);
-    static readonly TimeSpan ErrorLogInterval = TimeSpan.FromSeconds(10);
     static readonly TimeSpan DrainQuietPeriod = TimeSpan.FromMilliseconds(100);
 
-    // The delivery whose handler runs on this async flow: lets Unsubscribe/Dispose called from inside a handler avoid
-    // waiting for that very handler. Tasks a handler spawns inherit the value, so it only counts while Active.
-    static readonly AsyncLocal<HandlerScope?> RunningHandler = new();
     static readonly TimeSpan CloseGrace = TimeSpan.FromSeconds(1);
-    const int MaxTrackedFailures = 10_000;
 
     readonly RabbitMqConfig config;
     readonly ITelemetryProvider telemetry;
@@ -54,15 +47,13 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
     readonly SemaphoreSlim connectLock = new(1, 1);
     readonly SemaphoreSlim subscriptionLock = new(1, 1);
     readonly ConcurrentDictionary<long, RetryQueue> retryQueues = new();
-    readonly ConcurrentDictionary<Task, bool> draining = new();
-    readonly object failureLog = new();
+    readonly BackgroundWork draining = new();
     Connection? connection;
     Subscription? subscription;
     int connectFailures;
     long nextConnectAttempt;
-    readonly ConcurrentDictionary<string, int> transportFailures = new(StringComparer.Ordinal);
-    long lastErrorLogged = long.MinValue;
-    int suppressedErrors;
+    readonly TransportBackoff transportFailures = new();
+    readonly LogThrottle failureLog = new();
     int disposed;
 
     public RabbitMqMessageQueue(RabbitMqConfig config, ITelemetryProvider? telemetry = null, ILogger? logger = null)
@@ -369,13 +360,13 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
 
     async Task StopAsync(Subscription stopping, CancellationToken cancellationToken)
     {
-        await stopping.Stopping.CancelAsync();
+        await Cancellation.CancelQuietlyAsync(stopping.Stopping, logger, queueName);
 
         if (IsRunningHandlerOf(stopping))
         {
             // Unsubscribing from inside one of this subscription's handlers: that handler cannot finish while we
             // wait for it, so the rest of the shutdown runs in the background.
-            Track(Task.Run(() => DrainAndCloseAsync(stopping, Timeout.InfiniteTimeSpan, CancellationToken.None)));
+            draining.Track(Task.Run(() => DrainAndCloseAsync(stopping, Timeout.InfiniteTimeSpan, CancellationToken.None)));
             return;
         }
 
@@ -384,7 +375,7 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
             // Handlers ignored their token: return now, but keep the channel open so they can still settle their
             // deliveries normally (no requeue racing a late ack or retry), and close it once they are done.
             RabbitMqLog.ShutdownTimedOut(logger, queueName, config.ShutdownTimeout);
-            Track(Task.Run(() => DrainAndCloseAsync(stopping, Timeout.InfiniteTimeSpan, CancellationToken.None)));
+            draining.Track(Task.Run(() => DrainAndCloseAsync(stopping, Timeout.InfiniteTimeSpan, CancellationToken.None)));
         }
     }
 
@@ -440,14 +431,7 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
         await CloseQuietlyAsync(stopping.Channel);
     }
 
-    static bool IsRunningHandlerOf(Subscription subscription) =>
-        RunningHandler.Value is { Active: true } scope && ReferenceEquals(scope.Subscription, subscription);
-
-    void Track(Task background)
-    {
-        draining[background] = true;
-        background.ContinueWith(done => draining.TryRemove(done, out _), TaskScheduler.Default);
-    }
+    static bool IsRunningHandlerOf(Subscription subscription) => HandlerScope.IsRunningHandlerOf(subscription);
 
     async Task CloseQuietlyAsync(IChannel channel)
     {
@@ -485,8 +469,7 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
     // Whatever happens, the delivery ends settled: acked, dead-lettered or requeued.
     async Task DispatchAsync(Subscription current, BasicDeliverEventArgs delivery, Settlement settlement)
     {
-        var scope = new HandlerScope(current);
-        RunningHandler.Value = scope;
+        var scope = HandlerScope.Enter(current);
         try
         {
             MessageContext context;
@@ -497,13 +480,13 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
             }
             catch (Exception ex)
             {
-                await DeliveryFailedAsync(delivery, settlement, ex, current.Stopping.Token);
+                await DeliveryFailedAsync(current, delivery, settlement, ex);
                 return;
             }
 
             var actions = new RabbitMqDeliveryActions(this, delivery, settlement, context.DeliveryAttempt);
             await current.Dispatcher.DispatchAsync(delivery.Body, context, actions, current.Stopping.Token);
-            transportFailures.TryRemove(FailureKey(delivery), out _);
+            transportFailures.Reset(FailureKey(delivery));
         }
         catch (OperationCanceledException) when (current.Stopping.IsCancellationRequested)
         {
@@ -517,74 +500,42 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
         }
         finally
         {
-            scope.Active = false;
+            scope.Exit();
             // Anything not acked, dead-lettered or already requeued goes back to the broker.
             if (!settlement.IsSettled)
                 await settlement.RequeueAsync();
         }
     }
 
-    // A delivery that could not even be read: dead-letter it (DeliveryFailed), or drop it with a warning when
-    // dead-lettering is disabled. If that fails too, back off and requeue.
-    async Task DeliveryFailedAsync(BasicDeliverEventArgs delivery, Settlement settlement, Exception error, CancellationToken stopping)
+    // A delivery that could not even be read: the shared pipeline dead-letters it (DeliveryFailed), or drops it with
+    // a warning when dead-lettering is disabled. If that fails too, back off and requeue.
+    async Task DeliveryFailedAsync(Subscription current, BasicDeliverEventArgs delivery, Settlement settlement, Exception error)
     {
-        var reason = new DeadLetterReason(DeadLetterReasons.DeliveryFailed, error.GetType().FullName ?? error.GetType().Name);
-        RabbitMqLog.DeliveryUnreadable(logger, queueName, reason.Detail!, error);
         try
         {
-            if (config.EnableDeadLetterQueue)
-                await DeadLetterAsync(delivery, settlement, reason, attempt: 1);
-            else
-                await settlement.AckAsync();
+            var actions = new RabbitMqDeliveryActions(this, delivery, settlement, attempt: 1);
+            await current.Dispatcher.RejectUnreadableAsync(delivery.BasicProperties.MessageId ?? string.Empty, actions, error);
         }
         catch (Exception ex)
         {
-            await BackOffAndRequeueAsync(delivery, settlement, ex, stopping);
+            await BackOffAndRequeueAsync(delivery, settlement, ex, current.Stopping.Token);
         }
     }
 
-    // Transport failures repeat while the broker or topology is broken: a growing pause per message (100 ms
-    // doubling, at most 30 s, cut short by unsubscribe) keeps a requeued delivery from coming straight back in a hot
-    // loop, whatever happens to other messages, and the error log is throttled to one entry per 10 s.
+    // Transport failures repeat while the broker or topology is broken: a growing pause per message (TransportBackoff,
+    // cut short by unsubscribe) keeps a requeued delivery from coming straight back in a hot loop, and the error log
+    // is throttled to one entry per 10 s.
     async Task BackOffAndRequeueAsync(BasicDeliverEventArgs delivery, Settlement settlement, Exception error, CancellationToken stopping)
     {
-        if (transportFailures.Count >= MaxTrackedFailures)
-            transportFailures.Clear();
-        var failures = transportFailures.AddOrUpdate(FailureKey(delivery), 1, (_, count) => count + 1);
-        LogTransportFailure(error, failures);
-        var backoff = TimeSpan.FromMilliseconds(Math.Min(MaxTransportBackoff.TotalMilliseconds,
-            TransportBackoffStep.TotalMilliseconds * Math.Pow(2, Math.Min(failures - 1, 16))));
-        try
-        {
-            await Task.Delay(backoff, stopping);
-        }
-        catch (OperationCanceledException)
-        {
-            // Unsubscribing: requeue right away.
-        }
+        var failures = transportFailures.RecordFailure(FailureKey(delivery));
+        if (failureLog.ShouldLog(string.Empty, out var suppressed))
+            RabbitMqLog.DeliveryFailed(logger, queueName, failures, suppressed, error);
+        await TransportBackoff.WaitAsync(failures, stopping);
         await settlement.RequeueAsync();
     }
 
     // Per message: the message id, which retry and requeue keep (the delivery tag does not survive a requeue).
     static string FailureKey(BasicDeliverEventArgs delivery) => delivery.BasicProperties.MessageId ?? string.Empty;
-
-    void LogTransportFailure(Exception error, int consecutive)
-    {
-        int suppressed;
-        lock (failureLog)
-        {
-            var now = Environment.TickCount64;
-            if (lastErrorLogged != long.MinValue && now - lastErrorLogged < (long)ErrorLogInterval.TotalMilliseconds)
-            {
-                suppressedErrors++;
-                return;
-            }
-            lastErrorLogged = now;
-            suppressed = suppressedErrors;
-            suppressedErrors = 0;
-        }
-        RabbitMqLog.DeliveryFailed(logger, queueName, consecutive, suppressed, error);
-    }
 
     // A delivery that reached the client after the subscription stopped was never handled: it goes back without
     // using up an attempt, as a copy through the zero-delay retry queue that keeps its attempt number. If that is
@@ -796,7 +747,7 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
         if (Volatile.Read(ref subscription) is { } active && IsRunningHandlerOf(active))
         {
             // Disposing from inside one of this queue's handlers: finish in the background, after that handler.
-            await active.Stopping.CancelAsync();
+            await Cancellation.CancelQuietlyAsync(active.Stopping, logger, queueName);
             _ = Task.Run(DisposeCoreAsync);
             return;
         }
@@ -807,7 +758,7 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
     async Task DisposeCoreAsync()
     {
         // Runs on its own flow (possibly started from inside a handler): it is not that handler.
-        RunningHandler.Value = null;
+        HandlerScope.Clear();
 
         // One ShutdownTimeout for every handler, whether still subscribed or already draining. After it, the
         // connection is closed regardless (plus at most a second's grace for the close itself): the broker requeues
@@ -829,7 +780,7 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
 
         try
         {
-            await Task.WhenAll(draining.Keys).WaitAsync(deadline.Token);
+            await draining.WhenAll().WaitAsync(deadline.Token);
         }
         catch (OperationCanceledException)
         {
@@ -868,25 +819,6 @@ public class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProb
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     sealed record RetryQueue(Task<string> Declared, long DeclaredAt);
-
-    sealed class HandlerScope
-    {
-        public HandlerScope(Subscription subscription)
-        {
-            Subscription = subscription;
-        }
-
-        public Subscription Subscription { get; }
-
-        // False once the handler returned: tasks it spawned still see this scope, but are no longer the handler.
-        public bool Active
-        {
-            get => Volatile.Read(ref active);
-            set => Volatile.Write(ref active, value);
-        }
-
-        bool active = true;
-    }
 
     sealed class Connection : IAsyncDisposable
     {
@@ -1022,9 +954,6 @@ static partial class RabbitMqLog
 
     [LoggerMessage(EventId = 2007, Level = LogLevel.Debug, Message = "RabbitMQ queue {QueueName}: closing a channel failed")]
     public static partial void CloseFailed(ILogger logger, string queueName, Exception exception);
-
-    [LoggerMessage(EventId = 2008, Level = LogLevel.Error, Message = "RabbitMQ queue {QueueName}: a delivery could not be read ({ExceptionType}); dead-lettering it as DeliveryFailed")]
-    public static partial void DeliveryUnreadable(ILogger logger, string queueName, string exceptionType, Exception exception);
 
     [LoggerMessage(EventId = 2009, Level = LogLevel.Debug, Message = "RabbitMQ queue {QueueName}: an unhandled delivery could not be returned without using an attempt; requeued instead")]
     public static partial void UnhandledRequeueFailed(ILogger logger, string queueName, Exception exception);

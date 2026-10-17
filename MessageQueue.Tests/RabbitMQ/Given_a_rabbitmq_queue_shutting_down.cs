@@ -336,4 +336,59 @@ public sealed class Given_a_rabbitmq_queue_shutting_down : IAsyncLifetime
 
         watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1), "it should not stall the connection by closing a channel whose handler still runs");
     }
+
+    // A handler's own cancellation callback throws when shutdown cancels its token: shutdown still completes.
+    [Fact(Timeout = 60_000)]
+    public async Task When_A_Handler_Cancellation_Callback_Throws_On_Unsubscribe()
+    {
+        var config = queues.NewConfig("throwing-callback-test");
+        var queue = queues.Create(config);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await queue.SubscribeAsync(async (_, _, token) =>
+        {
+            token.Register(() => throw new InvalidOperationException("handler's cancellation callback"));
+            started.TrySetResult();
+            await Task.Delay(Timeout.Infinite, token);
+            return MessageResult.Acknowledge;
+        }, TestContext.Current.CancellationToken);
+        var channel = queue.LatestSubscriptionChannel!;
+        await queue.PublishAsync(new TestMessage("callback", "x"), TestContext.Current.CancellationToken);
+        await started.Task.WaitAsync(Wait.DeliveryTimeout, TestContext.Current.CancellationToken);
+
+        var act = () => queue.UnsubscribeAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync("it should not let a handler's callback break the shutdown");
+        await Wait.UntilAsync(() => !channel.IsOpen, TimeSpan.FromSeconds(5));
+        channel.IsOpen.Should().BeFalse("it should still close the subscription's channel");
+        var redelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await queue.SubscribeAsync((_, _, _) =>
+        {
+            redelivered.TrySetResult();
+            return Task.FromResult(MessageResult.Acknowledge);
+        }, TestContext.Current.CancellationToken);
+        await redelivered.Task.WaitAsync(Wait.DeliveryTimeout, TestContext.Current.CancellationToken);
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task When_A_Handler_Cancellation_Callback_Throws_On_Dispose()
+    {
+        var config = queues.NewConfig("throwing-callback-dispose-test");
+        var queue = queues.Create(config);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await queue.SubscribeAsync(async (_, _, token) =>
+        {
+            token.Register(() => throw new InvalidOperationException("handler's cancellation callback"));
+            started.TrySetResult();
+            await Task.Delay(Timeout.Infinite, token);
+            return MessageResult.Acknowledge;
+        }, TestContext.Current.CancellationToken);
+        var channel = queue.LatestSubscriptionChannel!;
+        await queue.PublishAsync(new TestMessage("callback", "x"), TestContext.Current.CancellationToken);
+        await started.Task.WaitAsync(Wait.DeliveryTimeout, TestContext.Current.CancellationToken);
+
+        var act = async () => await queue.DisposeAsync();
+
+        await act.Should().NotThrowAsync("it should not let a handler's callback break dispose");
+        channel.IsOpen.Should().BeFalse("it should still close the channel and connection");
+    }
 }

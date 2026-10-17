@@ -17,7 +17,7 @@ public static class DeadLetterReasons
     /// <summary>The handler threw an exception the retry policy's <c>IsRetryable</c> rejects.</summary>
     public const string NonRetryableError = "NonRetryableError";
 
-    /// <summary>The delivery pipeline itself failed before the message was settled (in-memory provider).</summary>
+    /// <summary>The delivery could not be read (broker metadata or body), or the pipeline failed before settling it.</summary>
     public const string DeliveryFailed = "DeliveryFailed";
 
     /// <summary>The handler returned <see cref="Abstractions.MessageResult.DeadLetter"/>.</summary>

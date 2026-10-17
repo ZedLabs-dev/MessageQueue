@@ -8,8 +8,11 @@ public record AzureServiceBusConfig : MessageQueueConfig
 {
     public override MessageQueueProvider Provider => MessageQueueProvider.AzureServiceBus;
 
-    [Required]
+    public static readonly TimeSpan DefaultShutdownTimeout = TimeSpan.FromSeconds(30);
+
     public string ConnectionString { get; set; } = string.Empty;
+
+    public string FullyQualifiedNamespace { get; set; } = string.Empty;
 
     public TimeSpan MessageTimeToLive { get; set; } = TimeSpan.FromDays(14);
 
@@ -27,14 +30,14 @@ public record AzureServiceBusConfig : MessageQueueConfig
 
     public string? SubscriptionName { get; set; }
 
-    [Range(1, 64)]
-    public int SenderPoolSize { get; set; } = 2;
-
-    [Range(1, int.MaxValue)]
-    public int MaxConcurrentSends { get; set; } = 1000;
-
     public TimeSpan SendTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    public TimeSpan ShutdownTimeout { get; set; } = DefaultShutdownTimeout;
+
+    public bool TransactionalRetries { get; set; } = true;
 
     protected override bool PrintMembers(StringBuilder builder) =>
         ConfigValidation.PrintMembers(this, builder, nameof(ConnectionString));
+
+    internal bool UsesSubscription => !string.IsNullOrWhiteSpace(TopicName);
 }

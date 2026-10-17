@@ -176,110 +176,39 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 
 ### Azure Service Bus Implementation Deep Dive
 
-#### Sender Pool Architecture
+ADRs 0009–0012 hold the decisions; `azure-service-bus-api.md` the user-facing behavior.
 
-The Azure Service Bus implementation uses a sender pool pattern similar to RabbitMQ:
+#### Seams
 
-```csharp
-public AzureServiceBusMessageQueue(AzureServiceBusConfig config)
-{
-    client = new ServiceBusClient(config.ConnectionString);
+`AzureServiceBus/ServiceBusTransport.cs` defines thin internal interfaces over the SDK: `IServiceBusTransportFactory`
+(builds the client from a connection string, or `FullyQualifiedNamespace` + `TokenCredential`), `IServiceBusTransport`
+(the client), `IServiceBusSender`, `IServiceBusProcessor` (one per subscription), `IServiceBusDelivery` (the settlement
+actions of `ProcessMessageEventArgs`) and `IServiceBusPeeker` (health). The SDK-backed classes only forward. Unit
+specs drive the provider through `Support/FakeServiceBus.cs` and `ServiceBusModelFactory` messages, so no namespace
+is needed; integration specs need `MQ_ASB_CONNECTION_STRING`.
 
-    // Create sender pool for concurrent publishing
-    var poolSize = Math.Max(1, config.SenderPoolSize);
-    var maxConcurrentPerSender = Math.Max(1, config.MaxConcurrentSends / poolSize);
-    senderPool = new PublisherSender[poolSize];
+#### Publishing
 
-    for (var i = 0; i < poolSize; i++)
-    {
-        senderPool[i] = new PublisherSender(
-            client,
-            publishDestination,  // Queue or Topic name
-            maxConcurrentPerSender,
-            config.SendTimeout);
-    }
+One `ServiceBusSender` per queue (the queue, or the topic in subscription mode) on the client's single AMQP
+connection; every send is bounded by `SendTimeout`. Batches use `CreateMessageBatchAsync` + `TryAddMessage` and close
+when full by bytes or at `MaxBatchSize` messages.
 
-    // Create processor for receiving messages
-    processor = useTopicPublishing && !string.IsNullOrEmpty(config.SubscriptionName)
-        ? client.CreateProcessor(config.TopicName, config.SubscriptionName, processorOptions)
-        : client.CreateProcessor(queueName, processorOptions);
-}
-```
+#### Consuming
 
-#### PublisherSender Class (Internal)
+`SubscribeAsync` creates and starts a processor (`AutoCompleteMessages = false`, peek-lock, `MaxConcurrentCalls`,
+`PrefetchCount`, `MaxAutoLockRenewalDuration`). Each message: map metadata (`ServiceBusMessages.ToContext`, which
+also computes the attempt) and read the body (failure → `MessageDispatcher.RejectUnreadableAsync`, dead-letter
+`DeliveryFailed`), then `MessageDispatcher.DispatchAsync` with `DeliveryActions`:
 
-The `PublisherSender` class wraps `ServiceBusSender` with backpressure control:
+- complete / dead-letter (reason code and exception type, never text) through `ServiceBusSettlement` (at most once);
+- reschedule: queue mode sends `ServiceBusMessages.RetryCopy` with `ScheduledEnqueueTime` and completes the original
+  in a `TransactionScope`; subscription mode waits under the lock if the delay fits, then abandons with the attempt
+  properties.
 
-```csharp
-internal sealed class PublisherSender : IAsyncDisposable
-{
-    readonly ServiceBusSender sender;
-    readonly SemaphoreSlim concurrencySemaphore;
-    readonly TimeSpan sendTimeout;
-}
-```
-
-**Purpose:**
-- Wraps Azure Service Bus sender with concurrency limiting
-- Provides backpressure via `SemaphoreSlim` to limit concurrent sends
-- Handles timeout for send operations
-- Supports both single message and batch sends
-
-**Key Design Decisions:**
-- Like RabbitMQ's `PublisherPool`, confirms are handled by the SDK; the pool only bounds concurrency
-- `SendMessageAsync` returns when the message is accepted by the broker
-- Backpressure prevents overwhelming the service with too many concurrent requests
-- Timeout handling prevents indefinite waits on network issues
-
-**Backpressure Mechanism:**
-```csharp
-public async Task SendAsync(ServiceBusMessage message, CancellationToken cancellationToken)
-{
-    // Wait for available slot (backpressure)
-    await concurrencySemaphore.WaitAsync(cancellationToken);
-
-    try
-    {
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(sendTimeout);
-
-        await sender.SendMessageAsync(message, timeoutCts.Token);
-    }
-    finally
-    {
-        concurrencySemaphore.Release();
-    }
-}
-```
-
-#### Topic-Based Publishing
-
-Azure Service Bus supports Topics/Subscriptions for pub/sub patterns:
-
-```csharp
-// Configuration
-var config = new AzureServiceBusConfig
-{
-    TopicName = "order-events",           // Publish to topic
-    SubscriptionName = "order-processor", // Receive from subscription
-    QueueName = "fallback-queue"          // Used if TopicName not set
-};
-
-// Publishing destination selection
-useTopicPublishing = !string.IsNullOrEmpty(config.TopicName);
-publishDestination = useTopicPublishing ? config.TopicName : queueName;
-
-// Processor creation for receiving
-processor = useTopicPublishing && !string.IsNullOrEmpty(config.SubscriptionName)
-    ? client.CreateProcessor(config.TopicName, config.SubscriptionName, options)
-    : client.CreateProcessor(queueName, options);
-```
-
-**Benefits:**
-- Multiple subscribers can receive the same message
-- Subscription filters for message routing
-- Decouples publishers from consumers
-- Supports fan-out messaging patterns
+A failing transport action backs off per message (`Processing/TransportBackoff`) and abandons; a lost lock is logged
+and left to the broker; a safety net abandons anything unsettled. Shutdown cancels the handlers' token, stops the
+processor (which waits for handlers) within `ShutdownTimeout`, and disposes it; calls from inside a handler finish
+in the background (`Processing/HandlerScope`).
 
 ## Performance Optimizations
 

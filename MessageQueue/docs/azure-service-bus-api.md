@@ -1,510 +1,210 @@
-# Azure Service Bus Message Queue API
+# Azure Service Bus Provider
 
-Provides type-safe asynchronous message processing through Azure Service Bus with automatic retry logic, dead letter queue support, and enterprise-grade reliability features.
+`AzureServiceBusMessageQueue<T>` implements `IMessageQueue<T>` on Azure Service Bus: a queue, or a topic with one
+subscription. It runs every delivery through the shared consumer pipeline (`MessageDispatcher<T>`, ADR 0004), so
+retry counting, backoff decisions and dead-lettering behave as on every other provider.
 
-## Library Overview
+**Namespace:** `ESE.MessageQueue.AzureServiceBus` (package `ESE.MessageQueue`, .NET 10)
+**SDK:** Azure.Messaging.ServiceBus 7.21, Azure.Identity 1.21
+**Design records:** ADR 0009 (backoff and attempts), 0010 (lifecycle and settlement), 0011 (identity, health,
+secrets), 0012 (one sender, batching)
 
-**Module:** AgentReview.MessageQueue.AzureServiceBus  
-**Version:** 1.0.0  
-**Purpose:** Azure Service Bus implementation of the message queue abstraction with enterprise messaging features
+## Usage
 
-**Installation Requirements:**
-- .NET 9.0 or higher
-- Azure.Messaging.ServiceBus 7.17.0
-- Microsoft.Extensions.DependencyInjection 9.0.0
-- Microsoft.Extensions.Hosting 9.0.0
-
-**Core Features:**
-- Enterprise-grade message delivery guarantees
-- Built-in dead letter queue support
-- Automatic message lock renewal
-- Batch message publishing
-- Concurrent message processing
-- Exponential backoff retry logic
-
-## Usage Examples
-
-### Basic Configuration
+### Registration
 
 ```csharp
-using AgentReview.MessageQueue.Extensions;
-using AgentReview.MessageQueue.Hosting;
+using ESE.MessageQueue.Extensions;
+using ESE.MessageQueue.Hosting;
+using ESE.MessageQueue.HealthChecks;
 
-public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
-{
-    // Configure Azure Service Bus message queue via configuration
-    services.AddMessageQueue<OrderCreated>(configuration);
-
-    // Register message processor
-    services.AddMessageProcessor<OrderCreated, OrderCreatedProcessor>();
-    
-    // Add background service for message consumption
-    services.AddHostedService<MessageQueueHostedService<OrderCreated>>();
-}
+services.AddMessageQueue<OrderCreated>(configuration);                     // binds the "MessageQueue" section
+services.AddMessageProcessor<OrderCreated, OrderCreatedProcessor>();       // scoped: one instance per message
+services.AddHostedService<MessageQueueHostedService<OrderCreated>>();      // consumes for the host's lifetime
+services.AddHealthChecks().AddAzureServiceBusHealthCheck<OrderCreated>();  // reuses the queue's client
 ```
 
-### Configuration File Setup
-
-Configure Azure Service Bus in `appsettings.json`:
+### Identity (production default)
 
 ```json
 {
   "MessageQueue": {
     "Provider": "AzureServiceBus",
-    "ConnectionString": "Endpoint=sb://your-namespace.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=your-key",
+    "FullyQualifiedNamespace": "contoso.servicebus.windows.net",
     "QueueName": "order-created",
-    "Retry": { "MaxRetries": 3 },
-    "EnableDeadLetterQueue": true,
-    "MessageTimeToLive": "7.00:00:00",
-    "MaxConcurrentCalls": 10,
-    "PrefetchCount": 20,
-    "MaxAutoLockRenewalDuration": "00:05:00",
-    "EnableBatchedOperations": true,
-    "MaxBatchSize": 100
+    "Retry": { "MaxRetries": 5, "InitialDelay": "00:00:02", "MaxDelay": "00:00:30" }
   }
 }
 ```
 
-### Alternative: Programmatic Configuration
+The queue authenticates with Entra ID. The credential is, in order: one passed to the constructor
+(`new AzureServiceBusMessageQueue<T>(config, credential)`), a `TokenCredential` registered in the container
+(`services.AddSingleton<TokenCredential>(new ManagedIdentityCredential(...))`), else one `DefaultAzureCredential`
+shared by the process. Passing a credential together with a `ConnectionString` configuration throws
+`ConfigurationException`.
 
-```csharp
-public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
+Grant the application's identity, on the queue or topic/subscription (never Owner or Manage):
+
+| Role | Needed for |
+|---|---|
+| Azure Service Bus Data Sender | publishing; queue-mode retries (they send a scheduled copy) |
+| Azure Service Bus Data Receiver | consuming; the default health check (peek) |
+
+### Connection string (local development, emulator)
+
+```json
 {
-    // Configure Azure Service Bus message queue programmatically
-    services.AddMessageQueue<OrderCreated>(options =>
-    {
-        options.Provider = MessageQueueProvider.AzureServiceBus;
-        options.ConnectionString = "Endpoint=sb://your-namespace.servicebus.windows.net/;...";
-        options.QueueName = "order-created";
-        options.Retry = new RetryPolicy { MaxRetries = 3 };
-        options.EnableDeadLetterQueue = true;
-        
-        // Azure Service Bus specific settings
-        if (options is AzureServiceBusConfig asbConfig)
-        {
-            asbConfig.MessageTimeToLive = TimeSpan.FromDays(7);
-            asbConfig.MaxConcurrentCalls = 10;
-            asbConfig.PrefetchCount = 20;
-            asbConfig.MaxAutoLockRenewalDuration = TimeSpan.FromMinutes(5);
-        }
-    });
+  "MessageQueue": {
+    "Provider": "AzureServiceBus",
+    "ConnectionString": "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;",
+    "QueueName": "order-created",
+    "TransactionalRetries": false
+  }
 }
 ```
 
-### Publishing Messages
+Set exactly one of `ConnectionString` and `FullyQualifiedNamespace`. A connection string must have `Endpoint` and
+either `SharedAccessKeyName` + `SharedAccessKey` or `SharedAccessSignature`. Invalid settings fail at host start with
+a fixed message; no error or log line ever contains the key.
 
-```csharp
-public class OrderService
+### Topic and subscription
+
+```json
 {
-    private readonly IMessageQueue<OrderCreated> _messageQueue;
-
-    public OrderService(IMessageQueue<OrderCreated> messageQueue)
-    {
-        _messageQueue = messageQueue;
-    }
-
-    public async Task CreateOrderAsync(string customerId, decimal amount)
-    {
-        var orderCreated = new OrderCreated(
-            Guid.NewGuid().ToString(), 
-            customerId, 
-            amount, 
-            DateTime.UtcNow
-        );
-        
-        await _messageQueue.PublishAsync(orderCreated);
-    }
-
-    public async Task CreateBulkOrdersAsync(IEnumerable<OrderCreated> orders)
-    {
-        // Azure Service Bus supports efficient batch publishing
-        await _messageQueue.PublishAsync(orders);
-    }
+  "MessageQueue": {
+    "Provider": "AzureServiceBus",
+    "FullyQualifiedNamespace": "contoso.servicebus.windows.net",
+    "QueueName": "billing-orders",
+    "TopicName": "order-events",
+    "SubscriptionName": "billing"
+  }
 }
 ```
 
-### Message Processing with Azure Service Bus Features
+The queue publishes to `TopicName` and consumes from `SubscriptionName` (required with a topic). `QueueName` then only
+names the queue in logs, metrics and telemetry.
+
+### Processing
 
 ```csharp
-public class OrderCreatedProcessor : IMessageProcessor<OrderCreated>
+public sealed class OrderCreatedProcessor : IMessageProcessor<OrderCreated>
 {
-    private readonly ILogger<OrderCreatedProcessor> _logger;
-    private readonly IOrderService _orderService;
-
-    public OrderCreatedProcessor(
-        ILogger<OrderCreatedProcessor> logger,
-        IOrderService orderService)
-    {
-        _logger = logger;
-        _orderService = orderService;
-    }
-
     public async Task<MessageResult> ProcessAsync(OrderCreated message, MessageContext context, CancellationToken cancellationToken)
     {
+        // context.MessageId stays the publisher's id across retries; context.DeliveryAttempt is 1, 2, 3, ...
         try
         {
-            _logger.LogInformation("Processing order {OrderId} (attempt {DeliveryAttempt})", 
-                message.OrderId, context.DeliveryAttempt);
-            
-            // Long-running processing is supported with automatic lock renewal
-            await _orderService.ProcessOrderAsync(message);
-            
+            await Handle(message, cancellationToken);
             return MessageResult.Acknowledge;
         }
-        catch (TransientException ex)
+        catch (TransientException)
         {
-            _logger.LogWarning(ex, "Transient error processing order {OrderId}", message.OrderId);
-            return MessageResult.Retry;
+            return MessageResult.Retry;        // or just throw: an exception counts as Retry
         }
-        catch (Exception ex)
+        catch (InvalidOrderException)
         {
-            _logger.LogError(ex, "Failed to process order {OrderId}", message.OrderId);
-            return MessageResult.DeadLetter;
+            return MessageResult.DeadLetter;   // permanent: dead-letter now (reason Rejected)
         }
     }
 }
 ```
 
-## Azure Service Bus Specific Features
+The handler's token is cancelled on shutdown; a handler that stops because of it has its message abandoned for
+redelivery, without using up an attempt.
 
-### Connection String Format
+## Retries and dead letters
 
-Azure Service Bus uses connection strings with the following format:
+| Mode | How a retry waits | `Capabilities.DelayedRedelivery` |
+|---|---|---|
+| Queue | A copy is scheduled (`ScheduledEnqueueTime = now + delay`) and the original completed, in one transaction | true |
+| Subscription | The message is held under its lock for the delay (if it fits the lock-renewal budget), then abandoned | false |
 
-```
-Endpoint=sb://your-namespace.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=your-key
-```
+- **Queue mode**: the copy has a new `MessageId` (so duplicate detection cannot drop it) and carries the original id in
+  `x-ese-message-id`; handlers still see the original `MessageContext.MessageId`. With `TransactionalRetries`
+  (default true) the send and the complete are atomic. Partitioned entities, the Basic tier and the emulator refuse
+  the transaction: on the first refusal the queue switches to sending the copy first, then completing (the worst case
+  is a duplicate, never a loss), and logs one warning. `TransactionalRetries = false` skips the attempt. Each commit
+  blocks a thread-pool thread for a round trip; a startup warning flags `MaxConcurrentCalls` above 100.
+- **Subscription mode**: a copy sent to the topic would reach every subscription, so none is sent. Delays longer than
+  the remaining lock budget (`MaxAutoLockRenewalDuration` since receipt, or the current lock, minus 2 s) are abandoned
+  at once with a warning. A waiting retry occupies a handler slot. A startup warning says the backoff cannot be
+  honoured on the broker, and another one appears when `MaxRetries + 1` exceeds Service Bus's default
+  `MaxDeliveryCount` (10): the entity's own value cannot be read without Manage rights, so keep it above
+  `MaxRetries + 1`, or the broker dead-letters first (reason `MaxDeliveryCountExceeded`). With `PrefetchCount > 0`
+  a startup warning notes that prefetched messages' locks run down while retries hold handler slots; consider
+  `PrefetchCount = 0` on subscriptions with long backoffs.
+- **Attempts**: `MessageContext.DeliveryAttempt` comes from the library's `x-ese-delivery-attempt` and
+  `x-ese-delivery-count` properties when they agree with the broker's `DeliveryCount`, else from `DeliveryCount`.
+  Publishers cannot set `x-` properties through this library. Dead letters set the marker out of reach, so a message
+  resubmitted from the dead-letter queue starts again at attempt 1.
+- **Dead letters** go to the entity's `$deadletterqueue` with `DeadLetterReason` = a `DeadLetterReasons` code,
+  `DeadLetterErrorDescription` = the exception type (or empty), and the same in the application properties
+  `x-ese-dead-letter-reason` / `x-ese-dead-letter-detail`. Exception messages are never stored.
+- **Poison messages**: a message whose body or metadata cannot be read is dead-lettered as `DeliveryFailed`. A
+  settlement that fails is retried after a per-message backoff (100 ms, doubling, at most 30 s) by abandoning the
+  message; abandons count towards `MaxDeliveryCount`, which ends a persistent failure in the dead-letter queue.
 
-**Authentication Options:**
-- Shared Access Key (shown above)
-- Managed Identity: `Endpoint=sb://your-namespace.servicebus.windows.net/`
-- Connection String with Entity Path: `...;EntityPath=your-queue-name`
+## Configuration (`AzureServiceBusConfig`)
 
-### Message Properties
+| Property | Default | Description |
+|---|---|---|
+| FullyQualifiedNamespace | (one of the two) | Namespace host name, used with Entra ID identity |
+| ConnectionString | (one of the two) | Shared access connection string (redacted from `ToString()`) |
+| TopicName / SubscriptionName | null | Publish to a topic and consume from one subscription |
+| MessageTimeToLive | 14 days | TTL of published messages |
+| PrefetchCount | 10 | Receiver prefetch |
+| MaxAutoLockRenewalDuration | 5 minutes | Lock renewal while a handler runs; also the subscription-mode retry budget |
+| EnableBatchedOperations / MaxBatchSize | true / 100 | Batch publishing; a batch closes when full by bytes or at `MaxBatchSize` messages |
+| SendTimeout | 30 s | Bounds every send, batch and settlement |
+| ShutdownTimeout | 30 s | How long unsubscribe and dispose wait for running handlers |
+| TransactionalRetries | true | Send the retry copy and complete the original in one transaction (queue mode) |
 
-Azure Service Bus messages include rich metadata:
+Base settings (`QueueName`, `Retry`, `SerializationFormat`, `EnableDeadLetterQueue`, `MaxMessageSizeBytes`,
+`MaxConcurrentCalls`) are described in `message-queue-api.md`. Entity settings (partitioning, duplicate detection,
+`MaxDeliveryCount`, lock duration) belong to the infrastructure definition, not to this library.
 
-```csharp
-// Automatically set properties
-serviceBusMessage.MessageId = Guid.NewGuid().ToString();
-serviceBusMessage.ContentType = "application/json";
-serviceBusMessage.TimeToLive = TimeSpan.FromDays(14);
-serviceBusMessage.Subject = typeof(T).Name;
+## Publishing
 
-// Custom application properties
-serviceBusMessage.ApplicationProperties.Add("MessageType", typeof(T).Name);
-serviceBusMessage.ApplicationProperties.Add("PublishedAt", DateTimeOffset.UtcNow);
-```
+- One thread-safe `ServiceBusSender` per queue on the client's single connection; there is no sender pool.
+- `PublishAsync(IEnumerable<T>)` builds batches with `CreateMessageBatchAsync` + `TryAddMessage`. A message too large
+  for an empty batch throws `MessageQueueException` naming its index; batches before it stay sent.
+- Each message gets `MessageId` (`PublishOptions.MessageId` or a version 7 GUID), `CorrelationId`, `ContentType`,
+  `Subject` = the message type name, `TimeToLive`, and the headers as application properties.
+- Failures throw `MessageQueueException` naming the exception type; a send longer than `SendTimeout` throws one that
+  says it timed out; the caller's cancellation throws `OperationCanceledException`.
 
-### Dead Letter Queue Handling
+## Lifecycle
 
-Azure Service Bus provides built-in dead letter queue functionality:
+- The client connects on first use. Constructing the queue validates the configuration only.
+- One subscriber at a time; a second `SubscribeAsync` throws `InvalidOperationException`. Each subscription gets its
+  own processor, so unsubscribe → subscribe works.
+- `UnsubscribeAsync` cancels the handlers' token and waits for them at most `ShutdownTimeout`; handlers still
+  running afterwards may settle normally, and their processor is disposed once they finish. Messages that arrive
+  after shutdown began are handed back untouched.
+- `DisposeAsync` is idempotent, gives all handlers one `ShutdownTimeout`, then closes the client (at most 1 s
+  more). `Dispose()` runs `DisposeAsync` on the thread pool; prefer `DisposeAsync`.
+- Calling `UnsubscribeAsync` or `DisposeAsync` from inside a handler returns at once; the rest finishes in the
+  background after that handler.
+- Processor errors are logged with their error source, entity path and exception type, throttled per distinct error.
+- A handler's cancellation callback that throws during shutdown is logged; the shutdown still completes.
 
-- Messages automatically moved to dead letter queue after max delivery attempts
-- Dead letter reason and description automatically populated
-- Dead letter queue name: `{queue-name}/$deadletterqueue`
-- Messages retain all original properties and custom metadata
+## Health checks
 
-### Lock Renewal
+| Registration | Rights | Behaviour |
+|---|---|---|
+| `AddAzureServiceBusHealthCheck<T>()` | Listen | Reuses the queue's client: Unhealthy while its processor is not running, else peeks the consumed entity |
+| `AddAzureServiceBusHealthCheck(connectionString, queueName, subscriptionName: null)` or `(fullyQualifiedNamespace, credential, queueName, ...)` | Listen | Peeks through one client and receiver kept for every probe |
+| `AddAzureServiceBusMetricsHealthCheck(connectionString, queueName)` or `(fullyQualifiedNamespace, credential, queueName)` | **Manage** | Opt-in: adds active, dead-letter and scheduled counts to the result data |
 
-Long-running message processing is supported through automatic lock renewal:
-
-```csharp
-var processorOptions = new ServiceBusProcessorOptions
-{
-    MaxAutoLockRenewalDuration = TimeSpan.FromMinutes(5) // Configurable
-};
-```
-
-**Benefits:**
-- Prevents message timeout during long processing
-- Automatic renewal without manual intervention
-- Configurable renewal duration
-- Graceful handling of renewal failures
-
-## Configuration Options
-
-### Azure Service Bus Specific Settings
-
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| MessageTimeToLive | TimeSpan | 14 days | Maximum time message can remain in queue |
-| MaxConcurrentCalls | int | 10 | Maximum concurrent message processing |
-| PrefetchCount | int | 10 | Number of messages to prefetch for performance |
-| MaxAutoLockRenewalDuration | TimeSpan | 5 minutes | Maximum duration for automatic lock renewal |
-
-### Sender Pool and Topic Publishing Settings
-
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| TopicName | string | null | Topic name for topic-based publishing. When set, publishes to topic instead of queue. |
-| SubscriptionName | string | null | Subscription name for receiving from a topic. Required when TopicName is set. |
-| SenderPoolSize | int | 2 | Number of sender instances in the pool for concurrent publishing |
-| MaxConcurrentSends | int | 1000 | Maximum concurrent send operations across all senders (backpressure) |
-| SendTimeout | TimeSpan | 30 seconds | Timeout for send operations |
-
-### Topic-Based Publishing
-
-Configure topic-based pub/sub messaging:
-
-```json
-{
-  "MessageQueue": {
-    "Provider": "AzureServiceBus",
-    "ConnectionString": "Endpoint=sb://your-namespace.servicebus.windows.net/;...",
-    "QueueName": "fallback-queue",
-    "TopicName": "order-events",
-    "SubscriptionName": "order-processor",
-    "SenderPoolSize": 4,
-    "MaxConcurrentSends": 2000,
-    "SendTimeout": "00:00:30"
-  }
-}
-```
-
-**Topic Publishing Benefits:**
-- Multiple subscribers can receive the same message
-- Subscription filters for message routing
-- Decouples publishers from consumers
-- Supports fan-out messaging patterns
-
-**Usage Example:**
-```csharp
-// Publisher sends to topic
-await messageQueue.PublishAsync(new OrderCreated { OrderId = "123" });
-
-// Multiple services can subscribe via different subscriptions:
-// - order-processor subscription: processes orders
-// - analytics subscription: tracks order metrics
-// - notification subscription: sends customer notifications
-```
-
-### Performance Tuning
-
-Configure high-throughput settings in `appsettings.json`:
-
-```json
-{
-  "MessageQueue": {
-    "Provider": "AzureServiceBus",
-    "ConnectionString": "Endpoint=sb://your-namespace.servicebus.windows.net/;...",
-    "QueueName": "high-volume-queue",
-    "MaxConcurrentCalls": 50,
-    "PrefetchCount": 100,
-    "MaxAutoLockRenewalDuration": "00:10:00",
-    "EnableBatchedOperations": true,
-    "MaxBatchSize": 200,
-    "SenderPoolSize": 4,
-    "MaxConcurrentSends": 4000,
-    "SendTimeout": "00:00:30"
-  }
-}
-```
-
-**Performance Considerations:**
-- Higher `MaxConcurrentCalls` increases throughput but uses more resources
-- Higher `PrefetchCount` reduces latency but increases memory usage
-- Longer `MaxAutoLockRenewalDuration` supports longer processing times
-- Higher `SenderPoolSize` increases concurrent publishing capacity
-- `MaxConcurrentSends` provides backpressure to prevent overwhelming the service
-- Each sender can have `MaxConcurrentSends / SenderPoolSize` concurrent operations
-
-## Error Handling and Retry Logic
-
-### Retry Strategy
-
-Azure Service Bus implementation uses exponential backoff:
-
-```csharp
-private async Task HandleRetry(ProcessMessageEventArgs args, int deliveryCount, 
-    CancellationToken cancellationToken, Exception? exception = null)
-{
-    if (deliveryCount >= _config.RetryAttempts)
-    {
-        // Move to dead letter queue with detailed information
-        await args.DeadLetterMessageAsync(args.Message, 
-            exception?.GetType().Name ?? "Processing failed",
-            exception?.Message ?? "Message processing failed after maximum retry attempts");
-    }
-    else
-    {
-        // Abandon message for retry with exponential backoff
-        var delay = TimeSpan.FromSeconds(Math.Pow(2, deliveryCount - 1) * _config.RetryDelay.TotalSeconds);
-        
-        var properties = new Dictionary<string, object>
-        {
-            ["RetryCount"] = deliveryCount,
-            ["NextRetryAt"] = DateTimeOffset.UtcNow.Add(delay),
-            ["OriginalException"] = exception?.Message ?? "Processing failed"
-        };
-        
-        await args.AbandonMessageAsync(args.Message, properties);
-    }
-}
-```
-
-### Exception Handling
-
-- **Transient Exceptions**: Automatically retried with exponential backoff
-- **Permanent Exceptions**: Immediately sent to dead letter queue
-- **Timeout Exceptions**: Handled through automatic lock renewal
-- **Connection Exceptions**: Automatic reconnection by Azure Service Bus client
-
-## Monitoring and Observability
-
-### Built-in Metrics
-
-Azure Service Bus provides comprehensive metrics through Azure Monitor:
-
-- Message count (active, dead letter, scheduled)
-- Incoming/outgoing message rates
-- Message size statistics
-- Connection count and errors
-- Throttling metrics
-
-### Custom Logging
-
-```csharp
-_logger.LogInformation("Published {MessageType} to {QueueName} with MessageId {MessageId}",
-    typeof(T).Name, _queueName, serviceBusMessage.MessageId);
-
-_logger.LogInformation("Processing message {MessageId} (Delivery #{DeliveryCount})",
-    args.Message.MessageId, args.Message.DeliveryCount);
-```
-
-### Health Checks
-
-```csharp
-services.AddHealthChecks()
-    .AddAzureServiceBusQueue(connectionString, queueName, name: "servicebus-queue");
-```
-
-## Production Deployment
-
-### Namespace Configuration
-
-```json
-{
-  "ConnectionStrings": {
-    "AzureServiceBus": "Endpoint=sb://prod-namespace.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=your-production-key"
-  },
-  "MessageQueue": {
-    "OrderCreated": {
-      "QueueName": "order-created",
-      "MaxConcurrentCalls": 20,
-      "PrefetchCount": 50,
-      "MessageTimeToLive": "7.00:00:00"
-    }
-  }
-}
-```
-
-### Security Best Practices
-
-1. **Use Managed Identity** when running in Azure:
-```csharp
-options.ConnectionString = "Endpoint=sb://your-namespace.servicebus.windows.net/";
-```
-
-2. **Least Privilege Access**: Create specific shared access policies
-3. **Network Security**: Use Virtual Network integration
-4. **Encryption**: Enable encryption at rest and in transit
-
-### Scaling Considerations
-
-- **Standard Tier**: Up to 1,000 concurrent connections
-- **Premium Tier**: Dedicated resources, higher throughput
-- **Partitioned Queues**: Higher throughput with multiple message brokers
-- **Auto-scaling**: Configure based on queue depth metrics
-
-## Comparison with RabbitMQ
-
-| Feature | Azure Service Bus | RabbitMQ |
-|---------|------------------|----------|
-| **Hosting** | Fully managed | Self-hosted or managed |
-| **Reliability** | Enterprise SLA | Depends on setup |
-| **Dead Letter** | Built-in | Manual configuration |
-| **Lock Renewal** | Automatic | Manual implementation |
-| **Batch Publishing** | Native support | Sequential |
-| **Monitoring** | Azure Monitor | External tools |
-| **Cost** | Pay-per-use | Infrastructure costs |
-| **Latency** | Higher (cloud) | Lower (on-premises) |
+Results have fixed descriptions and carry no exception text, host or namespace; the exception is attached for the
+host's logging.
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Connection Failures**
-   - Verify connection string format
-   - Check network connectivity to Azure
-   - Validate shared access key permissions
-
-2. **Message Lock Timeout**
-   - Increase `MaxAutoLockRenewalDuration`
-   - Optimize message processing logic
-   - Consider breaking large operations into smaller chunks
-
-3. **Dead Letter Queue Growth**
-   - Monitor dead letter queue metrics
-   - Implement dead letter message reprocessing
-   - Analyze failure patterns and root causes
-
-4. **Performance Issues**
-   - Adjust `MaxConcurrentCalls` and `PrefetchCount`
-   - Monitor CPU and memory usage
-   - Consider upgrading to Premium tier
-
-### Debugging Tips
-
-```csharp
-// Enable detailed logging
-services.AddLogging(builder =>
-{
-    builder.AddConsole();
-    builder.SetMinimumLevel(LogLevel.Debug);
-});
-
-// Monitor message properties
-_logger.LogDebug("Message properties: {@Properties}", 
-    args.Message.ApplicationProperties);
-```
-
-## Migration from RabbitMQ
-
-To migrate from RabbitMQ to Azure Service Bus:
-
-1. **Update Configuration**:
-```csharp
-// Change from
-options.Provider = "RabbitMQ";
-options.ConnectionString = "amqp://localhost:5672";
-
-// To
-options.Provider = "AzureServiceBus";
-options.ConnectionString = "Endpoint=sb://namespace.servicebus.windows.net/;...";
-```
-
-2. **Remove RabbitMQ-specific Settings**:
-```csharp
-// Remove these properties
-// options.UseQuorumQueues = true;
-// options.QuorumInitialGroupSize = 3;
-```
-
-3. **Add Azure Service Bus Settings**:
-```csharp
-options.MessageTimeToLive = TimeSpan.FromDays(7);
-options.MaxConcurrentCalls = 10;
-options.PrefetchCount = 20;
-```
-
-4. **Update Dependencies**:
-```xml
-<!-- Remove -->
-<PackageReference Include="RabbitMQ.Client" Version="6.8.1" />
-
-<!-- Add -->
-<PackageReference Include="Azure.Messaging.ServiceBus" Version="7.17.0" />
-```
-
-The message processing logic and abstractions remain unchanged, ensuring a smooth migration path.
+- **`UnauthorizedAccessException` in the processor error log**: the identity lacks Data Receiver (consume) or Data
+  Sender (publish, queue-mode retries).
+- **"The entity refused a transaction" warning**: the tier, emulator or a partitioned entity does not support the
+  retry transaction; the queue already fell back to send-then-complete. Set `TransactionalRetries = false` to skip it.
+- **Messages dead-lettered with `MaxDeliveryCountExceeded`** on a subscription: the entity's `MaxDeliveryCount` is
+  below `MaxRetries + 1`.
+- **Lock-lost warnings**: a handler ran longer than `MaxAutoLockRenewalDuration`; the message is redelivered.

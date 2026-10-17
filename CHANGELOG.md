@@ -6,6 +6,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Azure Service Bus provider rework (OPTIMIZATION-PLAN B5–B8, S3–S6, S10, §4.3)
+
+Design records: `docs/adr/0009`–`0012`.
+
+#### Breaking
+- Removed `AzureServiceBusConfig.SenderPoolSize` and `MaxConcurrentSends` and the internal `PublisherSender` pool
+  (§4.3, ADR 0012): one thread-safe `ServiceBusSender` per queue. Configurations that still set them fail at startup
+  (unknown key). `SendTimeout` still bounds every send.
+- `AzureServiceBusConfig.ConnectionString` is no longer `[Required]`: exactly one of `ConnectionString` or the new
+  `FullyQualifiedNamespace` must be set. A malformed connection string now fails validation at startup and in the
+  constructor (`OptionsValidationException`) instead of `MessageQueueException` from the constructor.
+- Queue retries are scheduled copies (`ScheduledEnqueueTime` = now + backoff) sent with a new `MessageId` and the
+  original id in `x-ese-message-id`, then the original is completed, in one transaction by default (B5).
+  `Capabilities.DelayedRedelivery` is `true` for queues; the backoff startup warning no longer applies to them.
+  Partitioned entities, the Basic tier and the emulator refuse the transaction: on the first refusal the queue switches
+  to send-then-complete for good (one warning; the backoff still applies). `TransactionalRetries = false` skips the
+  attempt. The commit blocks a thread-pool thread; a startup warning flags `MaxConcurrentCalls` above 100.
+- Topic subscriptions: a retry waits under the message lock (when the delay fits the lock-renewal budget), then the
+  message is abandoned with the next attempt recorded; longer delays are abandoned at once with a warning.
+  `DelayedRedelivery` stays `false` there. A startup warning appears when `Retry.MaxRetries + 1` exceeds Service Bus's
+  default `MaxDeliveryCount` (10), and another when a subscription uses `PrefetchCount > 0` (prefetched locks run down
+  while retries hold handler slots).
+- `MessageContext.DeliveryAttempt` comes from library properties (`x-ese-delivery-attempt`, `x-ese-delivery-count`)
+  when they agree with the broker's `DeliveryCount`, else from `DeliveryCount`; values saturate (always 1 to
+  `int.MaxValue`). Dead letters set the marker out of reach, so a message resubmitted from the DLQ starts at attempt 1. `MessageContext.MessageId` is the
+  original id across retries, and empty (never null) for messages without a `MessageId`. `MessageContext.Headers` no longer contains `x-*`, `traceparent`, `tracestate` or
+  the SDK's `Diagnostic-Id`.
+- Dead letters carry the reason code and exception type in the reason, description and the application properties
+  `x-ese-dead-letter-reason` / `x-ese-dead-letter-detail`; never exception text. `OriginalException` is gone (S6).
+- A second `SubscribeAsync` throws `InvalidOperationException` (it used to fail inside the SDK, wrapped).
+  `UnsubscribeAsync` and `DisposeAsync` are bounded by the new `ShutdownTimeout` (default 30 s); cancelled handlers'
+  messages are abandoned for redelivery without using an attempt. `Dispose()` runs `DisposeAsync` on the thread
+  pool. Publishing after dispose throws `ObjectDisposedException`.
+- Publish errors name only the exception type (no client text); a message too large for any batch throws
+  `MessageQueueException` naming its index. Client-creation failures carry no inner exception (it can echo the
+  connection string; S10).
+- `AzureServiceBusHealthCheck` no longer uses the administration client (Manage rights) or creates a client per
+  probe: it peeks (Listen rights) through one cached receiver, and its result carries no data and no exception text.
+  It gained an optional `subscriptionName` parameter and implements `IAsyncDisposable`/`IDisposable` (S4, S5).
+- `MessageQueueHealthCheck` no longer puts the exception message in `Data["error"]` (S5).
+
+- A `TokenCredential` passed to the constructor together with a `ConnectionString` configuration throws
+  `ConfigurationException`; a container-registered credential is ignored for connection-string queues.
+
+#### Added
+- Entra ID identity (S3): `AzureServiceBusConfig.FullyQualifiedNamespace`; the credential is the one passed to the
+  new constructor `AzureServiceBusMessageQueue<T>(config, TokenCredential, telemetry, logger)`, else a
+  `TokenCredential` registered in the container, else one `DefaultAzureCredential` shared per process. New dependency: Azure.Identity 1.21.0.
+  Required roles: Azure Service Bus Data Sender / Data Receiver.
+- `AzureServiceBusConfig.ShutdownTimeout` (30 s) and `TransactionalRetries` (true).
+- `AddAzureServiceBusHealthCheck<T>()` reuses the registered queue's client (Unhealthy while its processor is not
+  running). `AddAzureServiceBusMetricsHealthCheck` / `AzureServiceBusMetricsHealthCheck`: the opt-in admin-metrics
+  check (needs Manage), one administration client for every probe. Both standalone checks (and their registration
+  extensions) also accept `FullyQualifiedNamespace` + `TokenCredential`.
+
+#### Fixed
+- B5: the retry backoff is applied (queues: on the broker).
+- B6: re-subscribing after unsubscribe works (one processor per subscription); processor errors are logged with
+  error source, entity path and exception type (LoggerMessage), throttled per distinct error, instead of swallowed.
+- B7: dispose is idempotent and bounded; unsubscribe waits for in-flight handlers; unsubscribe or dispose from inside a
+  handler no longer deadlocks.
+- B8: batch publish splits by byte size with `CreateMessageBatchAsync` + `TryAddMessage`.
+- Every message is settled exactly once. A message whose body or metadata cannot be read is dead-lettered as
+  `DeliveryFailed`; failed settlements back off per message before abandoning; lost locks are logged, not thrown.
+- S10 (ASB): no SharedAccessKey in any exception or log line from configuration or client creation.
+- A handler's cancellation callback that throws no longer breaks `UnsubscribeAsync`/`DisposeAsync` (Azure Service Bus
+  and RabbitMQ): it is logged, and the processor or channel is still stopped and the client closed.
+- A message without a `MessageId` is no longer treated as a settlement failure after it was handled.
+
+#### Internal
+- Shared consumer helpers in `Processing/` (`HandlerScope`, `TransportBackoff`, `LogThrottle`, `BackgroundWork`,
+  `MessageDispatcher.RejectUnreadableAsync`), used by RabbitMQ and Azure Service Bus. RabbitMQ behavior is unchanged
+  except that an unreadable delivery is now logged by the dispatcher (event 1007) instead of RabbitMQ event 2008, and
+  counted as a failed consume.
+- Thin internal seams over the Service Bus SDK; the provider is unit-tested without a namespace.
+- The startup warning for configurations without delayed redelivery no longer says "yet".
+
 ### RabbitMQ provider on RabbitMQ.Client 7 (OPTIMIZATION-PLAN Phase 5: B1–B4, B15, S7, S10, §4.2)
 
 Design records: `docs/adr/0006`–`0008`.

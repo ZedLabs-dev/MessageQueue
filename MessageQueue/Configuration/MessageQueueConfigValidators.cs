@@ -90,8 +90,13 @@ public class AzureServiceBusConfigValidator : IValidateOptions<AzureServiceBusCo
         if (string.IsNullOrWhiteSpace(options.TopicName) && !string.IsNullOrWhiteSpace(options.SubscriptionName))
             errors.Add("SubscriptionName requires TopicName: a subscription belongs to a topic");
 
+        AzureServiceBusConnections.Validate(options, errors);
+
         if (options.SendTimeout <= TimeSpan.Zero)
             errors.Add("SendTimeout must be > 0");
+
+        if (options.ShutdownTimeout <= TimeSpan.Zero)
+            errors.Add("ShutdownTimeout must be > 0");
 
         if (options.MessageTimeToLive <= TimeSpan.Zero)
             errors.Add("MessageTimeToLive must be > 0");

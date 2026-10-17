@@ -452,6 +452,7 @@
       "ESE.MessageQueue": {
         "type": "Project",
         "dependencies": {
+          "Azure.Identity": "[1.21.0, )",
           "Azure.Messaging.ServiceBus": "[7.21.0, )",
           "MessagePack": "[3.1.12, )",
           "Microsoft.Extensions.Configuration.Binder": "[10.0.13, )",
@@ -464,6 +465,15 @@
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.13, )",
           "RabbitMQ.Client": "[7.2.2, )",
           "System.Threading.RateLimiting": "[10.0.13, )"
+        }
+      },
+      "Azure.Identity": {
+        "type": "CentralTransitive",
+        "requested": "[1.21.0, )",
+        "resolved": "1.21.0",
+        "contentHash": "GeFv8sGwRKvDKwI2WFy8r0mhmlxEVZg24Sit2NogTjiSO8RVjllWM65OT6e1sKjOvG8V74y7hAbaELUUPjZQSw==",
+        "dependencies": {
+          "Azure.Core": "1.53.0"
         }
       },
       "Azure.Messaging.ServiceBus": {

@@ -1,3 +1,4 @@
+using ESE.MessageQueue.AzureServiceBus;
 using ESE.MessageQueue.RabbitMQ;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -74,7 +75,9 @@ public static class HealthCheckExtensions
     }
 
     /// <summary>
-    /// Adds a health check for Azure Service Bus connectivity.
+    /// Adds the least-privilege Azure Service Bus health check (a peek; Listen rights only). One client and receiver
+    /// serve every probe and are disposed with the container. Prefer <c>AddAzureServiceBusHealthCheck&lt;T&gt;()</c>,
+    /// which reuses the registered queue's client and identity.
     /// </summary>
     public static IHealthChecksBuilder AddAzureServiceBusHealthCheck(
         this IHealthChecksBuilder builder,
@@ -83,14 +86,102 @@ public static class HealthCheckExtensions
         string name = "azureservicebus",
         HealthStatus? failureStatus = null,
         IEnumerable<string>? tags = null,
-        TimeSpan? timeout = null)
+        TimeSpan? timeout = null,
+        string? subscriptionName = null)
+    {
+        builder.Services.AddKeyedSingleton(name, (_, _) => new AzureServiceBusHealthCheck(connectionString, queueName, subscriptionName));
+        return builder.Add(new HealthCheckRegistration(
+            name,
+            sp => sp.GetRequiredKeyedService<AzureServiceBusHealthCheck>(name),
+            failureStatus,
+            tags ?? DefaultAzureServiceBusTags,
+            timeout ?? TimeSpan.FromSeconds(10)));
+    }
+
+    /// <summary>
+    /// Adds a health check for the Azure Service Bus queue registered for <typeparamref name="T"/> with
+    /// <c>AddMessageQueue&lt;T&gt;</c>. It reuses that queue's client (and identity): Unhealthy while the queue's
+    /// processor is not running, otherwise a peek on the consumed queue or subscription (Listen rights only).
+    /// </summary>
+    public static IHealthChecksBuilder AddAzureServiceBusHealthCheck<T>(
+        this IHealthChecksBuilder builder,
+        string name = "azureservicebus",
+        HealthStatus? failureStatus = null,
+        IEnumerable<string>? tags = null,
+        TimeSpan? timeout = null) where T : class
     {
         return builder.Add(new HealthCheckRegistration(
             name,
-            _ => new AzureServiceBusHealthCheck(connectionString, queueName),
+            sp => new AzureServiceBusHealthCheck(sp.GetService<AzureServiceBusMessageQueue<T>>()
+                ?? throw new InvalidOperationException(
+                    $"No Azure Service Bus queue is registered for {typeof(T).FullName}; register it with AddMessageQueue<T> and Provider = AzureServiceBus")),
+            failureStatus,
+            tags ?? DefaultAzureServiceBusTags,
+            timeout ?? TimeSpan.FromSeconds(10)));
+    }
+
+    /// <summary>
+    /// Adds the opt-in metrics check (message counts through the administration client). It needs <b>Manage</b>
+    /// rights; use it only where that privilege is acceptable.
+    /// </summary>
+    public static IHealthChecksBuilder AddAzureServiceBusMetricsHealthCheck(
+        this IHealthChecksBuilder builder,
+        string connectionString,
+        string queueName,
+        string name = "azureservicebus-metrics",
+        HealthStatus? failureStatus = null,
+        IEnumerable<string>? tags = null,
+        TimeSpan? timeout = null)
+    {
+        builder.Services.AddKeyedSingleton(name, (_, _) => new AzureServiceBusMetricsHealthCheck(connectionString, queueName));
+        return builder.Add(new HealthCheckRegistration(
+            name,
+            sp => sp.GetRequiredKeyedService<AzureServiceBusMetricsHealthCheck>(name),
+            failureStatus,
+            tags ?? DefaultAzureServiceBusTags,
+            timeout ?? TimeSpan.FromSeconds(10)));
+    }
+
+    /// <summary>
+    /// Adds the least-privilege Azure Service Bus health check with Entra ID identity (Data Receiver role).
+    /// </summary>
+    public static IHealthChecksBuilder AddAzureServiceBusHealthCheck(
+        this IHealthChecksBuilder builder,
+        string fullyQualifiedNamespace,
+        Azure.Core.TokenCredential credential,
+        string queueName,
+        string name = "azureservicebus",
+        HealthStatus? failureStatus = null,
+        IEnumerable<string>? tags = null,
+        TimeSpan? timeout = null,
+        string? subscriptionName = null)
+    {
+        builder.Services.AddKeyedSingleton(name, (_, _) => new AzureServiceBusHealthCheck(fullyQualifiedNamespace, credential, queueName, subscriptionName));
+        return builder.Add(new HealthCheckRegistration(
+            name,
+            sp => sp.GetRequiredKeyedService<AzureServiceBusHealthCheck>(name),
+            failureStatus,
+            tags ?? DefaultAzureServiceBusTags,
+            timeout ?? TimeSpan.FromSeconds(10)));
+    }
+
+    /// <summary>The opt-in metrics check with Entra ID identity (needs Manage rights).</summary>
+    public static IHealthChecksBuilder AddAzureServiceBusMetricsHealthCheck(
+        this IHealthChecksBuilder builder,
+        string fullyQualifiedNamespace,
+        Azure.Core.TokenCredential credential,
+        string queueName,
+        string name = "azureservicebus-metrics",
+        HealthStatus? failureStatus = null,
+        IEnumerable<string>? tags = null,
+        TimeSpan? timeout = null)
+    {
+        builder.Services.AddKeyedSingleton(name, (_, _) => new AzureServiceBusMetricsHealthCheck(fullyQualifiedNamespace, credential, queueName));
+        return builder.Add(new HealthCheckRegistration(
+            name,
+            sp => sp.GetRequiredKeyedService<AzureServiceBusMetricsHealthCheck>(name),
             failureStatus,
             tags ?? DefaultAzureServiceBusTags,
             timeout ?? TimeSpan.FromSeconds(10)));
     }
 }
-

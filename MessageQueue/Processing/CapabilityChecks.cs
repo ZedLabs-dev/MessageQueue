@@ -16,7 +16,7 @@ static partial class CapabilityChecks
     }
 
     [LoggerMessage(EventId = 1101, Level = LogLevel.Warning,
-        Message = "Queue {QueueName}: this provider has no broker-side delayed redelivery yet (Capabilities.DelayedRedelivery = false), " +
+        Message = "Queue {QueueName}: this provider or entity has no broker-side delayed redelivery (Capabilities.DelayedRedelivery = false), " +
             "so the retry backoff ({InitialDelay} to {MaxDelay}) is applied in process or not at all")]
     static partial void BackoffUnsupported(ILogger logger, string queueName, TimeSpan initialDelay, TimeSpan maxDelay);
 }

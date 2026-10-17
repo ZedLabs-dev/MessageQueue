@@ -31,6 +31,7 @@ public class MessageQueueHealthCheck : IHealthCheck
 
             return HealthCheckResult.Unhealthy($"Message queue '{queueName}' is not accessible.");
         }
+        // S5: no exception text in the result; the exception is attached for the host's logging.
         catch (Exception ex)
         {
             return HealthCheckResult.Unhealthy(
@@ -38,8 +39,7 @@ public class MessageQueueHealthCheck : IHealthCheck
                 ex,
                 new Dictionary<string, object>
                 {
-                    ["queue"] = queueName,
-                    ["error"] = ex.Message
+                    ["queue"] = queueName
                 });
         }
     }
