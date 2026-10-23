@@ -15,6 +15,8 @@ public sealed record RabbitMqTlsConfig
 
     public bool AllowInsecureCertificates { get; set; }
 
+    public string CaCertificatePath { get; set; } = string.Empty;
+
     public string ClientCertificatePath { get; set; } = string.Empty;
 
     public string ClientCertificateKeyPath { get; set; } = string.Empty;

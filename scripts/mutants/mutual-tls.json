@@ -1,0 +1,271 @@
+{
+  "description": "Mutual TLS against a real broker and the trust anchor (ADR 0022 amendment): Tls:CaCertificatePath validation and chain rules, certificates loaded once per owner and disposed, the standalone connection-string health check with Tls settings. T33-T36 run the integration specs against the mutual-TLS broker (Docker).",
+  "defaults": {
+    "filter": "Category=Unit"
+  },
+  "mutants": [
+    {
+      "id": "T01",
+      "name": "trust-anchor callback accepts every certificate",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "(_, certificate, chain, errors) => (Evaluate(certificate, chain, errors, anchors) & ~acceptable) == SslPolicyErrors.None;",
+      "replace": "(_, certificate, chain, errors) => true;"
+    },
+    {
+      "id": "T02",
+      "name": "trust-anchor callback ignores AcceptablePolicyErrors",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "(Evaluate(certificate, chain, errors, anchors) & ~acceptable) == SslPolicyErrors.None",
+      "replace": "Evaluate(certificate, chain, errors, anchors) == SslPolicyErrors.None"
+    },
+    {
+      "id": "T03",
+      "name": "trust-anchor callback clears the name mismatch",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "errors &= ~SslPolicyErrors.RemoteCertificateChainErrors;",
+      "replace": "errors &= ~(SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNameMismatch);"
+    },
+    {
+      "id": "T04",
+      "name": "chain built against the OS trust store instead of the anchors",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "X509ChainTrustMode.CustomRootTrust",
+      "replace": "X509ChainTrustMode.System"
+    },
+    {
+      "id": "T05",
+      "name": "anchors never added to the custom trust store",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "chain.ChainPolicy.CustomTrustStore.AddRange(anchors);",
+      "replace": ""
+    },
+    {
+      "id": "T06",
+      "name": "revocation checked online",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "X509RevocationMode.NoCheck",
+      "replace": "X509RevocationMode.Online"
+    },
+    {
+      "id": "T07",
+      "name": "server-authentication usage not required",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);",
+      "replace": ""
+    },
+    {
+      "id": "T08",
+      "name": "missing broker certificate accepted",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "        if (certificate is null)\n            return errors;",
+      "replace": "        if (certificate is null)\n            return SslPolicyErrors.None;"
+    },
+    {
+      "id": "T09",
+      "name": "failed chain not reported",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "            errors |= SslPolicyErrors.RemoteCertificateChainErrors;",
+      "replace": "            errors |= SslPolicyErrors.None;"
+    },
+    {
+      "id": "T10",
+      "name": "intermediates the broker sent are ignored",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "            chain.ChainPolicy.ExtraStore.AddRange(presented.ChainPolicy.ExtraStore);",
+      "replace": "            chain.ChainPolicy.ExtraStore.Clear();"
+    },
+    {
+      "id": "T11",
+      "name": "a CA without TLS is accepted",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "        if (!usesTls)\n        {",
+      "replace": "        if (!usesTls && false)\n        {"
+    },
+    {
+      "id": "T12",
+      "name": "startup never loads the CA file",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "        if (!load)\n            return;",
+      "replace": "        if (load)\n            return;"
+    },
+    {
+      "id": "T13",
+      "name": "a CA file without a certificate is accepted",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "return anchors.Count > 0 ? anchors : throw new ConfigurationException($\"{Setting} '{path}' holds no certificate\");",
+      "replace": "return anchors;"
+    },
+    {
+      "id": "T14",
+      "name": "an unreadable CA file is reported without its path",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "throw new ConfigurationException($\"{Setting} '{path}' is not a PEM or DER certificate ({error.GetType().Name})\");",
+      "replace": "throw new ConfigurationException($\"{Setting} is not a PEM or DER certificate\");"
+    },
+    {
+      "id": "T15",
+      "name": "a PEM bundle is read as DER",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "            if (RabbitMqClientCertificates.IsPem(content))",
+      "replace": "            if (false)"
+    },
+    {
+      "id": "T16",
+      "name": "the factory never installs the trust-anchor callback",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqConnections.cs",
+      "find": "            if (RabbitMqTrustAnchors.IsConfigured(TlsOf(config)))\n                factory.Ssl.CertificateValidationCallback",
+      "replace": "            if (false)\n                factory.Ssl.CertificateValidationCallback"
+    },
+    {
+      "id": "T17",
+      "name": "the factory drops AcceptablePolicyErrors from the callback",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqConnections.cs",
+      "find": "certificates?.TrustAnchors(TlsOf(config)) ?? RabbitMqTrustAnchors.Load(TlsOf(config)), TlsOf(config).AcceptablePolicyErrors);",
+      "replace": "certificates?.TrustAnchors(TlsOf(config)) ?? RabbitMqTrustAnchors.Load(TlsOf(config)), SslPolicyErrors.None);"
+    },
+    {
+      "id": "T18",
+      "name": "the CA is not checked by startup validation",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqConnections.cs",
+      "find": "        RabbitMqTrustAnchors.Validate(TlsOf(config), UsesTls(config), errors, loadClientCertificate);\n",
+      "replace": ""
+    },
+    {
+      "id": "T19",
+      "name": "the owner reloads the CA on every connect",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTlsCertificates.cs",
+      "find": "return trustAnchors ??= RabbitMqTrustAnchors.Load(tls);",
+      "replace": "return trustAnchors = RabbitMqTrustAnchors.Load(tls);"
+    },
+    {
+      "id": "T20",
+      "name": "the owner reloads the client certificate on every connect",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTlsCertificates.cs",
+      "find": "return clientCertificate ??= RabbitMqClientCertificates.Load(tls);",
+      "replace": "return clientCertificate = RabbitMqClientCertificates.Load(tls);"
+    },
+    {
+      "id": "T21",
+      "name": "the CA certificates are not disposed with the owner",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTlsCertificates.cs",
+      "find": "                RabbitMqTrustAnchors.Dispose(trustAnchors);",
+      "replace": "                trustAnchors.Clear();"
+    },
+    {
+      "id": "T22",
+      "name": "the client certificate is not disposed with the owner",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTlsCertificates.cs",
+      "find": "            clientCertificate?.Dispose();",
+      "replace": ""
+    },
+    {
+      "id": "T23",
+      "name": "a disposed owner keeps handing out the certificate",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTlsCertificates.cs",
+      "find": "            ObjectDisposedException.ThrowIf(disposed, this);\n            return clientCertificate",
+      "replace": "            return clientCertificate"
+    },
+    {
+      "id": "T24",
+      "name": "the standalone health check drops its Tls settings",
+      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheck.cs",
+      "find": "            Tls = tls,\n",
+      "replace": ""
+    },
+    {
+      "id": "T25",
+      "name": "the standalone health check loads the certificates per probe",
+      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheck.cs",
+      "find": "        }, certificates);",
+      "replace": "        });"
+    },
+    {
+      "id": "T26",
+      "name": "the standalone health check does not dispose its certificates",
+      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheck.cs",
+      "find": "public void Dispose() => certificates.Dispose();",
+      "replace": "public void Dispose() { }"
+    },
+    {
+      "id": "T27",
+      "name": "the health check uses the caller's Tls object instead of a copy",
+      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheck.cs",
+      "find": "            this.tls = tls with { };",
+      "replace": "            this.tls = tls;"
+    },
+    {
+      "id": "T28",
+      "name": "the registration does not copy the Tls settings",
+      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheckExtensions.cs",
+      "find": "var settings = tls with { };",
+      "replace": "var settings = tls;"
+    },
+    {
+      "id": "T29",
+      "name": "each health check run gets a new check instance",
+      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheckExtensions.cs",
+      "find": "sp => sp.GetRequiredKeyedService<RabbitMqHealthCheck>(name),",
+      "replace": "sp => new RabbitMqHealthCheck(connectionString, requireTls, settings),"
+    },
+    {
+      "id": "T30",
+      "name": "the Tls overload drops requireTls",
+      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheckExtensions.cs",
+      "find": "new RabbitMqHealthCheck(connectionString, requireTls, settings)",
+      "replace": "new RabbitMqHealthCheck(connectionString, null, settings)"
+    },
+    {
+      "id": "T31",
+      "name": "the overload without Tls settings drops requireTls",
+      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheckExtensions.cs",
+      "find": "builder.AddRabbitMqHealthCheck(connectionString, new RabbitMqTlsConfig(), name, failureStatus, tags, timeout, requireTls);",
+      "replace": "builder.AddRabbitMqHealthCheck(connectionString, new RabbitMqTlsConfig(), name, failureStatus, tags, timeout, null);"
+    },
+    {
+      "id": "T32",
+      "name": "a null Tls settings object is not refused at registration",
+      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheckExtensions.cs",
+      "find": "        ArgumentNullException.ThrowIfNull(tls);\n",
+      "replace": ""
+    },
+    {
+      "id": "T33",
+      "name": "real broker: trust-anchor callback accepts every certificate",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "(_, certificate, chain, errors) => (Evaluate(certificate, chain, errors, anchors) & ~acceptable) == SslPolicyErrors.None;",
+      "replace": "(_, certificate, chain, errors) => true;",
+      "filter": "FullyQualifiedName~Given_a_rabbitmq_broker_requiring_client_certificates|FullyQualifiedName~Given_a_rabbitmq_health_check_on_a_mutual_tls_broker"
+    },
+    {
+      "id": "T34",
+      "name": "real broker: the factory never presents the client certificate",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqConnections.cs",
+      "find": "                factory.Ssl.Certs = new X509CertificateCollection { certificates?.ClientCertificate(TlsOf(config)) ?? RabbitMqClientCertificates.Load(TlsOf(config)) };",
+      "replace": "                factory.Ssl.Certs = new X509CertificateCollection();",
+      "filter": "FullyQualifiedName~Given_a_rabbitmq_broker_requiring_client_certificates|FullyQualifiedName~Given_a_rabbitmq_health_check_on_a_mutual_tls_broker"
+    },
+    {
+      "id": "T35",
+      "name": "real broker: the trust-anchor callback clears the name mismatch",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "find": "errors &= ~SslPolicyErrors.RemoteCertificateChainErrors;",
+      "replace": "errors &= ~(SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNameMismatch);",
+      "filter": "FullyQualifiedName~Given_a_rabbitmq_broker_requiring_client_certificates|FullyQualifiedName~Given_a_rabbitmq_health_check_on_a_mutual_tls_broker"
+    },
+    {
+      "id": "T36",
+      "name": "real broker: the standalone health check drops its Tls settings",
+      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheck.cs",
+      "find": "            Tls = tls,\n",
+      "replace": "",
+      "filter": "FullyQualifiedName~Given_a_rabbitmq_broker_requiring_client_certificates|FullyQualifiedName~Given_a_rabbitmq_health_check_on_a_mutual_tls_broker"
+    },
+    {
+      "id": "T37",
+      "name": "a disposed owner keeps handing out the CA certificates",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTlsCertificates.cs",
+      "find": "            ObjectDisposedException.ThrowIf(disposed, this);\n            return trustAnchors",
+      "replace": "            return trustAnchors"
+    }
+  ]
+}

@@ -16,8 +16,8 @@ static class RabbitMqConnections
     const string PlainScheme = "amqp";
     const string TlsScheme = "amqps";
 
-    // loadClientCertificate: startup validation loads the client certificate to prove it is usable; connect time
-    // re-checks the rules only, because the queue loads the certificate itself (once).
+    // loadClientCertificate: startup validation loads the client certificate and the CA certificates to prove they are
+    // usable; connect time re-checks the rules only, because the connection owner loads the certificates itself (once).
     public static List<string> Validate(RabbitMqConfig config, bool loadClientCertificate = true)
     {
         var errors = new List<string>();
@@ -53,12 +53,13 @@ static class RabbitMqConnections
                 "use an amqps:// ConnectionString (or Tls:Enabled with HostName), or set RequireTls = false explicitly");
 
         RabbitMqClientCertificates.Validate(TlsOf(config), UsesTls(config), errors, loadClientCertificate);
+        RabbitMqTrustAnchors.Validate(TlsOf(config), UsesTls(config), errors, loadClientCertificate);
         return errors;
     }
 
-    // clientCertificate supplies the configured client certificate (the queue's, loaded once and owned by the queue);
-    // without it a new one is loaded and owned by the factory's caller.
-    public static ConnectionFactory CreateFactory(RabbitMqConfig config, Func<X509Certificate2>? clientCertificate = null)
+    // certificates supplies the configured client certificate and CA certificates (the connection owner's, loaded once
+    // and disposed with the owner); without it new ones are loaded and owned by the factory's caller.
+    public static ConnectionFactory CreateFactory(RabbitMqConfig config, RabbitMqTlsCertificates? certificates = null)
     {
         var errors = Validate(config, loadClientCertificate: false);
         if (errors.Count > 0)
@@ -105,7 +106,11 @@ static class RabbitMqConnections
             factory.Ssl.AcceptablePolicyErrors = TlsOf(config).AcceptablePolicyErrors;
             // Mutual TLS: the broker asks for a client certificate and authenticates (or authorizes) it.
             if (RabbitMqClientCertificates.IsConfigured(TlsOf(config)))
-                factory.Ssl.Certs = new X509CertificateCollection { clientCertificate?.Invoke() ?? RabbitMqClientCertificates.Load(TlsOf(config)) };
+                factory.Ssl.Certs = new X509CertificateCollection { certificates?.ClientCertificate(TlsOf(config)) ?? RabbitMqClientCertificates.Load(TlsOf(config)) };
+            // A private CA: the broker's certificate must chain to it (and only to it); see RabbitMqTrustAnchors.
+            if (RabbitMqTrustAnchors.IsConfigured(TlsOf(config)))
+                factory.Ssl.CertificateValidationCallback = RabbitMqTrustAnchors.Callback(
+                    certificates?.TrustAnchors(TlsOf(config)) ?? RabbitMqTrustAnchors.Load(TlsOf(config)), TlsOf(config).AcceptablePolicyErrors);
         }
 
         return factory;

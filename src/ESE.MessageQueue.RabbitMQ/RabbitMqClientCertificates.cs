@@ -145,7 +145,7 @@ static class RabbitMqClientCertificates
         throw new ConfigurationException($"{source} has no private key, so it cannot authenticate the client");
     }
 
-    static byte[] Read(string path, string setting)
+    public static byte[] Read(string path, string setting)
     {
         try
         {
@@ -191,7 +191,7 @@ static class RabbitMqClientCertificates
 
     // PEM is text starting with a "-----BEGIN" line (after optional whitespace or a UTF-8 byte order mark); anything
     // else is read as PKCS#12.
-    static bool IsPem(ReadOnlySpan<byte> content)
+    public static bool IsPem(ReadOnlySpan<byte> content)
     {
         if (content.StartsWith(Utf8Bom))
             content = content[Utf8Bom.Length..];

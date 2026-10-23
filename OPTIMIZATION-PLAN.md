@@ -292,7 +292,7 @@ Phases 1–3 make every later phase safe to hand to an agent. Phases 4, 5 and 6 
 
 ---
 
-## 9. Status (2026-10-22, after the deferred-items close-out)
+## 9. Status (2026-10-23, after the mutual-TLS close-out)
 
 **Done:** Phases 2-7. Every §1 package action, §2 S1-S10, §3 B1-B16, §3a.1-5, §4.1-4.7 (except the items below), §5
 infrastructure and missing-test areas, §6.1-6.4. Phase 7: three packages with a public provider SPI (ADR 0015), the
@@ -322,10 +322,32 @@ operator how-to `docs/dead-letter-operations.md` (PRODUCTION-READINESS-PLAN "dra
 
 **Documentation (2026-10-22, PRODUCTION-READINESS-PLAN §2, §7-§10):** getting-started guides per provider,
 `docs/configuration.md`, `docs/operations/` (failure modes, monitoring, alerts, runbooks), `docs/release-checklist.md`
-and `docs/production-readiness-status.md` (42 readiness items: 36 done, 4 partial, 2 blocked on the owner). Guide code is compiled
+and `docs/production-readiness-status.md` (42 readiness items; at the current HEAD 39 done, 1 partial, 2 blocked on the
+owner). Guide code is compiled
 from `samples/ESE.MessageQueue.Samples/Docs/`; three `Packaging/` specs hold the guides, the settings reference and the
 monitoring reference to the code. Release-grade benchmarks (default job) replace the ShortRun numbers in
 `docs/benchmarks.md`.
+
+**Code gaps found while documenting (2026-10-23, ADRs 0024-0027):** .NET 10 only (ADR 0024); a shutdown budget,
+`ShutdownTimeout` 25 s with startup warning 5005 when a queue's drain would outlast the host's (ADR 0025); the
+publish-side size limit on every provider, `PublishValidation.ValidateBodySize` for third-party providers (ADR 0026);
+RabbitMQ transport-error telemetry and Debug publish log events 1010/1011 (ADR 0027); strict RabbitMQ `ExchangeType`
+values; load specs `RabbitMQ/Given_a_rabbitmq_queue_under_load` and `InMemory/Given_an_in_memory_queue_under_load`; the
+RabbitMQ consumption benchmark (`RabbitMqConsumeBenchmarks`, `docs/benchmarks.md`). Mutants `code-gaps.json` and
+`review-code-gaps.json`.
+
+**Mutual TLS against a real broker (2026-10-23, ADR 0022 amended):** `Tls:CaCertificatePath`, a trust anchor for a
+private CA (custom root trust, server name still checked, `AcceptablePolicyErrors` still applied), loaded once per queue
+with the client certificate; the standalone connection-string health check takes the queue's `RabbitMqTlsConfig`
+(`AddRabbitMqHealthCheck(connectionString, tls, ...)`, certificates loaded once and disposed with the container).
+Integration specs run against RabbitMQ with `ssl_options.verify = verify_peer` and `fail_if_no_peer_cert = true`, with a
+CA, server and client certificate generated per run (`Support/RabbitMqMutualTlsBrokerFixture`): round trip with PFX and
+PEM client certificates, refusal without a certificate, untrusted CA, another CA and wrong server name refused unless
+explicitly accepted. After the adversarial review: issuers are never downloaded from a certificate's AIA location
+(Linux fetched them), chain element certificates are disposed, and hostile chains (path length, name constraints,
+leaf or non-CA signers, rogue same-name roots, chains valid only for another root) are specified and pass on macOS and
+Linux. Mutants `mutual-tls.json` (37/37) and `review-mutual-tls.json` (19/19 killed, one documented equivalent; U11
+and part of U01 are killed only on Linux).
 
 **Deferred (decided, not forgotten):**
 - RabbitMQ.Client 6.x vs 7.x benchmark (Phase 5 exit criterion): the 6.x provider no longer exists (ADR 0014,
@@ -334,13 +356,14 @@ monitoring reference to the code. Release-grade benchmarks (default job) replace
 - RabbitMQ attempt-header forgery (ADR 0006 note): a publisher can forge `x-death` and the attempt header for its own
   messages; RabbitMQ 4.3.6 delivers a client-supplied `x-death` unchanged, so only a signed header would close it.
   Accepted risk: the forger can only shorten its own messages' retries.
-- Benchmarks not yet run: Azure Service Bus (no namespace), RabbitMQ consumption, a broker over a real network
-  (release-grade default-job numbers for the rest are in `docs/benchmarks.md`).
+- Benchmarks not yet run: Azure Service Bus (no namespace) and a broker over a real network (release-grade default-job
+  numbers for the rest, RabbitMQ consumption included, are in `docs/benchmarks.md`).
 - Minor follow-up: the format hook needs `python3` and does nothing without it (the Stop hook still gates). Watch the
   first GitHub run against the 30-minute `ci.yml` timeout.
 - The core package is not annotated as trimmable/AOT-compatible: source-generated JSON removes reflection from the
   JSON path (ADR 0019), but MessagePack's contractless resolver and the reflection JSON path remain.
-- Standalone connection-string RabbitMQ health checks present no client certificate (ADR 0022).
+- The RabbitMQ EXTERNAL (certificate) login mechanism is not exercised: the mutual-TLS specs authenticate the user
+  with PLAIN over a connection that requires a client certificate (ADR 0022).
 
 **Blocked on the owner:**
 - **Azure Service Bus live verification:** the integration specs have never run against a real namespace or the
@@ -349,7 +372,5 @@ monitoring reference to the code. Release-grade benchmarks (default job) replace
   the pack step. `release.yml` needs the `release` environment and either the `NUGET_USER` variable (trusted
   publishing policy on nuget.org for `release.yml`) or the `NUGET_API_KEY` secret. `claude.yml` and
   `update-packages.yml` need `ANTHROPIC_API_KEY`, and an automation GitHub App for pull requests that start CI.
-- Client certificates against a real mutual-TLS broker: the specs check validation and that the connection factory
-  carries the certificate; no broker with `ssl_options.verify = verify_peer` has been tested.
 - `PRODUCTION-READINESS-PLAN.md` backlog items are not yet GitHub issues (§6.1).
 

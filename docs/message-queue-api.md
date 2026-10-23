@@ -292,6 +292,7 @@ The default waits 2 + 4 + 8 + 16 + 30 ≈ 60 s across five retries, then dead-le
 | Tls:Enabled | bool | false | TLS for the `HostName` form (`amqps://` enables it for a connection string) |
 | Tls:ServerName | string | the host | Name the server certificate must match |
 | Tls:AcceptablePolicyErrors | `SslPolicyErrors` flags | None | Certificate errors to accept; anything but `None` also needs `Tls:AllowInsecureCertificates = true` |
+| Tls:CaCertificatePath | string | empty | Trust anchor: PEM (one or more) or DER CA certificates the broker's certificate must chain to, instead of the OS trust store; the name is still checked and `AcceptablePolicyErrors` still applies. Loaded and checked at startup. Needs TLS |
 | Tls:ClientCertificatePath | string | empty | Client certificate for mutual TLS: a PKCS#12 (`.pfx`/`.p12`) or PEM file, loaded and checked at startup (it must hold a private key). Needs TLS |
 | Tls:ClientCertificateKeyPath | string | empty | PEM private key file when it is not in the `ClientCertificatePath` file |
 | Tls:ClientCertificatePassword | string | empty | Password of the PFX or of an encrypted PEM key; redacted from `ToString()`, never logged |
@@ -460,7 +461,9 @@ construct yourself.
 
 - Logging uses `Microsoft.Extensions.Logging` with source-generated `LoggerMessage` methods.
 - Health checks: `AddRabbitMqHealthCheck<T>()` (reuses the registered RabbitMQ queue's connection),
-  `AddRabbitMqHealthCheck(connectionString)` (opens a connection per probe), `AddAzureServiceBusHealthCheck<T>()`
+  `AddRabbitMqHealthCheck(connectionString)` or `AddRabbitMqHealthCheck(connectionString, tls)` (opens a connection
+  per probe; the `RabbitMqTlsConfig` overload presents a client certificate and trusts `Tls:CaCertificatePath` like the
+  queue, loading them once per registration), `AddAzureServiceBusHealthCheck<T>()`
   (reuses the registered queue's client; a peek, Listen rights only), `AddAzureServiceBusHealthCheck(connectionString,
   queueName)` (one client for every probe), the opt-in `AddAzureServiceBusMetricsHealthCheck` (needs Manage), and
   `AddMessageQueueHealthCheck`. No check puts exception text, host, port or namespace in the result.

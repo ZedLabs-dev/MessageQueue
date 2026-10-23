@@ -254,7 +254,9 @@ Details: [failure modes](../operations/failure-modes.md), [runbooks](../operatio
 `AddRabbitMqHealthCheck<OrderPlaced>()` reuses the queue's connection (connecting it if needed) and reports Unhealthy
 while the connection is closed or, while subscribed, when the consumer channel is closed or the broker cancelled the
 consumer. Results carry no host name and no exception text; the exception goes to the log as event 6001. Map the
-endpoint as usual, for example `app.MapHealthChecks("/health/ready")`.
+endpoint as usual, for example `app.MapHealthChecks("/health/ready")`. A standalone check without a registered queue,
+`AddRabbitMqHealthCheck(connectionString, tls)`, takes the same `RabbitMqTlsConfig` as the queue, so it can present a
+client certificate to a broker that requires one.
 
 ## Telemetry
 

@@ -151,8 +151,8 @@ Provider notes:
 
 ### RabbitMQ server certificate
 
-The client validates the broker's certificate chain against the OS trust store and the host name (or
-`Tls:ServerName`). Check what the broker presents and when it expires:
+The client validates the broker's certificate chain against the OS trust store, or only against the CAs in
+`Tls:CaCertificatePath` when that is set, and the host name (or `Tls:ServerName`). Check what the broker presents and when it expires:
 
 ```bash
 openssl s_client -connect rabbit.internal.example.com:5671 -servername rabbit.internal.example.com </dev/null 2>/dev/null \
@@ -162,13 +162,16 @@ openssl s_client -connect rabbit.internal.example.com:5671 -servername rabbit.in
 **Rotation:** install the new certificate on every node (same CA, or a CA the clients already trust) and reload the
 listeners (`rabbitmqctl eval 'ssl:clear_pem_cache().'` for file changes, or a rolling node restart). Existing
 connections keep their session; new and recovered connections use the new certificate. When the new certificate comes
-from a **new CA**, add that CA to the clients' trust store and restart them **before** switching the broker. Never
+from a **new CA**, add that CA to the clients' trust store (or append it to the `Tls:CaCertificatePath` PEM bundle,
+which may hold the old and the new CA side by side) and restart them **before** switching the broker. The CA file is
+read once per queue, like the client certificate: replacing it needs a restart. Never
 "fix" an expired or mismatched certificate with `Tls:AcceptablePolicyErrors`.
 
 ### RabbitMQ client certificate (mutual TLS)
 
 The client certificate (`Tls:ClientCertificatePath` or `Tls:ClientCertificateThumbprint`) is checked at startup and
-loaded **once per queue**, then reused for every reconnection. Replacing the file or the store entry has no effect on a
+loaded **once per queue** (and once per standalone `AddRabbitMqHealthCheck(connectionString, tls)` registration), then
+reused for every reconnection. Replacing the file or the store entry has no effect on a
 running process. Expiry check: `openssl pkcs12 -in client.pfx -nokeys | openssl x509 -noout -enddate` (PFX) or
 `openssl x509 -in client.pem -noout -enddate` (PEM).
 

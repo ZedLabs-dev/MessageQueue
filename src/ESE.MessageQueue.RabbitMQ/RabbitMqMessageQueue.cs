@@ -57,7 +57,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
     readonly ConcurrentDictionary<long, RetryQueue> retryQueues = new();
     readonly BackgroundWork draining = new();
     Connection? connection;
-    X509Certificate2? clientCertificate;
+    readonly RabbitMqTlsCertificates certificates = new();
     Subscription? subscription;
     int connectFailures;
     long nextConnectAttempt;
@@ -171,12 +171,13 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         }
     }
 
-    // Called under connectLock. The client certificate (mutual TLS, ADR 0022) is loaded on the first connect and
-    // reused by every reconnect; the queue owns it and disposes it in DisposeAsync.
-    internal ConnectionFactory CreateConnectionFactory() =>
-        RabbitMqConnections.CreateFactory(config, () => clientCertificate ??= RabbitMqClientCertificates.Load(config.Tls));
+    // Called under connectLock. The client certificate and CA certificates (mutual TLS, ADR 0022) are loaded on the
+    // first connect and reused by every reconnect; the queue owns them and disposes them in DisposeAsync.
+    internal ConnectionFactory CreateConnectionFactory() => RabbitMqConnections.CreateFactory(config, certificates);
 
-    internal X509Certificate2? ClientCertificate => clientCertificate;
+    internal X509Certificate2? ClientCertificate => certificates.LoadedClientCertificate;
+
+    internal X509Certificate2Collection? TrustAnchors => certificates.LoadedTrustAnchors;
 
     async Task<Connection> OpenAsync(CancellationToken cancellationToken)
     {
@@ -1014,7 +1015,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
                     RabbitMqLog.CloseAbandoned(logger, queueName);
                 }
             }
-            clientCertificate?.Dispose();
+            certificates.Dispose();
         }
         finally
         {

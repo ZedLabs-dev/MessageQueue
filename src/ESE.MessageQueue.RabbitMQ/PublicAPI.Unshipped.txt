@@ -1,4 +1,7 @@
 #nullable enable
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.CaCertificatePath.get -> string!
+ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.CaCertificatePath.set -> void
+static ESE.MessageQueue.HealthChecks.RabbitMqHealthCheckExtensions.AddRabbitMqHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! connectionString, ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig! tls, string! name = "rabbitmq", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null, bool? requireTls = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
 ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateKeyPath.get -> string!
 ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateKeyPath.set -> void
 ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificatePassword.get -> string!

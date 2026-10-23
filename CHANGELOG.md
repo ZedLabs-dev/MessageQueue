@@ -14,6 +14,34 @@ resolved.
   EULA is the owner's to accept). They skip without `MQ_ASB_CONNECTION_STRING`; the provider is verified only through
   its unit specs over the SDK seams. Run `Category=Integration` with a namespace or the emulator, then remove this item.
 
+### Mutual TLS against a real broker (ADR 0022 amended)
+
+#### Added
+- `RabbitMqTlsConfig.CaCertificatePath` (`Tls:CaCertificatePath`): a trust anchor for a broker with a private CA. A PEM
+  file (one or more CA certificates) or a DER certificate; the broker's certificate must chain to those CAs, and only
+  to them, instead of the OS trust store, and be issued for server authentication. The server name is still checked,
+  revocation is not, and `AcceptablePolicyErrors` (with `AllowInsecureCertificates`) still decides what may be
+  overlooked. The file must contain the root (an intermediate alone is not an anchor); certificates the broker sends
+  are never anchors; issuers are never downloaded from a certificate's AIA location; basic constraints, path lengths
+  and name constraints are enforced; a leaf whose only usage is `anyExtendedKeyUsage` is refused, one with no extended
+  key usage is accepted. Needs TLS; loaded and checked at startup (`Tls:CaCertificatePath '...' does not exist or cannot be
+  read`, `... holds no certificate`, `Tls:CaCertificatePath needs TLS: ...`); loaded once per queue and disposed with it.
+- `AddRabbitMqHealthCheck(connectionString, RabbitMqTlsConfig tls, name, failureStatus, tags, timeout, requireTls)`:
+  the standalone connection-string check with the queue's TLS settings and rules (client certificate, CA, server name,
+  acceptable errors). The settings are copied at registration; the certificates are loaded once and disposed with the
+  container. Invalid settings report Unhealthy and log event 6001.
+- Integration specs against RabbitMQ with `ssl_options.verify = verify_peer` and `fail_if_no_peer_cert = true`
+  (`Support/RabbitMqMutualTlsBrokerFixture`, its own collection; CA, server and client certificates generated per run,
+  never committed): round trip with PFX and PEM client certificates, a client without a certificate refused with a
+  `MessageQueueException` that carries no password, an untrusted CA, another CA and a wrong server name refused unless
+  `AllowInsecureCertificates` and `AcceptablePolicyErrors` accept them, and the standalone health check. Mutants:
+  `scripts/mutants/mutual-tls.json` and the adversarial review's `review-mutual-tls.json`.
+
+#### Changed
+- `AddRabbitMqHealthCheck(connectionString, ...)` (without `RabbitMqTlsConfig`) registers one check instance per
+  registration, resolved as a keyed singleton named after the check, like the standalone Service Bus checks; its
+  probes are unchanged.
+
 ### Code gaps found while documenting (PRODUCTION-READINESS-PLAN §4, §5, §10; ADRs 0024-0027)
 
 #### Breaking

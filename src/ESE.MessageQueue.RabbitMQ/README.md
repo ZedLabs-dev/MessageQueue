@@ -5,8 +5,10 @@ RabbitMQ provider for [ESE.MessageQueue](https://www.nuget.org/packages/ESE.Mess
 - Publisher confirms (batches confirmed together), quorum or classic queues, prefetch always applied.
 - Real backoff on the broker: retries wait in per-delay retry queues, then return; a dead-letter queue after the last
   retry.
-- TLS required by default for non-loopback hosts (`RequireTls`, `Tls:*`); credentials never appear in exceptions.
-- `AddRabbitMqHealthCheck<T>()` reuses the queue's connection.
+- TLS required by default for non-loopback hosts (`RequireTls`, `Tls:*`); mutual TLS with a client certificate and a
+  private CA as trust anchor (`Tls:CaCertificatePath`); credentials never appear in exceptions.
+- `AddRabbitMqHealthCheck<T>()` reuses the queue's connection; `AddRabbitMqHealthCheck(connectionString, tls)` probes
+  standalone with the same TLS settings.
 
 ```csharp
 services.AddRabbitMqProvider();

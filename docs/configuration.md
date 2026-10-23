@@ -198,6 +198,7 @@ Keys are `Tls:<Setting>` ([ADR 0008](adr/0008-rabbitmq-tls-and-consumer-shutdown
 | `Tls:ServerName` | string | (empty) | | no | Name the server certificate must match; empty: the host |
 | `Tls:AcceptablePolicyErrors` | `SslPolicyErrors` flags | `None` | `None`, `RemoteCertificateNotAvailable`, `RemoteCertificateNameMismatch`, `RemoteCertificateChainErrors` | no | Server-certificate errors to accept; anything but `None` also needs `Tls:AllowInsecureCertificates` |
 | `Tls:AllowInsecureCertificates` | bool | `false` | | no | Confirms `AcceptablePolicyErrors`; development only |
+| `Tls:CaCertificatePath` | string | (empty) | a readable PEM file (one or more CA certificates) or a DER certificate | no | Trust anchor for a private CA: the broker's certificate must chain to these CAs, and only to them, instead of the OS trust store. The file must hold the **root**: an intermediate alone is not an anchor and every connection is refused. Intermediates the broker sends are used to build the chain but never trusted as anchors, and nothing is downloaded (AIA). CA basic constraints, path lengths and name constraints are enforced. A broker certificate whose only extended key usage is `anyExtendedKeyUsage` is refused; one with no extended key usage is accepted. The server name is still checked, revocation is not; `AcceptablePolicyErrors` still applies. Loaded at startup; needs TLS |
 | `Tls:ClientCertificatePath` | string | (empty) | a readable PKCS#12 (`.pfx`/`.p12`) or PEM file | no | Mutual TLS. Loaded at startup: it must exist and hold a private key |
 | `Tls:ClientCertificateKeyPath` | string | (empty) | a PEM key file | no | When the PEM private key is not in the certificate file |
 | `Tls:ClientCertificatePassword` | string | (empty) | | no | PFX password or encrypted PEM key password; redacted, never logged |
@@ -267,7 +268,7 @@ on topic subscriptions (warning 3012 when the policy allows more than the defaul
 |---|---|---|
 | Provider | `InMemory`, or a local broker (`docker/docker-compose.dev.yml`) | `RabbitMq` or `AzureServiceBus`; the setting is required, there is no fallback |
 | RabbitMQ transport | `amqp://localhost` is allowed (TLS is only required off-loopback) | `amqps://` (or `Tls:Enabled`); never `RequireTls = false` across an untrusted network |
-| Certificate errors | `Tls:AcceptablePolicyErrors` plus `Tls:AllowInsecureCertificates = true` for a self-signed broker | `None`; trust the broker's CA in the OS store instead |
+| Certificate errors | `Tls:CaCertificatePath` for a broker with a self-signed or private CA (or `Tls:AcceptablePolicyErrors` plus `Tls:AllowInsecureCertificates = true`) | `None`; trust the broker's CA in the OS store or with `Tls:CaCertificatePath` instead |
 | Service Bus identity | `ConnectionString` (the emulator needs one) | `FullyQualifiedNamespace` with a managed identity holding only **Azure Service Bus Data Sender** and **Data Receiver** |
 | Secrets | user secrets or a git-ignored `.env` | environment variables or a secret store; never in a committed `appsettings*.json`. Config `ToString()` redacts `ConnectionString`, `Password` and `Tls:ClientCertificatePassword` |
 | Backoff guarantee | warning 1101 is enough | `RequireDelayedRedelivery = true` so a configuration that cannot delay retries (a Service Bus subscription) fails at startup instead of retrying hot |
@@ -282,7 +283,7 @@ default provider, endpoint or credential. Where each problem surfaces:
 | `Provider` missing or not registered; a second queue for the same type | `AddMessageQueue<T>` (registration) | `ConfigurationException` |
 | A value out of range, a broken rule, an enum given as a number | host start | `OptionsValidationException` (all failures in one message) |
 | An unknown key, a value that cannot be converted | host start | `InvalidOperationException` (from the configuration binder) |
-| Client certificate missing, unreadable or without a private key | host start | `OptionsValidationException` |
+| Client certificate missing, unreadable or without a private key; CA file (`Tls:CaCertificatePath`) missing or without a certificate | host start | `OptionsValidationException` |
 | Broker unreachable, credentials refused, a queue argument mismatch | first use: RabbitMQ connects on the first publish or subscribe (or `InitializeAsync`); Service Bus on the first send or when the processor starts | `MessageQueueException` (RabbitMQ; the hosted service's subscribe fails the host start); Service Bus processor errors are logged (event 3009) and retried by the SDK |
 
 ## Startup errors
@@ -325,6 +326,8 @@ what to search for.
 | RabbitMq | `Tls:ClientCertificatePassword=secret` | `Tls:ClientCertificatePassword applies only with Tls:ClientCertificatePath` |
 | RabbitMq | `Tls:ClientCertificateKeyPath=/nonexistent/client.key` | `Tls:ClientCertificateKeyPath applies only with a PEM Tls:ClientCertificatePath` |
 | RabbitMq | `Tls:ClientCertificatePath=/nonexistent/client.pfx` `Tls:ClientCertificateThumbprint=0123456789abcdef0123456789abcdef01234567` | `Set either Tls:ClientCertificatePath or Tls:ClientCertificateThumbprint, not both` |
+| RabbitMq | `Tls:CaCertificatePath=/nonexistent/ca.crt` | `Tls:CaCertificatePath '/nonexistent/ca.crt' does not exist or cannot be read` |
+| RabbitMq | `ConnectionString=amqp://localhost` `Tls:CaCertificatePath=/nonexistent/ca.crt` | `Tls:CaCertificatePath needs TLS: use an amqps:// ConnectionString (or Tls:Enabled with HostName)` |
 | RabbitMq | `ConnectionString=amqp://localhost` `Tls:ClientCertificateThumbprint=0123456789abcdef0123456789abcdef01234567` | `A client certificate (Tls:ClientCertificatePath or Tls:ClientCertificateThumbprint) needs TLS: use an amqps:// ConnectionString (or Tls:Enabled with HostName)` |
 | RabbitMq | `Tls:ClientCertificateStoreName=5` | `Tls:ClientCertificateStoreName '5' is not supported. Supported values: AddressBook, AuthRoot, CertificateAuthority, Disallowed, My, Root, TrustedPeople, TrustedPublisher` |
 | RabbitMq | `PrefetchCount=0` | `The field PrefetchCount must be between 1 and 65535.` |
