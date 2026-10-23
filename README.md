@@ -43,12 +43,22 @@ builder.Services.AddMessageQueueTelemetry("MyApp.Messaging");             // opt
 ```
 
 Publish with `IMessagePublisher<OrderCreated>.PublishAsync(order)`; the processor returns `Acknowledge`, `Retry` or
-`DeadLetter`. A runnable worker is in [samples/ESE.MessageQueue.Samples](samples/ESE.MessageQueue.Samples).
+`DeadLetter`. A runnable worker is in [samples/ESE.MessageQueue.Samples](samples/ESE.MessageQueue.Samples); the
+[getting-started guides](docs/getting-started/in-memory.md) walk through it per provider.
 
 ## Documentation
 
-- [API and settings](docs/message-queue-api.md), [Azure Service Bus](docs/azure-service-bus-api.md),
+Everything is indexed in [docs/](docs/README.md).
+
+- Getting started: [in-memory](docs/getting-started/in-memory.md), [RabbitMQ](docs/getting-started/rabbitmq.md),
+  [Azure Service Bus](docs/getting-started/azure-service-bus.md)
+- [Configuration reference](docs/configuration.md): every setting, default and startup error
+- Operations: [failure modes](docs/operations/failure-modes.md), [monitoring](docs/operations/monitoring.md),
+  [alerts](docs/operations/alerts.md), [runbooks](docs/operations/runbooks.md),
+  [dead-letter operations](docs/dead-letter-operations.md)
+- [API](docs/message-queue-api.md), [Azure Service Bus](docs/azure-service-bus-api.md),
   [internals](docs/message-queue-internal.md), [benchmarks](docs/benchmarks.md)
+- [Release checklist](docs/release-checklist.md), [production readiness status](docs/production-readiness-status.md)
 - [Architecture decision records](docs/adr/), including the [provider SPI](docs/adr/0015-provider-spi-and-package-split.md)
   for writing a provider for another broker
 - [CHANGELOG](CHANGELOG.md), [roadmap](OPTIMIZATION-PLAN.md), contributor rules in [CLAUDE.md](CLAUDE.md)

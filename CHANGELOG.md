@@ -14,6 +14,35 @@ resolved.
   EULA is the owner's to accept). They skip without `MQ_ASB_CONNECTION_STRING`; the provider is verified only through
   its unit specs over the SDK seams. Run `Category=Integration` with a namespace or the emulator, then remove this item.
 
+### Documentation (PRODUCTION-READINESS-PLAN §2, §7, §8, §9, §10)
+
+#### Added
+- Getting-started guides per provider (`docs/getting-started/`: in-memory, RabbitMQ, Azure Service Bus with Entra ID):
+  install, registration, `appsettings.json` and environment variables, publish, `IMessageProcessor<T>` with the hosted
+  service, health checks, telemetry, dead-letter peek and replay. RabbitMQ least-privilege vhost permissions verified
+  against RabbitMQ 4.3.6 (write on `amq.default` is required).
+- `docs/configuration.md`: every setting of every config class with type, default, range and notes; production vs
+  development behavior; when each kind of error surfaces; 58 startup errors quoted as the library produces them.
+- `docs/operations/`: `failure-modes.md` (guarantees, duplicates and idempotency, poison and oversized messages,
+  outages, lock loss, shutdown), `monitoring.md` (every metric, span attribute and log event with its level, health
+  checks), `alerts.md` (Prometheus rules and an Azure Monitor rule, with the OTel-to-Prometheus naming assumption),
+  `runbooks.md` (connection failures, retries, dead-letter backlog, certificates, credential rotation, stuck
+  consumers, configuration rollouts and `PRECONDITION_FAILED`, retry-queue cleanup, per-provider troubleshooting).
+- `docs/release-checklist.md` (the regression suite and release record) and `docs/production-readiness-status.md`
+  (every readiness item with status and evidence); `docs/README.md` index.
+- Specs that keep the docs honest (`Packaging/`): `Given_the_documentation_snippets` (guide code is compiled from
+  `samples/ESE.MessageQueue.Samples/Docs/` and must match verbatim; the in-memory guide is executed; every JSON and
+  environment-variable example binds strictly and validates), `Given_the_configuration_reference` (every setting and
+  default; every quoted startup error is reproduced), `Given_the_monitoring_reference` (every log event id and level,
+  metric and unit, attribute name).
+
+#### Changed
+- `docs/benchmarks.md`: release-grade numbers from BenchmarkDotNet's default job (the ShortRun table is kept for
+  comparison). No regression; the in-memory path measures 1.3-2.0 µs per message instead of 3.0 µs.
+- `docs/azure-service-bus-api.md`: the package is `ESE.MessageQueue.AzureServiceBus`, and health results carry no
+  exception (it is logged as event 6001); `docs/message-queue-api.md` lists the transport-error and dead-letter
+  operation metrics.
+
 ### Dead-letter operations (PRODUCTION-READINESS-PLAN "drain and replay dead-letter queues", ADR 0023)
 
 #### Added

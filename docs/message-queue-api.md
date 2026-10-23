@@ -251,6 +251,9 @@ class implements `IDeadLetterQueue<T>` (above).
 
 ## Configuration Options
 
+The complete, spec-checked reference (every setting, default, range and startup error) is
+[configuration.md](configuration.md); the tables below are a summary.
+
 ### Base settings (every provider)
 
 | Property | Type | Default | Description |
@@ -441,6 +444,11 @@ take one as a constructor argument. `samples/ESE.MessageQueue.Samples` shows the
 | `messaging.process.duration` | histogram `s` | receipt to settlement, per delivery |
 | `ese.messagequeue.messages.retried` | counter `{message}` | deliveries rescheduled for a retry |
 | `ese.messagequeue.messages.dead_lettered` | counter `{message}` | dead-lettered deliveries, tagged `ese.messagequeue.dead_letter.reason` |
+| `ese.messagequeue.transport.errors` | counter `{error}` | Azure Service Bus processor errors outside a delivery (`error.type` = failure reason or exception type) |
+| `ese.messagequeue.dead_letters.replayed` | counter `{message}` | dead letters moved back to their queue |
+| `ese.messagequeue.dead_letters.purged` | counter `{message}` | dead letters deleted |
+
+Spans, attributes, every log event and the health checks: [monitoring.md](operations/monitoring.md).
 
 Telemetry never changes what happens to a message: a throwing provider is logged (event 1005 or 1009) and the
 publish or delivery proceeds. Nothing is parsed, formatted or tagged while nobody listens to the source or meter.

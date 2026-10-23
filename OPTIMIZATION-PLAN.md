@@ -320,6 +320,13 @@ Linux-only store specs, which pass in a Linux SDK container); line coverage 89.9
 shared `DeadLetterQueue<T>` over the `IDeadLetterStore` SPI, `Capabilities.DeadLetterOperations`, metrics and logs;
 operator how-to `docs/dead-letter-operations.md` (PRODUCTION-READINESS-PLAN "drain and replay dead-letter queues").
 
+**Documentation (2026-10-22, PRODUCTION-READINESS-PLAN §2, §7-§10):** getting-started guides per provider,
+`docs/configuration.md`, `docs/operations/` (failure modes, monitoring, alerts, runbooks), `docs/release-checklist.md`
+and `docs/production-readiness-status.md` (42 readiness items: 36 done, 4 partial, 2 blocked on the owner). Guide code is compiled
+from `samples/ESE.MessageQueue.Samples/Docs/`; three `Packaging/` specs hold the guides, the settings reference and the
+monitoring reference to the code. Release-grade benchmarks (default job) replace the ShortRun numbers in
+`docs/benchmarks.md`.
+
 **Deferred (decided, not forgotten):**
 - RabbitMQ.Client 6.x vs 7.x benchmark (Phase 5 exit criterion): the 6.x provider no longer exists (ADR 0014,
   `docs/benchmarks.md`).
@@ -327,7 +334,8 @@ operator how-to `docs/dead-letter-operations.md` (PRODUCTION-READINESS-PLAN "dra
 - RabbitMQ attempt-header forgery (ADR 0006 note): a publisher can forge `x-death` and the attempt header for its own
   messages; RabbitMQ 4.3.6 delivers a client-supplied `x-death` unchanged, so only a signed header would close it.
   Accepted risk: the forger can only shorten its own messages' retries.
-- Release-grade benchmark runs (`docs/benchmarks.md` numbers come from `--job short`).
+- Benchmarks not yet run: Azure Service Bus (no namespace), RabbitMQ consumption, a broker over a real network
+  (release-grade default-job numbers for the rest are in `docs/benchmarks.md`).
 - Minor follow-up: the format hook needs `python3` and does nothing without it (the Stop hook still gates). Watch the
   first GitHub run against the 30-minute `ci.yml` timeout.
 - The core package is not annotated as trimmable/AOT-compatible: source-generated JSON removes reflection from the

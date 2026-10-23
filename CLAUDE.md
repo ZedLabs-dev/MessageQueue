@@ -40,7 +40,7 @@ The compose file is for manual experiments only; the tests do not use it (see Te
 | `samples/` | `ESE.MessageQueue.Samples` (worker; the only OpenTelemetry exporter reference, ADR 0014) and `ESE.MessageQueue.Samples.LoopbackProvider` (a provider built on the public SPI only, no InternalsVisibleTo) |
 | `benchmarks/` | BenchmarkDotNet; never run by `dotnet test`, CI only builds it |
 | `docker/` | Dev compose file, `.env.example`, ASB emulator config |
-| `docs/` | `adr/` (decisions: read before changing retry, config, dispatcher, packaging), API docs, `benchmarks.md` |
+| `docs/` | `README.md` (index), `getting-started/` (one guide per provider), `configuration.md` (settings reference), `operations/` (failure modes, monitoring, alerts, runbooks), `release-checklist.md`, `production-readiness-status.md` (tracking view of PRODUCTION-READINESS-PLAN), `adr/` (decisions: read before changing retry, config, dispatcher, packaging), API docs, `benchmarks.md` |
 
 - Providers are selected by the `Provider` setting among registered providers (`InMemory` built in; brokers via
   `Add…Provider()` **before** `AddMessageQueue<T>`). Core binds, validates and registers for every provider (ADR 0015).
@@ -126,6 +126,10 @@ The compose file is for manual experiments only; the tests do not use it (see Te
   run must be a real skip that shows up as skipped (`Assert.Skip`/`SkipWhen`/`SkipUnless`), never a vacuous pass.
 - **Never** add or bump a package outside Central Package Management: versions live only in
   `Directory.Packages.props`; `PackageReference` has no `Version`. Commit the updated `packages.lock.json`.
+- Docs are specs too: changing a setting, default, startup message, `[LoggerMessage]` or metric fails
+  `Packaging/Given_the_configuration_reference` / `Given_the_monitoring_reference` until `docs/configuration.md` or
+  `docs/operations/monitoring.md` follows. Guide code lives in `samples/ESE.MessageQueue.Samples/Docs/`
+  (`#region snippet:<name>`), copied verbatim into `docs/getting-started/` (`Given_the_documentation_snippets`).
 - **Never** suppress NU19xx (NuGet audit) warnings. Fix the vulnerable dependency instead.
 - **Never** blanket-disable analyzers. Deferring a rule needs an `.editorconfig` entry with a comment naming the phase.
 - Public API changes must update `src/<package>/PublicAPI.Unshipped.txt` (RS0016/RS0017 fail the build otherwise)

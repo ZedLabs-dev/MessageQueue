@@ -4,10 +4,14 @@
 subscription. It runs every delivery through the shared consumer pipeline (`MessageDispatcher<T>`, ADR 0004), so
 retry counting, backoff decisions and dead-lettering behave as on every other provider.
 
-**Namespace:** `ESE.MessageQueue.AzureServiceBus` (package `ESE.MessageQueue`, .NET 10)
+**Namespace:** `ESE.MessageQueue.AzureServiceBus` (package `ESE.MessageQueue.AzureServiceBus`, .NET 10)
 **SDK:** Azure.Messaging.ServiceBus 7.21, Azure.Identity 1.21
 **Design records:** ADR 0009 (backoff and attempts), 0010 (lifecycle and settlement), 0011 (identity, health,
 secrets), 0012 (one sender, batching)
+
+Step-by-step setup: [getting started with Azure Service Bus](getting-started/azure-service-bus.md). Settings:
+[configuration reference](configuration.md#azure-service-bus-azureservicebusconfig). Operations:
+[runbooks](operations/runbooks.md#azure-service-bus).
 
 ## Usage
 
@@ -205,8 +209,8 @@ Base settings (`QueueName`, `Retry`, `SerializationFormat`, `EnableDeadLetterQue
 | `AddAzureServiceBusHealthCheck(connectionString, queueName, subscriptionName: null)` or `(fullyQualifiedNamespace, credential, queueName, ...)` | Listen | Peeks through one client and receiver kept for every probe |
 | `AddAzureServiceBusMetricsHealthCheck(connectionString, queueName)` or `(fullyQualifiedNamespace, credential, queueName)` | **Manage** | Opt-in: adds active, dead-letter and scheduled counts to the result data |
 
-Results have fixed descriptions and carry no exception text, host or namespace; the exception is attached for the
-host's logging.
+Results have fixed descriptions and carry no exception, exception text, host or namespace; a failed probe's exception
+goes to the application's log instead (event 6001, category `ESE.MessageQueue.HealthChecks`).
 
 ## Troubleshooting
 
