@@ -1,8 +1,10 @@
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Processing;
+using ESE.MessageQueue.Providers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace ESE.MessageQueue.Hosting;
 
@@ -50,6 +52,7 @@ public sealed class MessageQueueHostedService<T> : BackgroundService where T : c
         }
 
         HostedServiceLog.Starting(logger, MessageType);
+        WarnIfTheHostStopsWaitingFirst();
         await subscriber.SubscribeAsync(ProcessAsync, cancellationToken);
         subscribed = true;
         await base.StartAsync(cancellationToken);
@@ -85,6 +88,42 @@ public sealed class MessageQueueHostedService<T> : BackgroundService where T : c
                 subscribed = false;
                 await subscriber.UnsubscribeAsync(cancellationToken);
             }
+        }
+    }
+
+    // On shutdown the host waits at most HostOptions.ShutdownTimeout for StopAsync; a queue whose drain may take as
+    // long is cut short, and its handlers' late results are lost (ADR 0025).
+    // A host timeout of zero or less (Timeout.InfiniteTimeSpan) waits as long as it takes.
+    void WarnIfTheHostStopsWaitingFirst()
+    {
+        if (subscriber is not IShutdownBudget budget)
+            return;
+        using var scope = scopeFactory.CreateScope();
+        if (HostShutdownTimeout(scope.ServiceProvider) is { } host && host > TimeSpan.Zero && budget.ShutdownTimeout >= host)
+            HostedServiceLog.ShutdownTimeoutNotBelowHost(logger, MessageType, budget.ShutdownTimeout, host, Setting(scope.ServiceProvider));
+    }
+
+    // The queue's own configuration key when it was bound from a section (AddMessageQueue<T>), else a description.
+    static string Setting(IServiceProvider services) =>
+        services.GetService<QueueSection<T>>() is { } section ? $"{section.Path}:ShutdownTimeout" : "the queue's ShutdownTimeout";
+
+    // HostOptions belongs to Microsoft.Extensions.Hosting, which this package does not reference (the abstractions are
+    // enough everywhere else); the host registers it, so it is read by name. Null without a host or if it cannot be read.
+    TimeSpan? HostShutdownTimeout(IServiceProvider services)
+    {
+        try
+        {
+            if (Type.GetType("Microsoft.Extensions.Hosting.HostOptions, Microsoft.Extensions.Hosting", throwOnError: false) is not { } hostOptions)
+                return null;
+            var options = services.GetService(typeof(IOptions<>).MakeGenericType(hostOptions));
+            var value = options?.GetType().GetProperty(nameof(IOptions<object>.Value))?.GetValue(options);
+            return value?.GetType().GetProperty("ShutdownTimeout")?.GetValue(value) as TimeSpan?;
+        }
+        catch (Exception ex)
+        {
+            // Advice only: never fail a start over it.
+            HostedServiceLog.HostOptionsUnreadable(logger, MessageType, ex);
+            return null;
         }
     }
 
@@ -136,4 +175,13 @@ static partial class HostedServiceLog
     [LoggerMessage(EventId = 5004, Level = LogLevel.Warning,
         Message = "Disposing the DI scope for {MessageType} message {MessageId} failed; the processor's result is kept")]
     public static partial void ScopeDisposalFailed(ILogger logger, string messageType, string messageId, Exception exception);
+
+    [LoggerMessage(EventId = 5005, Level = LogLevel.Warning,
+        Message = "The {MessageType} queue may wait up to its ShutdownTimeout ({ShutdownTimeout}) for running handlers, not less than the host's HostOptions.ShutdownTimeout ({HostShutdownTimeout}): the host can stop waiting first and lose their results. Lower {ShutdownTimeoutSetting} or raise HostOptions.ShutdownTimeout")]
+    public static partial void ShutdownTimeoutNotBelowHost(ILogger logger, string messageType, TimeSpan shutdownTimeout, TimeSpan hostShutdownTimeout,
+        string shutdownTimeoutSetting);
+
+    [LoggerMessage(EventId = 5006, Level = LogLevel.Debug,
+        Message = "Could not read HostOptions.ShutdownTimeout for the {MessageType} queue; the shutdown budget is not checked")]
+    public static partial void HostOptionsUnreadable(ILogger logger, string messageType, Exception exception);
 }

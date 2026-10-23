@@ -44,6 +44,8 @@ public class Given_every_startup_rule
     [InlineData("Port", "65536")]
     [InlineData("Port", "-1")]
     [InlineData("ExchangeType", "")]
+    [InlineData("ExchangeType", "Direct")]
+    [InlineData("ExchangeType", "x-")]
     [InlineData("PublisherChannelPoolSize", "65")]
     [InlineData("MaxConcurrentCalls", "1001")]
     [InlineData("Retry:BackoffMultiplier", "100.5")]

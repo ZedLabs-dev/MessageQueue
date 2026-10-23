@@ -7,7 +7,9 @@ using ESE.MessageQueue.Exceptions;
 using ESE.MessageQueue.Extensions;
 using ESE.MessageQueue.InMemory;
 using ESE.MessageQueue.Processing;
+using ESE.MessageQueue.Providers;
 using ESE.MessageQueue.Retry;
+using ESE.MessageQueue.Serialization;
 using ESE.MessageQueue.Tests.Serialization;
 using ESE.MessageQueue.Tests.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
@@ -249,20 +251,57 @@ public sealed class Given_an_in_memory_queue : IAsyncDisposable
         deadLetter.Context.MessageId.Should().Be("m-1", "it should keep the delivery metadata");
     }
 
+    static int SizeOf(Order order) => MessageSerializer.Serialize(order, SerializationFormat.Json).Length;
+
     [Fact(Timeout = 10_000)]
     public async Task When_A_Message_Exceeds_The_Size_Limit()
     {
-        var queue = Create(new InMemoryConfig { QueueName = "orders", MaxMessageSizeBytes = 16 });
+        var order = new Order("1", new string('x', 100) + "SECRET-CONTENT");
+        var limit = SizeOf(order) - 1;
+        var queue = Create(new InMemoryConfig { QueueName = "orders", MaxMessageSizeBytes = limit });
         var handled = false;
         await queue.SubscribeAsync(_ => Task.FromResult(handled = true), TestContext.Current.CancellationToken);
 
-        await queue.PublishAsync(new Order("1", new string('x', 100)), TestContext.Current.CancellationToken);
+        var act = () => queue.PublishAsync(order, TestContext.Current.CancellationToken);
+
+        var thrown = await act.Should().ThrowAsync<MessageQueueException>("it should refuse a message above MaxMessageSizeBytes before it is sent");
+        thrown.WithMessage($"*{limit + 1} bytes*MaxMessageSizeBytes ({limit}) for 'orders'; it was not published",
+            "it should name the size, the limit, the destination and the outcome");
+        thrown.Which.Message.Should().NotContain("SECRET-CONTENT", "it should not copy message content into the error");
+        await queue.WaitForIdleAsync(TestContext.Current.CancellationToken);
+        handled.Should().BeFalse("it should never deliver a refused message");
+        queue.PublishedMessages.Should().BeEmpty("it should not enqueue a refused message");
+        queue.DeadLetters.Should().BeEmpty("it should refuse the message instead of dead-lettering it");
+    }
+
+    [Fact(Timeout = 10_000)]
+    public async Task When_A_Message_Is_Exactly_At_The_Size_Limit()
+    {
+        var order = new Order("1", new string('x', 100));
+        var queue = Create(new InMemoryConfig { QueueName = "orders", MaxMessageSizeBytes = SizeOf(order) });
+        var handled = 0;
+        await queue.SubscribeAsync(_ => Task.FromResult(Interlocked.Increment(ref handled) > 0), TestContext.Current.CancellationToken);
+
+        await queue.PublishAsync(order, TestContext.Current.CancellationToken);
         await queue.WaitForIdleAsync(TestContext.Current.CancellationToken);
 
-        handled.Should().BeFalse("it should not hand an oversized message to the handler");
-        var deadLetter = queue.DeadLetters.Should().ContainSingle("it should dead-letter the oversized message").Subject;
-        deadLetter.Reason.Should().Be(DeadLetterReasons.MessageTooLarge, "it should record why");
-        deadLetter.Message.Should().BeNull("it should not deserialize an oversized body");
+        handled.Should().Be(1, "it should publish and deliver a message exactly at the limit");
+    }
+
+    [Fact(Timeout = 10_000)]
+    public async Task When_A_Batch_Holds_A_Message_Above_The_Size_Limit()
+    {
+        var small = new Order("1", "x");
+        var large = new Order("2", new string('x', 200));
+        var queue = Create(new InMemoryConfig { QueueName = "orders", MaxMessageSizeBytes = SizeOf(large) - 1 });
+
+        var act = () => queue.PublishAsync([small, small, large, small], TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<MessageQueueException>("it should refuse a batch holding an oversized message"))
+            .WithMessage("*index 2 of the batch*for 'orders'; no message of the batch was published",
+                "it should name the oversized message's position and that nothing of the batch was sent");
+        queue.PublishedMessages.Should().BeEmpty("it should check every message before publishing any of the batch");
+        queue.PendingCount.Should().Be(0, "it should not enqueue part of a refused batch");
     }
 
     [Fact(Timeout = 10_000)]
@@ -497,5 +536,118 @@ public sealed class Given_an_in_memory_queue : IAsyncDisposable
 
         queue.DeadLetters.Should().ContainSingle().Which.Message.Should().Be(new TestMessage("1", "x"),
             "it should deserialize the dead-lettered body with the queue's JSON metadata");
+    }
+    [Fact(Timeout = 10_000)]
+    public async Task When_Publishing_With_Debug_Logging()
+    {
+        var logger = new RecordingLogger();
+        var queue = new InMemoryMessageQueue<Order>(new InMemoryConfig { QueueName = "orders", MaxMessageSizeBytes = 200 }, logger: logger);
+        created.Add(queue);
+
+        await queue.PublishAsync(new Order("1", "SECRET-CONTENT"), new PublishOptions { MessageId = "order-7" }, TestContext.Current.CancellationToken);
+        await queue.PublishAsync([new Order("2", "a"), new Order("3", "b"), new Order("4", "c")], TestContext.Current.CancellationToken);
+        var refused = () => queue.PublishAsync(new Order("5", new string('x', 300)), TestContext.Current.CancellationToken);
+        await refused.Should().ThrowAsync<MessageQueueException>();
+
+        var published = logger.Entries.Where(e => e.Level == LogLevel.Debug && e.Message.StartsWith("Published", StringComparison.Ordinal))
+            .Select(e => e.Message).ToList();
+        published.Should().Equal(["Published message order-7 to orders", "Published a batch of 3 messages to orders"],
+            "it should log each successful publish at Debug level with its id or count and destination, and not a refused one");
+        logger.Entries.Should().NotContain(e => e.Message.Contains("SECRET-CONTENT"), "it should never log message content");
+    }
+    // Records retries slowly, so a spec can see whether the queue reports idle before the retry is recorded.
+    public sealed class SlowRetry : ESE.MessageQueue.Telemetry.ITelemetryProvider
+    {
+        volatile bool retryRecorded;
+
+        public bool RetryRecorded => retryRecorded;
+
+        public ESE.MessageQueue.Telemetry.TelemetryActivity? StartPublishActivity(ESE.MessageQueue.Telemetry.TelemetryTarget target, int messageCount, string? messageId) => null;
+        public ESE.MessageQueue.Telemetry.TelemetryActivity? StartConsumeActivity(ESE.MessageQueue.Telemetry.TelemetryTarget target, MessageContext context, ESE.MessageQueue.Telemetry.TraceContext? parent) => null;
+        public void RecordMessagePublished(ESE.MessageQueue.Telemetry.TelemetryTarget target, int messageCount, TimeSpan duration, string? errorType) { }
+        public void RecordMessageConsumed(ESE.MessageQueue.Telemetry.TelemetryTarget target, TimeSpan duration, string? errorType) { }
+        public void RecordMessageDeadLettered(ESE.MessageQueue.Telemetry.TelemetryTarget target, string reason) { }
+        public ESE.MessageQueue.Telemetry.TraceContext? ExtractTraceContext(IReadOnlyDictionary<string, string> headers) => null;
+        public void InjectTraceContext(IDictionary<string, string> headers) { }
+
+        public void RecordMessageRetried(ESE.MessageQueue.Telemetry.TelemetryTarget target, int nextAttempt)
+        {
+            Thread.Sleep(500);
+            retryRecorded = true;
+        }
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task When_A_Retry_Is_Recorded_After_The_Redelivery_Completes()
+    {
+        var telemetry = new SlowRetry();
+        await using var queue = new InMemoryMessageQueue<Order>(new InMemoryConfig
+        {
+            QueueName = "orders",
+            MaxConcurrentCalls = 4,
+            Retry = new RetryPolicy { MaxRetries = 2, InitialDelay = TimeSpan.FromMilliseconds(1), MaxDelay = TimeSpan.FromMilliseconds(1), UseJitter = false }
+        }, telemetry);
+        var attempts = 0;
+        await queue.SubscribeAsync(async (_, _, _) =>
+        {
+            await Task.Yield();
+            return Interlocked.Increment(ref attempts) == 1 ? MessageResult.Retry : MessageResult.Acknowledge;
+        }, TestContext.Current.CancellationToken);
+
+        await queue.PublishAsync(new Order("1", "a"), TestContext.Current.CancellationToken);
+        await queue.WaitForIdleAsync(TestContext.Current.CancellationToken);
+
+        telemetry.RetryRecorded.Should().BeTrue("it should not be idle while the first delivery is still recording its retry");
+    }
+
+    [Fact(Timeout = 10_000)]
+    public async Task When_The_Logger_Throws_After_A_Successful_Publish()
+    {
+        var telemetry = new TestTelemetryProvider();
+        await using var queue = new InMemoryMessageQueue<Order>(new InMemoryConfig { QueueName = "orders" }, telemetry, new ThrowingLogger());
+
+        var single = () => queue.PublishAsync(new Order("1", "a"), TestContext.Current.CancellationToken);
+        var batch = () => queue.PublishAsync([new Order("2", "b"), new Order("3", "c")], TestContext.Current.CancellationToken);
+
+        await single.Should().NotThrowAsync("it should never let a broken logger fail a publish that succeeded");
+        await batch.Should().NotThrowAsync("it should never let a broken logger fail a batch that succeeded");
+        queue.PublishedMessages.Should().HaveCount(3, "it should publish every message");
+        telemetry.Published.Select(p => p.ErrorType).Should().Equal([null, null], "it should record both publishes as successful");
+    }
+
+    [Fact(Timeout = 10_000)]
+    public async Task When_A_Message_Id_Carries_Line_Breaks()
+    {
+        var logger = new RecordingLogger();
+        await using var queue = new InMemoryMessageQueue<Order>(new InMemoryConfig { QueueName = "orders" }, logger: logger);
+
+        await queue.PublishAsync(new Order("1", "a"), new PublishOptions { MessageId = "a\r\n2026-10-23 INFO forged line" }, TestContext.Current.CancellationToken);
+
+        logger.Entries.Should().Contain(e => e.Message.Contains("a2026-10-23 INFO forged line"), "it should log the id without its control characters");
+        logger.Entries.Should().NotContain(e => e.Message.Contains('\r') || e.Message.Contains('\n'), "it should never write a forged log line");
+    }
+
+    [Fact(Timeout = 10_000)]
+    public async Task When_A_Publish_Is_Refused_For_Its_Size()
+    {
+        var telemetry = new TestTelemetryProvider();
+        await using var queue = new InMemoryMessageQueue<Order>(new InMemoryConfig { QueueName = "orders", MaxMessageSizeBytes = 16 }, telemetry);
+
+        var single = () => queue.PublishAsync(new Order("1", new string('x', 100)), TestContext.Current.CancellationToken);
+        var batch = () => queue.PublishAsync([new Order("1", new string('x', 100))], TestContext.Current.CancellationToken);
+        await single.Should().ThrowAsync<MessageQueueException>();
+        await batch.Should().ThrowAsync<MessageQueueException>();
+
+        telemetry.Published.Should().BeEmpty("it should record no publish metric for a message it refused before sending");
+        telemetry.Activities.Should().BeEmpty("it should start no publish span for a message it refused before sending");
+    }
+
+    [Fact]
+    public async Task When_Reading_Its_Shutdown_Budget()
+    {
+        await using var queue = new InMemoryMessageQueue<Order>(new InMemoryConfig { QueueName = "orders", ShutdownTimeout = TimeSpan.FromSeconds(7) });
+
+        ((ESE.MessageQueue.Hosting.IShutdownBudget)queue).ShutdownTimeout.Should().Be(TimeSpan.FromSeconds(7),
+            "it should tell the hosted service how long its drain may take");
     }
 }

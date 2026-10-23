@@ -28,7 +28,7 @@ D3 makes in-memory a first-class provider for local development and simple deplo
   `Clear`. The synchronous `ProcessAllAsync`/`ProcessOneAsync` drains are removed: they bypassed the pipeline and
   caused B12. `QueueName` is required from configuration (code-first registration uses the message type's name).
 - **Shutdown:** unsubscribe and dispose cancel handler tokens, requeue interrupted messages, and wait at most
-  `ShutdownTimeout` (30 s) for handlers that ignore their token.
+  `ShutdownTimeout` (30 s; 25 s since ADR 0025) for handlers that ignore their token.
 
 ## Guarantees and limits
 

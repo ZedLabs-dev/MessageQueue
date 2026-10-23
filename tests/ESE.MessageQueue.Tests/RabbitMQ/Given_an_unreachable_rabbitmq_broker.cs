@@ -63,6 +63,36 @@ public class Given_an_unreachable_rabbitmq_broker
         await act.Should().ThrowAsync<MessageQueueException>("it should surface the connection failure on a batch publish too");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task When_Publishing_A_Message_Above_MaxMessageSizeBytes(bool asBatch)
+    {
+        await using var queue = new RabbitMqMessageQueue<TestMessage>(Config() with { MaxMessageSizeBytes = 64 });
+        var message = new TestMessage("1", "SENSITIVE-" + new string('x', 100));
+
+        var act = () => asBatch
+            ? queue.PublishAsync([message], TestContext.Current.CancellationToken)
+            : queue.PublishAsync(message, TestContext.Current.CancellationToken);
+
+        var error = (await act.Should().ThrowAsync<MessageQueueException>("it should refuse an oversized message")).Which;
+        error.Message.Should().Contain("MaxMessageSizeBytes (64)", "it should check the size before it dials the broker")
+            .And.NotContain("SENSITIVE", "it should not echo the content");
+    }
+
+    [Fact]
+    public async Task When_A_Publish_Fails_It_Is_Not_Logged_As_Published()
+    {
+        var logger = new RecordingLogger();
+        await using var queue = new RabbitMqMessageQueue<TestMessage>(Config(), logger: logger);
+
+        var act = () => queue.PublishAsync(new TestMessage("1", "c"), TestContext.Current.CancellationToken);
+        await act.Should().ThrowAsync<MessageQueueException>();
+
+        logger.Entries.Should().NotContain(e => e.Message.StartsWith("Published", StringComparison.Ordinal),
+            "it should log only publishes that reached the broker");
+    }
+
     [Fact]
     public async Task When_Subscribing_First()
     {
@@ -144,5 +174,28 @@ public class Given_an_unreachable_rabbitmq_broker
             .WithMessage("*retry*");
         logger.Entries.Count(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Error).Should().Be(1,
             "it should back off instead of dialling the broker again immediately");
+    }
+    [Fact]
+    public async Task When_A_Publish_Is_Refused_For_Its_Size()
+    {
+        var telemetry = new ESE.MessageQueue.Tests.Telemetry.TestTelemetryProvider();
+        await using var queue = new RabbitMqMessageQueue<TestMessage>(Config() with { MaxMessageSizeBytes = 16 }, telemetry);
+
+        var single = () => queue.PublishAsync(new TestMessage("1", new string('x', 100)), TestContext.Current.CancellationToken);
+        var batch = () => queue.PublishAsync([new TestMessage("1", new string('x', 100))], TestContext.Current.CancellationToken);
+        (await single.Should().ThrowAsync<MessageQueueException>()).WithMessage("*for 'test-queue-*'; it was not published");
+        (await batch.Should().ThrowAsync<MessageQueueException>()).WithMessage("*index 0 of the batch*; no message of the batch was published");
+
+        telemetry.Published.Should().BeEmpty("it should record no publish metric for a message it refused before sending");
+        telemetry.Activities.Should().BeEmpty("it should start no publish span for a message it refused before sending");
+    }
+
+    [Fact]
+    public async Task When_Reading_Its_Shutdown_Budget()
+    {
+        await using var queue = new RabbitMqMessageQueue<TestMessage>(Config() with { ShutdownTimeout = TimeSpan.FromSeconds(7) });
+
+        ((ESE.MessageQueue.Hosting.IShutdownBudget)queue).ShutdownTimeout.Should().Be(TimeSpan.FromSeconds(7),
+            "it should tell the hosted service how long its drain may take");
     }
 }

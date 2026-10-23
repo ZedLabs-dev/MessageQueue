@@ -188,7 +188,9 @@ public sealed class Given_a_rabbitmq_queue_with_a_failing_handler : IAsyncLifeti
         var handled = 0;
 
         await queue.SubscribeAsync(_ => Task.FromResult(Interlocked.Increment(ref handled) > 0), TestContext.Current.CancellationToken);
-        await queue.PublishAsync(new TestMessage("big", new string('x', 1024)), TestContext.Current.CancellationToken);
+        // Another publisher (this library refuses oversized messages on publish): the consumer still guards itself.
+        await broker.PublishRawAsync(config.QueueName, System.Text.Encoding.UTF8.GetBytes($"{{\"id\":\"big\",\"content\":\"{new string('x', 1024)}\"}}"),
+            new Dictionary<string, string>());
         var headers = await TakeDeadLetterAsync(config.EffectiveDeadLetterQueueName);
 
         headers.Should().Contain(ReasonHeader, DeadLetterReasons.MessageTooLarge, "it should dead-letter an oversized body");

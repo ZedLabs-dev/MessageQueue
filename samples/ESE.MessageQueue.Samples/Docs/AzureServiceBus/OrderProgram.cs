@@ -16,7 +16,7 @@ public static class OrderProgram
         var builder = Host.CreateApplicationBuilder(args);   // appsettings.json, environment variables, command line
         builder.Services.AddOrderMessaging(builder.Configuration);
         builder.Services.AddOrderTelemetry();
-        // Give running handlers time to finish: more than MessageQueue:ShutdownTimeout (30 s by default).
+        // Give running handlers time to finish: more than MessageQueue:ShutdownTimeout (25 s by default).
         builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(45));
         using var host = builder.Build();
         await host.RunAsync();

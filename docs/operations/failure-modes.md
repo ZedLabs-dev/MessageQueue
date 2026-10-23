@@ -48,7 +48,7 @@ Every provider runs every delivery through the same steps (`MessageDispatcher<T>
 
 | Step | Outcome | Dead-letter reason | Counted in |
 |---|---|---|---|
-| Body larger than `MaxMessageSizeBytes` | dead-lettered at once, not deserialized | `MessageTooLarge` | `messages.dead_lettered`, event 1003 |
+| Body larger than `MaxMessageSizeBytes` (only from another publisher: `PublishAsync` refuses it) | dead-lettered at once, not deserialized | `MessageTooLarge` | `messages.dead_lettered`, event 1003 |
 | Body does not deserialize (or deserializes to null) | dead-lettered at once, no retries | `DeserializationFailed` | event 1003 (detail: exception type) |
 | Delivery metadata unreadable | dead-lettered at once | `DeliveryFailed` | event 1007 (Error) |
 | Handler returns `Acknowledge` | removed | | `consumed.messages` without `error.type` |
@@ -118,8 +118,17 @@ Dead letters are inspected and replayed with `IDeadLetterQueue<T>` ([dead-letter
 
 ## Oversized messages
 
-`MaxMessageSizeBytes` (1 MiB by default) is enforced by the **consumer**: a larger body is dead-lettered as
-`MessageTooLarge` without being deserialized. It is not checked on publish; what limits a publish is the broker:
+`MaxMessageSizeBytes` (1 MiB by default) is enforced on both sides, on the serialized body:
+
+- **Publish:** `PublishAsync` throws `MessageQueueException` before anything is sent, so an oversized message never
+  reaches the broker: `The message is N bytes serialized, above MaxMessageSizeBytes (L) for '<queue>'; it was not
+  published`. A batch is checked whole before any of it is sent (`The message at index I of the batch is ...; no
+  message of the batch was published`). The message names the size and the limit, never the content. A body exactly
+  at the limit passes. Publish metrics and spans do not record a refused message.
+- **Consume:** a larger body from another publisher (or one published before the limit was lowered) is dead-lettered
+  as `MessageTooLarge` without being deserialized.
+
+Below `MaxMessageSizeBytes`, the broker can still refuse a message:
 
 - **RabbitMQ:** the broker's `max_message_size` (16 MiB by default in RabbitMQ 4) closes the publishing channel and
   `PublishAsync` throws `MessageQueueException`. The consumer's client accepts bodies up to the larger of
@@ -152,7 +161,7 @@ reason explicitly (`ReasonCodes = [DeadLetterReasons.MessageTooLarge]`; it is ex
 ## Shutdown with handlers in flight
 
 On host shutdown `MessageQueueHostedService<T>` unsubscribes: no new deliveries start, every running handler's
-`CancellationToken` is cancelled, and the queue waits up to the provider's `ShutdownTimeout` (30 s) for them.
+`CancellationToken` is cancelled, and the queue waits up to the provider's `ShutdownTimeout` (25 s) for them.
 
 | | A handler that stops because of the token | Prefetched deliveries never handled | A handler still running after `ShutdownTimeout` |
 |---|---|---|---|
@@ -160,10 +169,13 @@ On host shutdown `MessageQueueHostedService<T>` unsubscribes: no new deliveries 
 | Service Bus | abandoned without using an attempt (event 3002) | abandoned without using an attempt | warning 3004; the processor is disposed when it finishes |
 | In-memory | put back in the queue | stay queued | warning 4003; queued messages are lost with the process |
 
-Configure the host to wait longer than the queue does: `HostOptions.ShutdownTimeout` defaults to 30 s, the same as the
-providers' `ShutdownTimeout`, so set it higher (the guides use 45 s) and give your orchestrator's termination grace
-period (Kubernetes `terminationGracePeriodSeconds`) more again. A process killed before the drain ends behaves like a
-crash: unacknowledged messages are redelivered.
+The host must wait longer than the queue does. `HostOptions.ShutdownTimeout` defaults to 30 s and the providers'
+`ShutdownTimeout` to 25 s, so one queue at the defaults drains in time ([ADR 0025](../adr/0025-shutdown-budget.md)). The
+host stops hosted services one after another (unless `HostOptions.ServicesStopConcurrently` is on), so with several
+queues its timeout must cover the sum of theirs; the guides set 45 s. When a queue's `ShutdownTimeout` is not below the
+host's, its hosted service logs warning 5005 at startup. Give your orchestrator's termination grace period (Kubernetes
+`terminationGracePeriodSeconds`) more again. A process killed before the drain ends behaves like a crash:
+unacknowledged messages are redelivered.
 
 ## Configuration that cannot do what it says
 

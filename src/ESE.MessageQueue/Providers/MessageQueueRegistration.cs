@@ -55,6 +55,7 @@ public sealed class MessageQueueRegistration<T> where T : class
         Registered = true;
 
         QueueRegistration.Add<T, TConfig, TValidator, TQueue>(Services, builder => QueueRegistration.BindStrictly(builder, Section), create);
+        Services.AddSingleton(new QueueSection<T>(Section.Path));
     }
 }
 
@@ -162,6 +163,12 @@ static class QueueRegistration
         if (services.Any(d => d.ServiceType == typeof(IMessageQueue<T>)))
             throw new ConfigurationException($"A message queue for {typeof(T).FullName} is already registered");
     }
+}
+
+// The configuration section the queue of T was bound from, for advice that names its keys (warning 5005).
+sealed class QueueSection<T>(string path) where T : class
+{
+    public string Path { get; } = path;
 }
 
 // The JSON metadata AddMessageQueueJsonMetadata<T> registered for the queue of T.

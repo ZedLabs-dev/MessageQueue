@@ -6,6 +6,7 @@ using Azure.Messaging.ServiceBus;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Configuration;
 using ESE.MessageQueue.Exceptions;
+using ESE.MessageQueue.Hosting;
 using ESE.MessageQueue.Processing;
 using ESE.MessageQueue.Providers;
 using ESE.MessageQueue.Serialization;
@@ -20,7 +21,7 @@ namespace ESE.MessageQueue.AzureServiceBus;
 /// queue are scheduled copies (broker-side backoff); on a subscription they wait under the message lock and are
 /// abandoned (ADR 0009). Shutdown is bounded by <c>ShutdownTimeout</c> (ADR 0010). The client connects on first use.
 /// </summary>
-public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue<T>, IAzureServiceBusProbe, IDisposable, IAsyncDisposable where T : class
+public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue<T>, IAzureServiceBusProbe, IShutdownBudget, IDisposable, IAsyncDisposable where T : class
 {
     // Service Bus's default MaxDeliveryCount. The entity's real value needs Manage rights to read, so it is assumed.
     internal const int DefaultEntityMaxDeliveryCount = 10;
@@ -129,6 +130,8 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDeadLett
     /// </summary>
     public MessageQueueCapabilities Capabilities => capabilities;
 
+    TimeSpan IShutdownBudget.ShutdownTimeout => config.ShutdownTimeout;
+
     string ConsumeEntity => subscriptionMode ? config.TopicName! : config.QueueName;
 
     string? ConsumeSubscription => subscriptionMode ? config.SubscriptionName : null;
@@ -143,11 +146,13 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDeadLett
         PublishValidation.Validate(message, options);
         ThrowIfDisposed();
         var serviceBusMessage = CreateMessage(message, options);
+        PublishValidation.ValidateBodySize(serviceBusMessage.Body.ToMemory().Length, config.MaxMessageSizeBytes, publishEntity);
         using var trace = PublishTelemetry.Start(telemetry, publishTarget, 1, logger, serviceBusMessage.MessageId);
         AddTraceHeaders(serviceBusMessage, trace);
         try
         {
             await SendAsync(token => sender.SendAsync(serviceBusMessage, token), cancellationToken);
+            PublishLog.Published(logger, serviceBusMessage.MessageId, publishTarget.Destination);
         }
         catch (Exception ex)
         {
@@ -166,10 +171,12 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDeadLett
         PublishValidation.Validate(messages);
         ThrowIfDisposed();
         var options = new PublishOptions();
-        var pending = messages.Select(message =>
+        var pending = messages.Select((message, index) =>
         {
             PublishValidation.Validate(message, options);
-            return CreateMessage(message, options);
+            var serviceBusMessage = CreateMessage(message, options);
+            PublishValidation.ValidateBodySize(serviceBusMessage.Body.ToMemory().Length, config.MaxMessageSizeBytes, publishEntity, index);
+            return serviceBusMessage;
         }).ToList();
         if (pending.Count == 0)
             return;
@@ -181,6 +188,7 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDeadLett
         try
         {
             await PublishPendingAsync(pending, cancellationToken);
+            PublishLog.PublishedBatch(logger, pending.Count, publishTarget.Destination);
         }
         catch (Exception ex)
         {

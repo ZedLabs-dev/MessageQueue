@@ -212,14 +212,15 @@ using Microsoft.Extensions.Hosting;
 var builder = Host.CreateApplicationBuilder(args);   // appsettings.json, environment variables, command line
 builder.Services.AddOrderMessaging(builder.Configuration);
 builder.Services.AddOrderTelemetry();
-// Give running handlers time to finish: more than MessageQueue:ShutdownTimeout (30 s by default).
+// Give running handlers time to finish: more than MessageQueue:ShutdownTimeout (25 s by default).
 builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(45));
 using var host = builder.Build();
 await host.RunAsync();
 ```
 
-Keep the host's `ShutdownTimeout` above the queue's `ShutdownTimeout` (both 30 s by default), so the host does not
-cancel the drain of running handlers.
+Keep the host's `ShutdownTimeout` (30 s by default) above the queue's `ShutdownTimeout` (25 s by default), so the host
+does not stop waiting while handlers drain (warning 5005 at startup otherwise). The host stops hosted services one
+after another: with several queues, it needs the sum of their timeouts.
 
 ## 7. Publish
 

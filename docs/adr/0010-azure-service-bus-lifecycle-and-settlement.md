@@ -23,8 +23,8 @@ The RabbitMQ provider had solved the same problems with code private to it.
   a lost lock is logged and left to the broker. Nothing escapes to the processor; a safety net abandons the rest.
 - **Shutdown** (`UnsubscribeAsync`/`DisposeAsync`): cancel the handlers' token, stop the processor (which waits for
   them), dispose it. Cancelled handlers and messages arriving after shutdown began are abandoned without using an
-  attempt. The call waits at most `ShutdownTimeout` (30 s); later handlers still settle normally and the processor
-  is disposed once they finish. `DisposeAsync` is idempotent, gives all handlers one `ShutdownTimeout`, then closes
+  attempt. The call waits at most `ShutdownTimeout` (30 s; 25 s since ADR 0025); later handlers still settle normally
+  and the processor is disposed once they finish. `DisposeAsync` is idempotent, gives all handlers one `ShutdownTimeout`, then closes
   the client with 1 s grace. `Dispose()` runs `DisposeAsync` on the thread pool (documented, no sync-context deadlock).
 - **Re-entrancy**: a per-delivery `HandlerScope` (AsyncLocal, active only until its handler returns) makes
   unsubscribe or dispose from inside a handler finish in the background. A handler's own cancellation callback that

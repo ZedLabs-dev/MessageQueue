@@ -22,7 +22,7 @@ Run from the repository root, on `main`, with a clean working tree.
 | 5 | Integration specs, RabbitMQ | `MQ_REQUIRE_DOCKER=true dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Integration` | 0 failed; the RabbitMQ specs ran (Docker is required: missing Docker fails instead of skipping) |
 | 6 | Integration specs, Azure Service Bus | step 5 with `MQ_ASB_CONNECTION_STRING` set, see [below](#azure-service-bus-suite) | the 11 specs of `Given_a_running_azure_service_bus` **passed**, not skipped. **Mandatory for a final release** |
 | 7 | Coverage gate | `MQ_REQUIRE_DOCKER=true scripts/coverage.sh` | combined line coverage of the three packages ≥ 89% and each package ≥ 87% (`COVERAGE_THRESHOLD`, `COVERAGE_ASSEMBLY_FLOOR` in the script; never lower them) |
-| 8 | Mutation sets | `for set in scripts/mutants/*.json; do scripts/mutate.py "$set" || break; done` | exit 0 for every set: every valid mutant killed or documented equivalent (275 mutants in 10 sets today, see [below](#mutation-sets)) |
+| 8 | Mutation sets | `for set in scripts/mutants/*.json; do scripts/mutate.py "$set" || break; done` | exit 0 for every set: every valid mutant killed or documented equivalent (355 mutants in 12 sets today, see [below](#mutation-sets)) |
 | 9 | Linux | CI (`ci.yml`, `ubuntu-latest`) green on the release commit, or the [Linux container run](#linux) | the Linux-only specs passed |
 | 10 | Vulnerable packages | `dotnet list ESE.MessageQueue.sln package --vulnerable --include-transitive` | "no vulnerable packages" for every project |
 | 11 | Pack | `dotnet pack ESE.MessageQueue.sln -c Release -o artifacts` | three `.nupkg` and three `.snupkg` with the release version; the provider packages depend on exactly that core version (`unzip -p artifacts/ESE.MessageQueue.RabbitMQ.*.nupkg '*.nuspec'`) |
@@ -76,6 +76,8 @@ time and runs the set's filtered specs. It never modifies the working tree. Sets
 | `review-deferred-items-2.json` | 2 | Packaging conventions |
 | `dead-letter-ops.json` | 73 | dead-letter operations (1 documented equivalent) |
 | `review-dead-letter-ops.json` | 63 | review of the above |
+| `code-gaps.json` | 38 | publish size limit, exchange types, RabbitMQ transport errors, shutdown budget, publish logs, concurrency under load (some Integration) |
+| `review-code-gaps.json` | 42 | review of the above: settlement, SafeLogger, log forging, shutdown advice (1 documented equivalent; some Integration) |
 
 A survivor is a behavior no spec pins down: write the spec (it must kill the mutant) before releasing.
 

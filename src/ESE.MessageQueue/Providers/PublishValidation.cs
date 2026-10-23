@@ -1,4 +1,5 @@
 using ESE.MessageQueue.Abstractions;
+using ESE.MessageQueue.Exceptions;
 
 namespace ESE.MessageQueue.Providers;
 
@@ -63,6 +64,25 @@ public static class PublishValidation
     public static void Validate<T>(IEnumerable<T> messages) where T : class
     {
         ArgumentNullException.ThrowIfNull(messages);
+    }
+
+    /// <summary>
+    /// Checks a serialized body against the queue's <c>MaxMessageSizeBytes</c> before it is sent, so a message every
+    /// consumer would dead-letter as <c>MessageTooLarge</c> never reaches the broker. Uses the consumer's rule: a body
+    /// of exactly <paramref name="maxMessageSizeBytes"/> bytes passes. For a batch, check every body before sending any
+    /// and pass the message's <paramref name="batchIndex"/>. The error names the size, the limit and the destination,
+    /// never the content.
+    /// </summary>
+    /// <exception cref="MessageQueueException">The body is larger than <paramref name="maxMessageSizeBytes"/>.</exception>
+    public static void ValidateBodySize(int bodyLength, int maxMessageSizeBytes, string destination, int? batchIndex = null)
+    {
+        if (bodyLength <= maxMessageSizeBytes)
+            return;
+
+        var which = batchIndex is { } index ? $"The message at index {index} of the batch" : "The message";
+        var outcome = batchIndex is null ? "it was not published" : "no message of the batch was published";
+        throw new MessageQueueException(
+            $"{which} is {bodyLength} bytes serialized, above MaxMessageSizeBytes ({maxMessageSizeBytes}) for '{destination}'; {outcome}");
     }
 
     /// <summary>

@@ -5,6 +5,7 @@ using System.Text;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Configuration;
 using ESE.MessageQueue.Exceptions;
+using ESE.MessageQueue.Hosting;
 using ESE.MessageQueue.Processing;
 using ESE.MessageQueue.Providers;
 using ESE.MessageQueue.Serialization;
@@ -22,7 +23,7 @@ namespace ESE.MessageQueue.RabbitMQ;
 /// topology are created on first use, or up front with <see cref="InitializeAsync"/> or <see cref="RabbitMqMessageQueue.CreateAsync{T}"/>
 /// (ADR 0007). Retries wait in per-delay retry queues on the broker (ADR 0006).
 /// </summary>
-public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue<T>, IRabbitMqConnectionProbe, IDisposable, IAsyncDisposable where T : class
+public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue<T>, IRabbitMqConnectionProbe, IShutdownBudget, IDisposable, IAsyncDisposable where T : class
 {
     // Library-owned headers. Publishers cannot set them: PublishValidation reserves every "x-" name.
     internal const string DeliveryAttemptHeader = "x-delivery-attempt";
@@ -73,7 +74,8 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         ConfigValidation.ThrowIfInvalid(config, new RabbitMqConfigValidator());
         this.config = config;
         this.telemetry = telemetry ?? NullTelemetryProvider.Instance;
-        this.logger = logger ?? NullLogger.Instance;
+        // Logging must never change the outcome of a publish or a delivery, nor throw into the client's events.
+        this.logger = new SafeLogger(logger ?? NullLogger.Instance);
         queueName = config.QueueName;
         exchangeName = string.IsNullOrWhiteSpace(config.ExchangeName)
             ? config.QueueName
@@ -100,6 +102,8 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
     /// operation while <c>EnableDeadLetterQueue</c> is on, none without it.
     /// </summary>
     public MessageQueueCapabilities Capabilities => capabilities;
+
+    TimeSpan IShutdownBudget.ShutdownTimeout => config.ShutdownTimeout;
 
     // Test seams: the consumer channel of the latest subscription, and a fault injected before a delivery is read.
     internal IChannel? LatestSubscriptionChannel { get; private set; }
@@ -184,6 +188,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         try
         {
             amqp = await factory.CreateConnectionAsync(cancellationToken);
+            WatchConnection(amqp);
             await DeclareTopologyAsync(amqp, cancellationToken);
             publishers = await PublisherPool.CreateAsync(amqp, config.PublisherChannelPoolSize, config.EnablePublisherConfirms,
                 config.MaxOutstandingConfirms, config.ConfirmTimeout, cancellationToken);
@@ -201,6 +206,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
 
             // The client's message can echo endpoint details; the type is enough here, the exception goes to the log.
             RabbitMqLog.ConnectFailed(logger, queueName, ex);
+            CountTransportError(RabbitMqTransportErrors.ConnectionFailed);
             throw new MessageQueueException(
                 $"Failed to connect to RabbitMQ for queue '{queueName}' ({ex.GetType().Name}). See the inner exception and the log for details.", ex);
         }
@@ -271,6 +277,56 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
 
     const int PreconditionFailed = 406;
 
+    // Transport trouble outside a delivery, counted in ese.messagequeue.transport.errors like Service Bus processor
+    // errors (B6). error.type is one of RabbitMqTransportErrors, never the broker's reply text. Closes the library
+    // initiates (unsubscribe, dispose) are not counted, and a lost connection is counted once, not again for its channel.
+    internal void WatchConnection(IConnection amqp)
+    {
+        amqp.ConnectionShutdownAsync += (_, reason) => OnConnectionShutdownAsync(reason);
+        amqp.ConnectionRecoveryErrorAsync += (_, _) => OnRecoveryFailedAsync();
+    }
+
+    internal void WatchConsumerChannel(IChannel channel, IConnection amqp) =>
+        channel.ChannelShutdownAsync += (_, reason) => OnConsumerChannelShutdownAsync(reason, amqp.IsOpen);
+
+    internal Task OnConnectionShutdownAsync(ShutdownEventArgs reason)
+    {
+        if (reason.Initiator != ShutdownInitiator.Application)
+            CountTransportError(RabbitMqTransportErrors.ConnectionShutdown);
+        return Task.CompletedTask;
+    }
+
+    internal Task OnRecoveryFailedAsync()
+    {
+        CountTransportError(RabbitMqTransportErrors.RecoveryFailed);
+        return Task.CompletedTask;
+    }
+
+    internal Task OnConsumerChannelShutdownAsync(ShutdownEventArgs reason, bool connectionOpen)
+    {
+        if (reason.Initiator != ShutdownInitiator.Application && connectionOpen)
+            CountTransportError(RabbitMqTransportErrors.ChannelShutdown);
+        return Task.CompletedTask;
+    }
+
+    internal Task OnConsumerCancelledByBrokerAsync()
+    {
+        CountTransportError(RabbitMqTransportErrors.ConsumerCancelled);
+        return Task.CompletedTask;
+    }
+
+    void CountTransportError(string errorType)
+    {
+        try
+        {
+            telemetry.RecordTransportError(publishTarget, errorType);
+        }
+        catch (Exception ex)
+        {
+            RabbitMqLog.TelemetryFailed(logger, queueName, ex);
+        }
+    }
+
     /// <inheritdoc />
     public Task PublishAsync(T message, CancellationToken cancellationToken = default) =>
         PublishAsync(message, new PublishOptions(), cancellationToken);
@@ -280,12 +336,14 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
     {
         PublishValidation.Validate(message, options);
         var body = Serialize(message);
+        PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, queueName);
         var messageId = options.MessageId ?? Guid.CreateVersion7().ToString();
         using var trace = PublishTelemetry.Start(telemetry, publishTarget, 1, logger, messageId);
         try
         {
             var current = await ConnectAsync(cancellationToken);
             await PublishCoreAsync(current, body, options with { MessageId = messageId }, trace.TraceHeaders, cancellationToken);
+            PublishLog.Published(logger, messageId, publishTarget.Destination);
         }
         catch (Exception ex)
         {
@@ -304,10 +362,12 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
     {
         PublishValidation.Validate(messages);
         var options = new PublishOptions();
-        var bodies = messages.Select(message =>
+        var bodies = messages.Select((message, index) =>
         {
             PublishValidation.Validate(message, options);
-            return Serialize(message);
+            var body = Serialize(message);
+            PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, queueName, index);
+            return body;
         }).ToList();
         if (bodies.Count == 0)
             return;
@@ -320,6 +380,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
             var window = (int)Math.Min(int.MaxValue, (long)config.MaxOutstandingConfirms * config.PublisherChannelPoolSize);
             await BatchPublisher.PublishAllAsync(bodies, window,
                 (body, ct) => PublishCoreAsync(current, body, options, trace.TraceHeaders, ct), cancellationToken);
+            PublishLog.PublishedBatch(logger, bodies.Count, publishTarget.Destination);
         }
         catch (Exception ex)
         {
@@ -428,7 +489,8 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
                     cancellationToken);
                 await channel.BasicQosAsync(prefetchSize: 0, prefetchCount: (ushort)config.PrefetchCount, global: false, cancellationToken);
 
-                var consumer = new AsyncEventingBasicConsumer(channel);
+                var consumer = new SubscriptionConsumer(channel, OnConsumerCancelledByBrokerAsync);
+                WatchConsumerChannel(channel, current.Amqp);
                 var started = new Subscription(channel, consumer, new MessageDispatcher<T>(config, publishTarget, handler, telemetry, logger));
                 consumer.ReceivedAsync += (_, delivery) => OnReceivedAsync(started, delivery);
                 started.ConsumerTag = await channel.BasicConsumeAsync(queueName, autoAck: false, consumer, cancellationToken);
@@ -1004,6 +1066,17 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         }
     }
 
+    // basic.cancel from the broker (for example, its queue was deleted) arrives here only;
+    // the client's own cancel and channel closes take other paths.
+    sealed class SubscriptionConsumer(IChannel channel, Func<Task> cancelledByBroker) : AsyncEventingBasicConsumer(channel)
+    {
+        public override async Task HandleBasicCancelAsync(string consumerTag, CancellationToken cancellationToken = default)
+        {
+            await cancelledByBroker();
+            await base.HandleBasicCancelAsync(consumerTag, cancellationToken);
+        }
+    }
+
     sealed class Subscription
     {
         public Subscription(IChannel channel, AsyncEventingBasicConsumer consumer, MessageDispatcher<T> dispatcher)
@@ -1104,6 +1177,10 @@ static partial class RabbitMqLog
 
     [LoggerMessage(EventId = 2007, Level = LogLevel.Debug, Message = "RabbitMQ queue {QueueName}: closing a channel failed")]
     public static partial void CloseFailed(ILogger logger, string queueName, Exception exception);
+
+    [LoggerMessage(EventId = 2008, Level = LogLevel.Warning,
+        Message = "RabbitMQ queue {QueueName}: telemetry failed while counting a transport error; the error is handled regardless")]
+    public static partial void TelemetryFailed(ILogger logger, string queueName, Exception exception);
 
     [LoggerMessage(EventId = 2009, Level = LogLevel.Debug, Message = "RabbitMQ queue {QueueName}: an unhandled delivery could not be returned without using an attempt; requeued instead")]
     public static partial void UnhandledRequeueFailed(ILogger logger, string queueName, Exception exception);

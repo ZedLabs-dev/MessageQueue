@@ -44,6 +44,21 @@ The dispatcher's "+" is the difference to the baseline measured in the same job.
 invocation per iteration (`InvocationCount = 1`) and its distribution is multimodal (background dispatch and the
 thread pool), so its mean sits well above its median; read it as "1.3 to 2 µs".
 
+### RabbitMQ consumption (2026-10-23, default job)
+
+`RabbitMqConsumeBenchmarks`: 1,000 messages wait in the queue (published in `[IterationSetup]`, not measured); one
+operation subscribes (a channel and `basic.consume`, spread over the 1,000) and consumes them all through the full
+pipeline (deserialize, handler, ack), so the mean is per message. `PrefetchCount = 64`. `HandlerDelayMs = 1` stands for a handler waiting on I/O. Same machine, runtime and
+broker as above (classic queue, no dead-letter queue); run of 1 min 14 s for the four cases, on the working tree after
+commit `2a3b033`.
+
+| `MaxConcurrentCalls` | Handler | Mean per message | Error (99.9%) | Allocated | Throughput |
+|---:|---|---:|---:|---:|---:|
+| 1 | no work | 19.56 µs | ±0.91 µs | 2.96 KB | about 51,000/s |
+| 16 | no work | 19.38 µs | ±0.66 µs | 3.31 KB | about 52,000/s |
+| 1 | 1 ms `Task.Delay` | 1,308.95 µs | ±7.00 µs | 4.21 KB | about 760/s |
+| 16 | 1 ms `Task.Delay` | 85.52 µs | ±1.45 µs | 4.09 KB | about 11,700/s |
+
 ### Default job compared with the earlier ShortRun
 
 | Benchmark | ShortRun (2026-10-17) | Default job (2026-10-22) |
@@ -108,8 +123,12 @@ metrics, where before it measured spans only.
   handlers that wait on I/O.
 - **§4.2 RabbitMQ batch confirms:** publishing a batch and awaiting the confirms together is about 34x faster per
   message than awaiting each confirm in turn (about 92,000 vs 2,700 messages/s on loopback).
-- **Not measured:** Azure Service Bus (no namespace is available to the project), RabbitMQ consumption, and a broker
-  over a real network.
+- **RabbitMQ consumption:** about 51,000 messages/s per consumer when the handler does no work, whatever
+  `MaxConcurrentCalls` is: the pipeline and the client's dispatch are the limit, not handler slots. With a handler
+  that waits 1 ms, 16 concurrent handlers consume 15x faster than one (85.5 vs 1,309 µs per message); the ideal 16x is
+  lost to dispatch and timer granularity. Raise `MaxConcurrentCalls` (and `PrefetchCount` with it) for I/O-bound
+  handlers, not for CPU-bound ones.
+- **Not measured:** Azure Service Bus (no namespace is available to the project) and a broker over a real network.
 - **RabbitMQ.Client 6.x comparison: not run.** The 6.x provider was replaced in Phase 5 (ADR 0007). Measuring it would
   mean rebuilding the old provider in a separate assembly against a conflicting RabbitMQ.Client version. These are
   the 7.x numbers only. The Phase 5 exit criterion "benchmark at least matches 6.x" is therefore unverified;

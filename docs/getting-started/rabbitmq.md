@@ -193,15 +193,17 @@ using Microsoft.Extensions.Hosting;
 var builder = Host.CreateApplicationBuilder(args);   // appsettings.json, environment variables, command line
 builder.Services.AddOrderMessaging(builder.Configuration);
 builder.Services.AddOrderTelemetry();
-// Give running handlers time to finish: more than MessageQueue:ShutdownTimeout (30 s by default).
+// Give running handlers time to finish: more than MessageQueue:ShutdownTimeout (25 s by default).
 builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(45));
 using var host = builder.Build();
 await host.RunAsync();
 ```
 
-The host's `ShutdownTimeout` (30 s by default in .NET 10) should exceed the queue's `ShutdownTimeout` (also 30 s), so
-the host does not cancel the drain of running handlers; give your orchestrator's termination grace period a few
-seconds more again.
+The host's `ShutdownTimeout` (30 s by default in .NET 10) must exceed the queue's `ShutdownTimeout` (25 s by default),
+so the host does not stop waiting while handlers drain; the hosted service logs warning 5005 at startup when it does
+not. The host stops hosted services one after another, so with several queues it needs the sum of their timeouts:
+45 s leaves room for one queue at its default and some headroom. Give your orchestrator's termination grace period a
+few seconds more again.
 
 ## 7. Publish
 

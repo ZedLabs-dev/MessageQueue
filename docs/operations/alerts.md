@@ -101,7 +101,8 @@ groups:
           summary: "{{ $labels.messaging_destination_name }}: publishes failing with {{ $labels.error_type }}"
           runbook: docs/operations/runbooks.md#connection-failures
 
-      # Azure Service Bus only: the processor keeps reporting errors (authentication, entity, network, throttling).
+      # Repeated broker trouble: Service Bus processor errors (authentication, entity, network, throttling), RabbitMQ
+      # connection losses, failed reconnects, closed consumer channels and cancelled consumers.
       - alert: MessageQueueTransportErrors
         expr: |
           sum by (messaging_destination_name, error_type) (
@@ -110,7 +111,7 @@ groups:
         for: 10m
         labels: { severity: critical }
         annotations:
-          summary: "{{ $labels.messaging_destination_name }}: Service Bus processor errors ({{ $labels.error_type }})"
+          summary: "{{ $labels.messaging_destination_name }}: transport errors ({{ $labels.error_type }})"
           runbook: docs/operations/runbooks.md#connection-failures
 
       # Nothing is consumed while messages wait (RabbitMQ; needs per-queue broker metrics, below).
@@ -222,5 +223,6 @@ exporter; keep the same conditions. Without Azure Monitor access, the opt-in
   scoped to the consumer's deployment.
 - **Logs:** where log-based alerting is available, alert on event 2003 (RabbitMQ connect failure) and 3003 (Service Bus
   client creation) at any count, on 2001/3001 (settlement failures) when they repeat for 10 minutes, and review the
-  startup warnings 1101, 2010, 2013, 3012, 3015 and 3016 after each deployment. RabbitMQ has no transport-error metric:
-  its connection problems show in these log events, the publish-failure rule and the health check.
+  startup warnings 1101, 2010, 2013, 3012, 3015, 3016 and 5005 after each deployment. RabbitMQ connection problems also
+  show in `ese.messagequeue.transport.errors` (`MessageQueueTransportErrors`), the publish-failure rule and the health
+  check.

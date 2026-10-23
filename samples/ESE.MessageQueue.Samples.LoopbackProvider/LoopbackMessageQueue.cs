@@ -64,9 +64,10 @@ public sealed class LoopbackMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
     public async Task PublishAsync(T message, PublishOptions options, CancellationToken cancellationToken = default)
     {
         PublishValidation.Validate(message, options);
+        var body = MessageSerializer.Serialize(message, config.SerializationFormat, config.JsonTypeInfoResolver);
+        PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, config.QueueName);
         var messageId = options.MessageId ?? Guid.CreateVersion7().ToString();
         using var trace = PublishTelemetry.Start(telemetry, target, 1, logger, messageId);
-        var body = MessageSerializer.Serialize(message, config.SerializationFormat, config.JsonTypeInfoResolver);
         await channel.Writer.WriteAsync(
             new Envelope(body, messageId, options.CorrelationId, options.Headers ?? new Dictionary<string, string>(), trace.TraceHeaders, 1),
             cancellationToken);

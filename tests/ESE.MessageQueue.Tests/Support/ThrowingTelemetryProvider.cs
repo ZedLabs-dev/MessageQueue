@@ -32,6 +32,7 @@ public sealed class ThrowingTelemetryProvider : ITelemetryProvider
         throw Broken();
     }
 
+    public void RecordTransportError(TelemetryTarget target, string errorType) => throw Broken();
     public void RecordDeadLettersReplayed(TelemetryTarget target, int count) => throw Broken();
     public void RecordDeadLettersPurged(TelemetryTarget target, int count) => throw Broken();
 

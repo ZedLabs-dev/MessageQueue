@@ -179,9 +179,9 @@ a batch.
 
 ## What happens to a message
 
-1. The body is serialized on publish and queued; the consumer loop runs up to `MaxConcurrentCalls` handlers at once.
-2. A body over `MaxMessageSizeBytes` is dead-lettered as `MessageTooLarge`; one that does not deserialize as
-   `DeserializationFailed`.
+1. The body is serialized on publish and queued; `PublishAsync` throws `MessageQueueException` instead for a body over
+   `MaxMessageSizeBytes`. The consumer loop runs up to `MaxConcurrentCalls` handlers at once.
+2. A body that does not deserialize is dead-lettered as `DeserializationFailed`.
 3. Your processor runs. `Acknowledge` removes the message; `DeadLetter` dead-letters it as `Rejected`.
 4. `Retry` (or an exception) waits for the backoff on a timer, then delivers it again with
    `MessageContext.DeliveryAttempt` + 1. After `Retry:MaxRetries` retries it is dead-lettered as `MaxRetriesExceeded`.

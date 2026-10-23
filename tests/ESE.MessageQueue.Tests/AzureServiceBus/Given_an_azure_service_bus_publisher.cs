@@ -98,4 +98,122 @@ public class Given_an_azure_service_bus_publisher : IAsyncDisposable
         bus.Sender.Sent.Should().ContainSingle().Which.Body.ToString().Should().Be("""{"id":"1","content":"x"}""",
             "it should write the same camelCase JSON");
     }
+    static int SizeOf(TestMessage message) =>
+        ESE.MessageQueue.Providers.MessageSerializer.Serialize(message, ESE.MessageQueue.Serialization.SerializationFormat.Json).Length;
+
+    [Fact]
+    public async Task When_A_Message_Exceeds_MaxMessageSizeBytes()
+    {
+        var message = new TestMessage("1", "SENSITIVE-" + new string('z', 100));
+        var limit = SizeOf(message) - 1;
+        await using var queue = bus.CreateQueue(AzureServiceBusTestConfigs.Queue() with { MaxMessageSizeBytes = limit });
+
+        var act = () => queue.PublishAsync(message, TestContext.Current.CancellationToken);
+
+        var error = (await act.Should().ThrowAsync<MessageQueueException>("it should refuse a message above MaxMessageSizeBytes")).Which;
+        error.Message.Should().Contain($"{limit + 1} bytes", "it should name the size")
+            .And.Contain($"MaxMessageSizeBytes ({limit}) for 'orders'; it was not published", "it should name the limit, the destination and the outcome")
+            .And.NotContain("SENSITIVE", "it should not echo the content");
+        bus.Sender.Sent.Should().BeEmpty("it should never send an oversized message to the broker");
+    }
+
+    [Fact]
+    public async Task When_A_Message_Is_Exactly_MaxMessageSizeBytes()
+    {
+        var message = new TestMessage("1", new string('z', 100));
+        await using var queue = bus.CreateQueue(AzureServiceBusTestConfigs.Queue() with { MaxMessageSizeBytes = SizeOf(message) });
+
+        await queue.PublishAsync(message, TestContext.Current.CancellationToken);
+
+        bus.Sender.Sent.Should().ContainSingle("it should send a message exactly at the limit");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task When_A_Batch_Holds_A_Message_Above_MaxMessageSizeBytes(bool batched)
+    {
+        bus.BatchLimitBytes = 1_000_000;
+        var small = new TestMessage("1", "x");
+        var large = new TestMessage("2", new string('z', 300));
+        await using var queue = bus.CreateQueue(AzureServiceBusTestConfigs.Queue() with
+        {
+            MaxMessageSizeBytes = SizeOf(large) - 1,
+            EnableBatchedOperations = batched
+        });
+
+        var act = () => queue.PublishAsync([small, large, small], TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<MessageQueueException>("it should refuse a batch holding an oversized message"))
+            .WithMessage("*index 1 of the batch*for 'orders'; no message of the batch was published",
+                "it should name the oversized message's position and that nothing of the batch was sent");
+        bus.Sender.Sent.Should().BeEmpty("it should check the whole batch before sending any of it");
+        bus.Sender.Batches.Should().BeEmpty("it should check the whole batch before sending any of it");
+    }
+    [Fact]
+    public async Task When_Publishing_With_Debug_Logging()
+    {
+        var logger = new RecordingLogger();
+        await using var queue = bus.CreateQueue(AzureServiceBusTestConfigs.Queue(), logger);
+
+        await queue.PublishAsync(new TestMessage("1", "SECRET-CONTENT"), new PublishOptions { MessageId = "order-7" }, TestContext.Current.CancellationToken);
+        await queue.PublishAsync([new TestMessage("2", "a"), new TestMessage("3", "b")], TestContext.Current.CancellationToken);
+        bus.Sender.SendFailure = _ => new ServiceBusException("refused", ServiceBusFailureReason.ServiceBusy);
+        var failing = () => queue.PublishAsync(new TestMessage("4", "x"), TestContext.Current.CancellationToken);
+        await failing.Should().ThrowAsync<MessageQueueException>();
+
+        logger.Entries.Where(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Debug && e.Message.StartsWith("Published", StringComparison.Ordinal))
+            .Select(e => e.Message).Should().Equal(["Published message order-7 to orders", "Published a batch of 2 messages to orders"],
+                "it should log each successful publish at Debug level, and not a failed one");
+        logger.Entries.Should().NotContain(e => e.Message.Contains("SECRET-CONTENT"), "it should never log message content");
+    }
+    [Fact]
+    public async Task When_The_Logger_Throws_After_A_Successful_Publish()
+    {
+        var telemetry = new ESE.MessageQueue.Tests.Telemetry.TestTelemetryProvider();
+        await using var queue = bus.CreateQueue(AzureServiceBusTestConfigs.Queue(), new ThrowingLogger(), telemetry: telemetry);
+
+        var single = () => queue.PublishAsync(new TestMessage("1", "a"), TestContext.Current.CancellationToken);
+        var batch = () => queue.PublishAsync([new TestMessage("2", "b"), new TestMessage("3", "c")], TestContext.Current.CancellationToken);
+
+        await single.Should().NotThrowAsync("it should never let a broken logger fail a publish that succeeded");
+        await batch.Should().NotThrowAsync("it should never let a broken logger fail a batch that succeeded");
+        telemetry.Published.Select(p => p.ErrorType).Should().Equal([null, null], "it should record both publishes as successful");
+    }
+
+    [Fact]
+    public async Task When_A_Message_Id_Carries_Line_Breaks()
+    {
+        var logger = new RecordingLogger();
+        await using var queue = bus.CreateQueue(AzureServiceBusTestConfigs.Queue(), logger);
+
+        await queue.PublishAsync(new TestMessage("1", "a"), new PublishOptions { MessageId = "a\r\n2026-10-23 INFO forged line" }, TestContext.Current.CancellationToken);
+
+        logger.Entries.Should().Contain(e => e.Message.Contains("a2026-10-23 INFO forged line"), "it should log the id without its control characters");
+        logger.Entries.Should().NotContain(e => e.Message.Contains('\r') || e.Message.Contains('\n'), "it should never write a forged log line");
+    }
+
+    [Fact]
+    public async Task When_A_Publish_Is_Refused_For_Its_Size()
+    {
+        var telemetry = new ESE.MessageQueue.Tests.Telemetry.TestTelemetryProvider();
+        await using var queue = bus.CreateQueue(AzureServiceBusTestConfigs.Queue() with { MaxMessageSizeBytes = 16 }, telemetry: telemetry);
+
+        var single = () => queue.PublishAsync(new TestMessage("1", new string('x', 100)), TestContext.Current.CancellationToken);
+        var batch = () => queue.PublishAsync([new TestMessage("1", new string('x', 100))], TestContext.Current.CancellationToken);
+        await single.Should().ThrowAsync<MessageQueueException>();
+        await batch.Should().ThrowAsync<MessageQueueException>();
+
+        telemetry.Published.Should().BeEmpty("it should record no publish metric for a message it refused before sending");
+        telemetry.Activities.Should().BeEmpty("it should start no publish span for a message it refused before sending");
+    }
+
+    [Fact]
+    public async Task When_Reading_Its_Shutdown_Budget()
+    {
+        await using var queue = bus.CreateQueue(AzureServiceBusTestConfigs.Queue() with { ShutdownTimeout = TimeSpan.FromSeconds(7) });
+
+        ((ESE.MessageQueue.Hosting.IShutdownBudget)queue).ShutdownTimeout.Should().Be(TimeSpan.FromSeconds(7),
+            "it should tell the hosted service how long its drain may take");
+    }
 }

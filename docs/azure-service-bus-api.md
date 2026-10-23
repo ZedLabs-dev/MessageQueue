@@ -169,7 +169,7 @@ redelivery, without using up an attempt.
 | MaxAutoLockRenewalDuration | 5 minutes | Lock renewal while a handler runs; also the subscription-mode retry budget |
 | EnableBatchedOperations / MaxBatchSize | true / 100 | Batch publishing; a batch closes when full by bytes or at `MaxBatchSize` messages |
 | SendTimeout | 30 s | Bounds every send, batch and settlement |
-| ShutdownTimeout | 30 s | How long unsubscribe and dispose wait for running handlers |
+| ShutdownTimeout | 25 s | How long unsubscribe and dispose wait for running handlers |
 | TransactionalRetries | true | Send the retry copy and complete the original in one transaction (queue mode) |
 
 Base settings (`QueueName`, `Retry`, `SerializationFormat`, `EnableDeadLetterQueue`, `MaxMessageSizeBytes`,

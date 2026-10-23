@@ -143,4 +143,84 @@ public sealed class Given_a_rabbitmq_queue : IAsyncLifetime
 
         result.Status.Should().Be(HealthStatus.Unhealthy, "it should notice that the broker cancelled the subscription's consumer");
     }
+
+    [Fact(Timeout = 60_000)]
+    public async Task When_The_Broker_Cancels_The_Consumer_It_Counts_A_Transport_Error()
+    {
+        var telemetry = new ESE.MessageQueue.Tests.Telemetry.TestTelemetryProvider();
+        var config = queues.NewConfig("consumer-cancelled-count-test");
+        var queue = queues.Create(config, telemetry);
+        await queue.SubscribeAsync(_ => Task.FromResult(true), TestContext.Current.CancellationToken);
+
+        await broker.DeleteQueuesAndExchangesAsync([config.QueueName], []);
+        await Wait.UntilAsync(() => !telemetry.TransportErrors.IsEmpty, Wait.DeliveryTimeout);
+        await queue.UnsubscribeAsync(TestContext.Current.CancellationToken);
+
+        telemetry.TransportErrors.Select(e => e.ErrorType).Should().Equal(["ConsumerCancelled"],
+            "it should count the consumer the broker cancelled once, and not its own unsubscribe");
+    }
+    [Fact(Timeout = 60_000)]
+    public async Task When_Publishing_With_Debug_Logging()
+    {
+        var logger = new RecordingLogger();
+        var config = queues.NewConfig("publish-log-test");
+        var queue = queues.Create(config, logger: logger);
+
+        await queue.PublishAsync(new TestMessage("1", "SECRET-CONTENT"), new PublishOptions { MessageId = "order-7" }, TestContext.Current.CancellationToken);
+        await queue.PublishAsync([new TestMessage("2", "a"), new TestMessage("3", "b")], TestContext.Current.CancellationToken);
+
+        var destination = $"{config.QueueName}:{config.QueueName}";
+        logger.Entries.Where(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Debug && e.Message.StartsWith("Published", StringComparison.Ordinal))
+            .Select(e => e.Message).Should().Equal([$"Published message order-7 to {destination}", $"Published a batch of 2 messages to {destination}"],
+                "it should log each confirmed publish at Debug level with its id or count and destination");
+        logger.Entries.Should().NotContain(e => e.Message.Contains("SECRET-CONTENT"), "it should never log message content");
+    }
+    [Fact(Timeout = 60_000)]
+    public async Task When_A_Publish_Is_Refused_It_Is_Not_Logged_As_Published()
+    {
+        var logger = new RecordingLogger();
+        var config = queues.NewConfig("publish-refused-log-test");
+        var queue = queues.Create(config, logger: logger);
+        await queue.InitializeAsync(TestContext.Current.CancellationToken);
+        await broker.DeleteQueuesAndExchangesAsync([], [config.QueueName]);
+
+        var publish = () => queue.PublishAsync(new TestMessage("1", "x"), TestContext.Current.CancellationToken);
+
+        await publish.Should().ThrowAsync<Exception>("it should fail to publish to an exchange that no longer exists");
+        logger.Entries.Should().NotContain(e => e.Message.StartsWith("Published", StringComparison.Ordinal),
+            "it should log a publish only once the broker has confirmed it");
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task When_The_Broker_Closes_The_Consumer_Channel_It_Counts_A_Transport_Error()
+    {
+        var telemetry = new ESE.MessageQueue.Tests.Telemetry.TestTelemetryProvider();
+        var config = queues.NewConfig("channel-closed-count-test");
+        var queue = queues.Create(config, telemetry);
+        await queue.SubscribeAsync(_ => Task.FromResult(true), TestContext.Current.CancellationToken);
+
+        // A channel error (404 on a passive declare) makes the broker close the consumer channel; the connection stays.
+        var declare = () => queue.LatestSubscriptionChannel!.QueueDeclarePassiveAsync($"missing-{Guid.NewGuid():N}", TestContext.Current.CancellationToken);
+        await declare.Should().ThrowAsync<Exception>();
+        await Wait.UntilAsync(() => !telemetry.TransportErrors.IsEmpty, Wait.DeliveryTimeout);
+
+        telemetry.TransportErrors.Select(e => e.ErrorType).Should().Equal(["ChannelShutdown"],
+            "it should count the consumer channel the broker closed on an open connection");
+    }
+    [Fact(Timeout = 60_000)]
+    public async Task When_The_Logger_Throws_After_A_Successful_Publish()
+    {
+        var telemetry = new ESE.MessageQueue.Tests.Telemetry.TestTelemetryProvider();
+        var config = queues.NewConfig("throwing-logger-test");
+        var queue = queues.Create(config, telemetry, new ThrowingLogger());
+
+        var single = () => queue.PublishAsync(new TestMessage("1", "a"), TestContext.Current.CancellationToken);
+        var batch = () => queue.PublishAsync([new TestMessage("2", "b"), new TestMessage("3", "c")], TestContext.Current.CancellationToken);
+
+        await single.Should().NotThrowAsync("it should never let a broken logger fail a publish that succeeded");
+        await batch.Should().NotThrowAsync("it should never let a broken logger fail a batch that succeeded");
+        await Wait.ForCountAsync(async () => (int)await broker.GetMessageCountAsync(config.QueueName), 3, Wait.DeliveryTimeout);
+        (await broker.GetMessageCountAsync(config.QueueName)).Should().Be(3u, "it should publish every message");
+        telemetry.Published.Select(p => p.ErrorType).Should().Equal([null, null], "it should record both publishes as successful");
+    }
 }

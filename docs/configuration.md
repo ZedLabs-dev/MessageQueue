@@ -111,7 +111,7 @@ queue: each queue's consumer would receive the other type's messages and dead-le
 | `SerializationFormat` | enum | `Json` | `Json`, `MessagePack` | no | Wire format; publishers and consumers of a queue must agree |
 | `EnableDeadLetterQueue` | bool | `true` | | no | When `false`, a message that would be dead-lettered is **dropped** (acknowledged) with warning 1004; RabbitMQ then declares no dead-letter queue and has no dead-letter operations |
 | `RequireDelayedRedelivery` | bool | `false` | | no | `true`: startup fails when the provider or entity cannot delay a retry (`Capabilities.DelayedRedelivery = false`, a Service Bus topic subscription) and `Retry` has a backoff. `false`: that case only logs warning 1101 |
-| `MaxMessageSizeBytes` | int | `1048576` | 1 to 2147483647 | no | Larger bodies are dead-lettered as `MessageTooLarge` without being deserialized |
+| `MaxMessageSizeBytes` | int | `1048576` | 1 to 2147483647 | no | Serialized bodies above it are refused by `PublishAsync` (`MessageQueueException`, nothing sent) and dead-lettered as `MessageTooLarge` on consume without being deserialized |
 | `MaxConcurrentCalls` | int | `10` | 1 to 1000 | no | Handlers running at once. RabbitMQ: also capped by `PrefetchCount` (warning 2010) |
 | `JsonTypeInfoResolver` | `IJsonTypeInfoResolver` | (unset) | code only | no | Source-generated JSON metadata (`AddMessageQueueJsonMetadata<T>`); requires `SerializationFormat` `Json` |
 
@@ -146,7 +146,7 @@ local development, tests and single-process tools.
 
 | Setting | Type | Default | Valid values | Required | Notes |
 |---|---|---|---|---|---|
-| `ShutdownTimeout` | TimeSpan | `00:00:30` | > 0 | no | How long unsubscribe and dispose wait for running handlers |
+| `ShutdownTimeout` | TimeSpan | `00:00:25` | > 0 | no | How long unsubscribe and dispose wait for running handlers |
 
 ```json
 {
@@ -178,12 +178,12 @@ local development, tests and single-process tools.
 | `QuorumInitialGroupSize` | int | `3` | 1 to 2147483647 | no | Replicas of each new quorum queue (RabbitMQ uses at most the cluster's node count) |
 | `PrefetchCount` | int | `10` | 1 to 65535 | no | Unacknowledged deliveries per consumer; keep it ≥ `MaxConcurrentCalls` |
 | `ExchangeName` | string | (empty) | at most 255 UTF-8 bytes | no | Empty: `QueueName`. The queue is bound to it with routing key `QueueName` |
-| `ExchangeType` | string | `direct` | `direct`, `fanout`, `topic`, `headers` | yes | Only checked for non-empty at startup; an unknown type fails when the broker declares it |
+| `ExchangeType` | string | `direct` | `direct`, `fanout`, `topic`, `headers`, or a plugin type starting with `x-` | yes | Exact, lowercase (RabbitMQ is case-sensitive); any other value fails at startup. A plugin type must be enabled on the broker, or declaring it fails on first connect |
 | `EnablePublisherConfirms` | bool | `true` | | no | `PublishAsync` waits for the broker's confirm. Retry and dead-letter copies are always confirmed |
 | `PublisherChannelPoolSize` | int | `2` | 1 to 64 | no | Publisher channels, used round-robin |
 | `MaxOutstandingConfirms` | int | `1000` | 1 to 2147483647 | no | Unconfirmed publishes per channel; further publishes wait |
 | `ConfirmTimeout` | TimeSpan | `00:00:30` | > 0 | no | Longest wait for publish capacity plus the confirm |
-| `ShutdownTimeout` | TimeSpan | `00:00:30` | > 0 | no | Longest wait for running handlers on unsubscribe or dispose |
+| `ShutdownTimeout` | TimeSpan | `00:00:25` | > 0 | no | Longest wait for running handlers on unsubscribe or dispose |
 | `HeartbeatInterval` | TimeSpan | `00:01:00` | ≥ 0 | no | AMQP heartbeat; `0` disables it |
 | `NetworkRecoveryInterval` | TimeSpan | `00:00:10` | > 0 | no | Wait between automatic reconnection attempts after a connection is lost |
 
@@ -240,7 +240,7 @@ Keys are `Tls:<Setting>` ([ADR 0008](adr/0008-rabbitmq-tls-and-consumer-shutdown
 | `TopicName` | string? | (unset) | | with `SubscriptionName` | Publish to this topic and consume from `SubscriptionName` instead of a queue |
 | `SubscriptionName` | string? | (unset) | | with `TopicName` | |
 | `SendTimeout` | TimeSpan | `00:00:30` | > 0 | no | Bounds every send and settlement |
-| `ShutdownTimeout` | TimeSpan | `00:00:30` | > 0 | no | Longest wait for running handlers on unsubscribe or dispose |
+| `ShutdownTimeout` | TimeSpan | `00:00:25` | > 0 | no | Longest wait for running handlers on unsubscribe or dispose |
 | `TransactionalRetries` | bool | `true` | | no | Queue retries send the scheduled copy and complete the original in one transaction. Set `false` for partitioned entities, the Basic tier and the emulator (they refuse; the queue falls back after warning 3014 either way) |
 
 ```json
@@ -329,6 +329,7 @@ what to search for.
 | RabbitMq | `Tls:ClientCertificateStoreName=5` | `Tls:ClientCertificateStoreName '5' is not supported. Supported values: AddressBook, AuthRoot, CertificateAuthority, Disallowed, My, Root, TrustedPeople, TrustedPublisher` |
 | RabbitMq | `PrefetchCount=0` | `The field PrefetchCount must be between 1 and 65535.` |
 | RabbitMq | `ExchangeType=` | `The ExchangeType field is required.` |
+| RabbitMq | `ExchangeType=Direct` | `ExchangeType 'Direct' is not supported: use direct, fanout, topic or headers, or a plugin type starting with 'x-' (exchange types are lowercase and case-sensitive)` |
 | RabbitMq | `PublisherChannelPoolSize=65` | `The field PublisherChannelPoolSize must be between 1 and 64.` |
 | RabbitMq | `MaxOutstandingConfirms=0` | `The field MaxOutstandingConfirms must be between 1 and 2147483647.` |
 | RabbitMq | `QuorumInitialGroupSize=0` | `The field QuorumInitialGroupSize must be between 1 and 2147483647.` |

@@ -14,6 +14,47 @@ resolved.
   EULA is the owner's to accept). They skip without `MQ_ASB_CONNECTION_STRING`; the provider is verified only through
   its unit specs over the SDK seams. Run `Category=Integration` with a namespace or the emulator, then remove this item.
 
+### Code gaps found while documenting (PRODUCTION-READINESS-PLAN §4, §5, §10; ADRs 0024-0027)
+
+#### Breaking
+- `PublishAsync` refuses a message whose serialized body is larger than `MaxMessageSizeBytes`, on every provider:
+  it throws `MessageQueueException` naming the size, the limit and the destination (never the content) and sends
+  nothing. A batch is checked whole first and names the message's index; none of it is sent. Before, the message was
+  sent and every consumer dead-lettered it as `MessageTooLarge` (ADR 0026). Retry and dead-letter copies and replays
+  are not checked; the consumer keeps its own check for other publishers.
+- `ShutdownTimeout` defaults to 25 s (was 30 s) on `InMemoryConfig`, `RabbitMqConfig` and `AzureServiceBusConfig`, so
+  one queue's drain ends before the host's default 30 s `HostOptions.ShutdownTimeout` (ADR 0025). Set it explicitly
+  to keep 30 s, and raise the host's timeout with it.
+- RabbitMQ `ExchangeType` must be `direct`, `fanout`, `topic`, `headers` (exact, lowercase: RabbitMQ is
+  case-sensitive) or a plugin type starting with `x-`; any other value fails at startup
+  (`ExchangeType '...' is not supported: ...`) instead of on first connect.
+
+#### Added
+- `PublishValidation.ValidateBodySize(bodyLength, maxMessageSizeBytes, destination, batchIndex)`: the publish-side size
+  check for providers, third-party ones included.
+- RabbitMQ records `ese.messagequeue.transport.errors` with `error.type` `ConnectionFailed`, `ConnectionShutdown`,
+  `RecoveryFailed`, `ChannelShutdown` or `ConsumerCancelled`; closes the library makes itself are not counted
+  (ADR 0027). Log event 2008 (Warning) when telemetry throws while counting one.
+- Debug log events 1010 (`Published message {MessageId} to {Destination}`, the id without control characters) and
+  1011 (`Published a batch of {MessageCount} messages to {Destination}`) after each successful publish, on every
+  provider. Publishing still logs nothing at Information (ADR 0027).
+- Startup warning 5005 from `MessageQueueHostedService<T>` when a queue's `ShutdownTimeout` is not below the host's
+  `HostOptions.ShutdownTimeout` (not when the host waits forever), naming the queue's configuration key; Debug event
+  5006 when the host options cannot be read (ADR 0025).
+- Load specs `RabbitMQ/Given_a_rabbitmq_queue_under_load` (5,000 messages, 32 handlers, prefetch 64, 5% transient
+  failures) and `InMemory/Given_an_in_memory_queue_under_load`; RabbitMQ consume benchmark
+  (`RabbitMqConsumeBenchmarks`, `MaxConcurrentCalls` 1 and 16) in `docs/benchmarks.md`.
+- ADR 0024: .NET 10 only (`net10.0`, the LTS window to 2028-11-14, no multi-targeting).
+
+#### Fixed
+- In-memory: `WaitForIdleAsync` could return while a delivery's pipeline was still recording its telemetry: a
+  completed or dead-lettered message was settled inside the pipeline, before its metrics, and a retried message's
+  redelivery could finish before the first delivery had recorded the retry. Deliveries now settle once their pipeline
+  has returned, and a reschedule keeps the queue busy until then. `Given_an_in_memory_queue.When_Recording_Telemetry`
+  failed whenever it ran alone.
+- In-memory and RabbitMQ wrap their logger like Service Bus does: a throwing logging provider can no longer fail a
+  publish that succeeded (or mark it failed in metrics), a delivery, or the RabbitMQ client's event handlers.
+
 ### Documentation (PRODUCTION-READINESS-PLAN §2, §7, §8, §9, §10)
 
 #### Added

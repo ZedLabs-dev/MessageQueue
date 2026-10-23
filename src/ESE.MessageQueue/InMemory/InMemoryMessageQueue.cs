@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Configuration;
 using ESE.MessageQueue.Exceptions;
+using ESE.MessageQueue.Hosting;
 using ESE.MessageQueue.Processing;
 using ESE.MessageQueue.Providers;
 using ESE.MessageQueue.Serialization;
@@ -20,7 +21,7 @@ namespace ESE.MessageQueue.InMemory;
 /// are lost when the process stops. Use it for local development, tests, and deployments that accept that.
 /// </para>
 /// </summary>
-public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue<T>, IDisposable, IAsyncDisposable where T : class
+public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue<T>, IShutdownBudget, IDisposable, IAsyncDisposable where T : class
 {
     static readonly MessageQueueCapabilities InMemoryCapabilities =
         new(Durable: false, DeadLetter: true, DelayedRedelivery: true) { DeadLetterOperations = DeadLetterOperations.All };
@@ -51,7 +52,8 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         this.config = config ?? new InMemoryConfig { QueueName = typeof(T).Name };
         ConfigValidation.ThrowIfInvalid(this.config, new InMemoryConfigValidator());
         this.telemetry = telemetry ?? NullTelemetryProvider.Instance;
-        this.logger = logger ?? NullLogger.Instance;
+        // Logging must never change the outcome of a publish or a delivery.
+        this.logger = new SafeLogger(logger ?? NullLogger.Instance);
         publishTarget = new TelemetryTarget(MessagingSystems.InMemory, this.config.QueueName, typeof(T).Name);
         stopping = lifetime.Token;
         deadLetterQueue = new DeadLetterQueue<T>(new DeadLetterStore(this), this.config, publishTarget, this.telemetry, this.logger);
@@ -102,6 +104,8 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
     /// <summary>Messages published but not yet acknowledged, dead-lettered or dropped (queued, in a handler, or awaiting a retry).</summary>
     public int PendingCount => Volatile.Read(ref pending);
 
+    TimeSpan IShutdownBudget.ShutdownTimeout => config.ShutdownTimeout;
+
     /// <summary>True while a handler is subscribed.</summary>
     public bool IsSubscribed => Volatile.Read(ref subscription) is not null;
 
@@ -116,9 +120,11 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) == 1, this);
 
         var body = Serialize(message);
+        PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, config.QueueName);
         var messageId = options.MessageId ?? Guid.CreateVersion7().ToString();
         using var trace = PublishTelemetry.Start(telemetry, publishTarget, 1, logger, messageId);
         Enqueue(message, body, messageId, options, trace);
+        PublishLog.Published(logger, messageId, publishTarget.Destination);
         return Task.CompletedTask;
     }
 
@@ -129,10 +135,12 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         PublishValidation.Validate(messages);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) == 1, this);
         var options = new PublishOptions();
-        var batch = messages.Select(message =>
+        var batch = messages.Select((message, index) =>
         {
             PublishValidation.Validate(message, options);
-            return (Message: message, Body: Serialize(message));
+            var body = Serialize(message);
+            PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, config.QueueName, index);
+            return (Message: message, Body: body);
         }).ToList();
         if (batch.Count == 0)
             return Task.CompletedTask;
@@ -140,6 +148,7 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         using var trace = PublishTelemetry.Start(telemetry, publishTarget, batch.Count, logger);
         foreach (var (message, body) in batch)
             Enqueue(message, body, Guid.CreateVersion7().ToString(), options, trace);
+        PublishLog.PublishedBatch(logger, batch.Count, publishTarget.Destination);
         return Task.CompletedTask;
     }
 
@@ -351,6 +360,11 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         }
         finally
         {
+            // Settled only once the pipeline is done (its telemetry and logs included), so WaitForIdleAsync never
+            // returns while a delivery is still being recorded: a completed or dead-lettered message is settled here,
+            // and a rescheduled one releases the hold its pipeline took while its redelivery is already queued.
+            if (actions.Handled)
+                Settle();
             slots.Release();
         }
     }
@@ -369,6 +383,14 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
             }
             return result;
         };
+
+    void Hold()
+    {
+        lock (gate)
+        {
+            pending++;
+        }
+    }
 
     void Settle()
     {
@@ -399,7 +421,7 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
             Settle();
     }
 
-    void DeadLetter(Envelope envelope, DeadLetterReason reason)
+    void DeadLetter(Envelope envelope, DeadLetterReason reason, bool settle = true)
     {
         var message = reason.Code == DeadLetterReasons.MessageTooLarge ? null : TryDeserialize(envelope.Body);
         lock (gate)
@@ -407,7 +429,8 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
             deadLetters.Add(new StoredDeadLetter(
                 new InMemoryDeadLetter<T>(message, envelope.Body, envelope.Context, reason.Code, reason.Detail), DateTimeOffset.UtcNow));
         }
-        Settle();
+        if (settle)
+            Settle();
     }
 
     T? TryDeserialize(byte[] body)
@@ -584,13 +607,14 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
             this.envelope = envelope;
         }
 
-        // True once the message was completed, rescheduled or dead-lettered, so it is never settled twice.
+        // True once the message was completed, rescheduled or dead-lettered, so it is never settled twice. The delivery
+        // then owes one settlement when its pipeline returns: the message itself when it was completed or
+        // dead-lettered, or the hold a reschedule took (the redelivery counts as pending on its own).
         public bool Handled { get; private set; }
 
         public Task CompleteAsync(CancellationToken cancellationToken)
         {
             Handled = true;
-            owner.Settle();
             return Task.CompletedTask;
         }
 
@@ -598,6 +622,8 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         public Task RescheduleAsync(TimeSpan delay, int nextAttempt, CancellationToken cancellationToken)
         {
             Handled = true;
+            // The redelivery can finish before this pipeline has recorded the retry: hold the queue busy until it has.
+            owner.Hold();
             var next = envelope with { Context = envelope.Context with { DeliveryAttempt = nextAttempt } };
             _ = owner.RedeliverAfterAsync(next, delay);
             return Task.CompletedTask;
@@ -606,7 +632,7 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         public Task DeadLetterAsync(DeadLetterReason reason, CancellationToken cancellationToken)
         {
             Handled = true;
-            owner.DeadLetter(envelope, reason);
+            owner.DeadLetter(envelope, reason, settle: false);
             return Task.CompletedTask;
         }
     }

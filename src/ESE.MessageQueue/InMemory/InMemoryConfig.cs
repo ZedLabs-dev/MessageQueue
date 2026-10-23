@@ -4,7 +4,7 @@ namespace ESE.MessageQueue.InMemory;
 
 public sealed record InMemoryConfig : MessageQueueConfig
 {
-    public static readonly TimeSpan DefaultShutdownTimeout = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan DefaultShutdownTimeout = TimeSpan.FromSeconds(25);
 
     public const string ProviderName = "InMemory";
 

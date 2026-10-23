@@ -82,7 +82,7 @@ startup too. Constructing a provider directly applies the same validation. One q
 
 **In-memory** (local development, tests, single-process deployments; no broker, nothing is durable):
 ```json
-{ "MessageQueue": { "Provider": "InMemory", "QueueName": "order-created", "ShutdownTimeout": "00:00:30" } }
+{ "MessageQueue": { "Provider": "InMemory", "QueueName": "order-created", "ShutdownTimeout": "00:00:25" } }
 ```
 `QueueName` is required. `ShutdownTimeout` bounds how long unsubscribe and dispose wait for running handlers.
 or in code: `services.AddInMemoryMessageQueue<OrderCreated>(config => config.MaxConcurrentCalls = 4);`
@@ -215,7 +215,8 @@ destination, operation, message type). Log events 1201-1205 (core), 2012 (Rabbit
   starting with `x-` (broker and library headers such as `x-delivery-attempt`), `traceparent` and `tracestate`.
 
 Every provider validates the message and options the same way before sending (`ArgumentNullException` /
-`ArgumentException`).
+`ArgumentException`), and refuses a serialized body above `MaxMessageSizeBytes` with `MessageQueueException` (a batch
+is checked whole before any of it is sent; ADR 0026).
 
 ### `IMessageProcessor<T>` Interface
 
@@ -263,7 +264,7 @@ The complete, spec-checked reference (every setting, default, range and startup 
 | Retry | RetryPolicy | see below | Retry and backoff policy |
 | SerializationFormat | `Json` / `MessagePack` | Json | Wire format |
 | EnableDeadLetterQueue | bool | true | When false, messages that would be dead-lettered are dropped with a warning |
-| MaxMessageSizeBytes | int | 1048576 | Larger bodies are dead-lettered (`MessageTooLarge`) without being deserialized |
+| MaxMessageSizeBytes | int | 1048576 | Larger serialized bodies are refused by `PublishAsync` and dead-lettered (`MessageTooLarge`) on consume without being deserialized |
 | MaxConcurrentCalls | int | 10 | Handlers running at once (1..1000), on every provider. RabbitMQ: also bounded by `PrefetchCount` |
 | RequireDelayedRedelivery | bool | false | When true, startup fails if the provider or entity cannot delay a retry (`Capabilities.DelayedRedelivery = false`, e.g. a Service Bus topic subscription) and `Retry` has a backoff; when false that case only logs warning 1101 (ADR 0020) |
 | JsonTypeInfoResolver | `IJsonTypeInfoResolver` | null (reflection) | Code only, not bindable: source-generated JSON metadata, set with `services.AddMessageQueueJsonMetadata<T>(MyJsonContext.Default)` (ADR 0019). No reflection fallback; startup fails if it lacks `T` or the format is not `Json` |
@@ -301,12 +302,12 @@ The default waits 2 + 4 + 8 + 16 + 30 ≈ 60 s across five retries, then dead-le
 | QuorumInitialGroupSize | int | 3 | Initial quorum group size |
 | PrefetchCount | int | 10 | Unacknowledged deliveries per consumer (1..65535), applied to every queue type |
 | ExchangeName | string | QueueName | Exchange to publish to |
-| ExchangeType | string | "direct" | `direct`, `fanout`, `topic` or `headers` |
+| ExchangeType | string | "direct" | `direct`, `fanout`, `topic`, `headers` or a plugin type `x-...` (lowercase; others fail at startup) |
 | EnablePublisherConfirms | bool | true | Wait for broker confirms on `PublishAsync` (retry and dead-letter copies are always confirmed) |
 | PublisherChannelPoolSize | int | 2 | Publisher channels (1..64), used round-robin |
 | MaxOutstandingConfirms | int | 1000 | Unconfirmed publishes per channel; further publishes wait (backpressure) |
 | ConfirmTimeout | TimeSpan | 30 seconds | Longest wait for capacity plus the confirm (> 0) |
-| ShutdownTimeout | TimeSpan | 30 seconds | Longest wait for running handlers on unsubscribe or dispose |
+| ShutdownTimeout | TimeSpan | 25 seconds | Longest wait for running handlers on unsubscribe or dispose |
 | HeartbeatInterval / NetworkRecoveryInterval | TimeSpan | 60 s / 10 s | Connection settings |
 
 #### RabbitMQ behavior (RabbitMQ.Client 7; ADRs 0006–0008)
@@ -349,7 +350,7 @@ The default waits 2 + 4 + 8 + 16 + 30 ≈ 60 s across five retries, then dead-le
 | MaxAutoLockRenewalDuration | 5 minutes | Lock renewal while a handler runs (also a subscription retry's wait budget) |
 | EnableBatchedOperations / MaxBatchSize | true / 100 | Batch publishing, split by byte size and at most `MaxBatchSize` messages per batch |
 | SendTimeout | 30 s | Bounds every send and settlement |
-| ShutdownTimeout | 30 s | How long unsubscribe and dispose wait for running handlers |
+| ShutdownTimeout | 25 s | How long unsubscribe and dispose wait for running handlers |
 | TransactionalRetries | true | Queue retries send the copy and complete the original in one transaction |
 
 Identity needs the **Azure Service Bus Data Sender** and **Data Receiver** roles, never Owner or Manage. Entity settings
@@ -444,7 +445,7 @@ take one as a constructor argument. `samples/ESE.MessageQueue.Samples` shows the
 | `messaging.process.duration` | histogram `s` | receipt to settlement, per delivery |
 | `ese.messagequeue.messages.retried` | counter `{message}` | deliveries rescheduled for a retry |
 | `ese.messagequeue.messages.dead_lettered` | counter `{message}` | dead-lettered deliveries, tagged `ese.messagequeue.dead_letter.reason` |
-| `ese.messagequeue.transport.errors` | counter `{error}` | Azure Service Bus processor errors outside a delivery (`error.type` = failure reason or exception type) |
+| `ese.messagequeue.transport.errors` | counter `{error}` | Broker errors outside a delivery: Service Bus processor errors (`error.type` = failure reason or exception type); RabbitMQ `ConnectionFailed`, `ConnectionShutdown`, `RecoveryFailed`, `ChannelShutdown`, `ConsumerCancelled` (ADR 0027) |
 | `ese.messagequeue.dead_letters.replayed` | counter `{message}` | dead letters moved back to their queue |
 | `ese.messagequeue.dead_letters.purged` | counter `{message}` | dead letters deleted |
 

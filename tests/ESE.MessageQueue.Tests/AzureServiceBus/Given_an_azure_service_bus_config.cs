@@ -39,7 +39,7 @@ public class Given_an_azure_service_bus_config : IAsyncDisposable
         var config = new AzureServiceBusConfig();
 
         config.SendTimeout.Should().Be(TimeSpan.FromSeconds(30), "it should bound sends by 30 seconds by default");
-        config.ShutdownTimeout.Should().Be(TimeSpan.FromSeconds(30), "it should wait 30 seconds for handlers on shutdown by default");
+        config.ShutdownTimeout.Should().Be(TimeSpan.FromSeconds(25), "it should wait 25 seconds for handlers on shutdown by default, less than the host's 30");
         config.TransactionalRetries.Should().BeTrue("it should send a retry copy and complete the original atomically by default");
         config.TopicName.Should().BeNull("it should have no topic name by default");
         config.SubscriptionName.Should().BeNull("it should have no subscription name by default");

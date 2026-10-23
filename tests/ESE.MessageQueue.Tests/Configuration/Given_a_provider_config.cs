@@ -34,4 +34,16 @@ public class Given_a_provider_config
         text.Should().NotContain("S3CRET", "it should never print the shared access key");
         text.Should().Contain("TopicName = events", "it should still print the other settings");
     }
+    [Fact]
+    public void When_Using_The_Default_ShutdownTimeouts()
+    {
+        var host = new Microsoft.Extensions.Hosting.HostOptions().ShutdownTimeout;
+
+        new ESE.MessageQueue.InMemory.InMemoryConfig().ShutdownTimeout.Should().Be(TimeSpan.FromSeconds(25),
+            "it should drain in-memory handlers for 25 seconds by default");
+        new RabbitMqConfig().ShutdownTimeout.Should().Be(TimeSpan.FromSeconds(25), "it should drain RabbitMQ handlers for 25 seconds by default");
+        new AzureServiceBusConfig().ShutdownTimeout.Should().Be(TimeSpan.FromSeconds(25),
+            "it should drain Service Bus handlers for 25 seconds by default");
+        new RabbitMqConfig().ShutdownTimeout.Should().BeLessThan(host, "it should finish draining before the host's default shutdown timeout");
+    }
 }

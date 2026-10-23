@@ -10,7 +10,7 @@ public sealed record RabbitMqConfig : MessageQueueConfig
 
     public override string Provider => ProviderName;
 
-    public static readonly TimeSpan DefaultShutdownTimeout = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan DefaultShutdownTimeout = TimeSpan.FromSeconds(25);
 
     public string ConnectionString { get; set; } = string.Empty;
 

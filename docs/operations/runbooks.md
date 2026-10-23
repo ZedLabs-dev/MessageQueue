@@ -13,8 +13,8 @@ in resource group `my-rg`. All library log categories start with `ESE.MessageQue
    the connection or processor the application uses is up. Their results never contain the reason; the reason is in
    log event 6001 on the same instance.
 2. **Logs by event id**, newest first: 2003 or 3009 (cannot connect), 2001 or 3001 (cannot settle), 1001 (handler
-   exceptions), 1003 (dead letters), 3008 (lock lost). Startup warnings (1101, 2010, 2013, 3012, 3015, 3016) point at
-   configuration.
+   exceptions), 1003 (dead letters), 3008 (lock lost). Startup warnings (1101, 2010, 2013, 3012, 3015, 3016, 5005)
+   point at configuration.
 3. **Metrics:** retry and dead-letter rates by destination, `error.type` on `messaging.client.consumed.messages`
    (which exception, which reason), processing p95.
 4. **Broker:** queue depths of the main, `.retry.*` and `.deadletter` queues (RabbitMQ) or active, scheduled and
@@ -27,7 +27,11 @@ in resource group `my-rg`. All library log categories start with `ESE.MessageQue
 
 ### RabbitMQ
 
-Event 2003 carries the client's exception; its message names the cause:
+`ese.messagequeue.transport.errors` says what kind of trouble it is: `ConnectionFailed` (cannot connect: the table
+below), `ConnectionShutdown` and `RecoveryFailed` (an established connection was lost and does not come back: broker
+restart, network, missed heartbeats), `ChannelShutdown` (the consumer channel was closed by a channel error such as
+`consumer_timeout`: a handler held a delivery too long), `ConsumerCancelled` (the queue was deleted under the consumer:
+redeclare it by restarting the application). Event 2003 carries the client's exception; its message names the cause:
 
 | In the exception | Cause | Fix |
 |---|---|---|

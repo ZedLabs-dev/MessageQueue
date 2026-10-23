@@ -6,6 +6,7 @@ using ESE.MessageQueue.Hosting;
 using ESE.MessageQueue.InMemory;
 using ESE.MessageQueue.Processing;
 using ESE.MessageQueue.Retry;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -255,5 +256,144 @@ public sealed class Given_a_message_queue_hosted_service : IAsyncDisposable
         context.queue.ProcessedMessages.Should().ContainSingle("it should keep the processor's Acknowledge");
         context.logger.Inner.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Exception is InvalidOperationException,
             "it should log the disposal failure instead");
+    }
+    // The host stops waiting for StopAsync after HostOptions.ShutdownTimeout; a provider drain that may take as long
+    // gets cut short, so the hosted service warns at start (event 5005).
+    static async Task<List<string>> StartAndStopWithAsync(TimeSpan? providerTimeout, TimeSpan? hostTimeout, CancellationToken cancellationToken)
+    {
+        var services = new ServiceCollection();
+        var recording = new RecordingLogger<MessageQueueHostedService<TestMessage>>();
+        services.AddSingleton<ILogger<MessageQueueHostedService<TestMessage>>>(recording);
+        services.AddSingleton(new Script());
+        services.AddScoped<ScopedProbe>();
+        if (hostTimeout is { } host)
+            services.Configure<HostOptions>(options => options.ShutdownTimeout = host);
+        services.AddInMemoryMessageQueue<TestMessage>(config =>
+        {
+            if (providerTimeout is { } timeout)
+                config.ShutdownTimeout = timeout;
+        });
+        services.AddMessageProcessor<TestMessage, ScriptedProcessor>();
+        services.AddHostedService<MessageQueueHostedService<TestMessage>>();
+        await using var built = services.BuildServiceProvider();
+        var service = built.GetServices<IHostedService>().OfType<MessageQueueHostedService<TestMessage>>().Single();
+
+        await service.StartAsync(cancellationToken);
+        await service.StopAsync(cancellationToken);
+
+        return recording.Inner.Entries.Where(e => e.Level == LogLevel.Warning).Select(e => e.Message).ToList();
+    }
+
+    [Theory(Timeout = 10_000)]
+    [InlineData(30, 30)]
+    [InlineData(45, 30)]
+    public async Task When_The_Providers_ShutdownTimeout_Is_Not_Below_The_Hosts(int providerSeconds, int hostSeconds)
+    {
+        var warnings = await StartAndStopWithAsync(TimeSpan.FromSeconds(providerSeconds), TimeSpan.FromSeconds(hostSeconds), TestContext.Current.CancellationToken);
+
+        warnings.Should().ContainSingle("it should warn that the host can cut the drain short")
+            .Which.Should().Contain("HostOptions.ShutdownTimeout", "it should name the host setting")
+            .And.Contain($"{TimeSpan.FromSeconds(providerSeconds)}", "it should name the provider's timeout")
+            .And.Contain($"{TimeSpan.FromSeconds(hostSeconds)}", "it should name the host's timeout")
+            .And.Contain("Lower the queue's ShutdownTimeout", "it should not name a configuration key a code-configured queue does not have");
+    }
+
+    // A host ShutdownTimeout of -1 s stands for Timeout.InfiniteTimeSpan: the host then waits as long as it takes.
+    [Theory(Timeout = 10_000)]
+    [InlineData(29, 30)]
+    [InlineData(600, -1)]
+    public async Task When_The_Providers_ShutdownTimeout_Is_Below_The_Hosts(int providerSeconds, int hostSeconds)
+    {
+        var host = hostSeconds < 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(hostSeconds);
+
+        var warnings = await StartAndStopWithAsync(TimeSpan.FromSeconds(providerSeconds), host, TestContext.Current.CancellationToken);
+
+        warnings.Should().BeEmpty("it should not warn when the drain ends before the host stops waiting");
+    }
+
+    [Fact(Timeout = 10_000)]
+    public async Task When_Both_ShutdownTimeouts_Keep_Their_Defaults()
+    {
+        var warnings = await StartAndStopWithAsync(providerTimeout: null, hostTimeout: null, TestContext.Current.CancellationToken);
+
+        warnings.Should().BeEmpty("it should leave the host time beyond the provider's default drain");
+    }
+    [Fact(Timeout = 10_000)]
+    public async Task When_The_Host_Options_Cannot_Be_Read()
+    {
+        var services = new ServiceCollection();
+        var recording = new RecordingLogger<MessageQueueHostedService<TestMessage>>();
+        services.AddSingleton<ILogger<MessageQueueHostedService<TestMessage>>>(recording);
+        services.AddSingleton(new Script());
+        services.AddScoped<ScopedProbe>();
+        services.AddSingleton<Microsoft.Extensions.Options.IOptions<HostOptions>>(_ => throw new InvalidOperationException("broken options"));
+        services.AddInMemoryMessageQueue<TestMessage>(config => config.ShutdownTimeout = TimeSpan.FromMinutes(5));
+        services.AddMessageProcessor<TestMessage, ScriptedProcessor>();
+        services.AddHostedService<MessageQueueHostedService<TestMessage>>();
+        await using var built = services.BuildServiceProvider();
+        var service = built.GetServices<IHostedService>().OfType<MessageQueueHostedService<TestMessage>>().Single();
+
+        var start = () => service.StartAsync(TestContext.Current.CancellationToken);
+
+        await start.Should().NotThrowAsync("it should never fail a start over shutdown advice");
+        built.GetRequiredService<InMemoryMessageQueue<TestMessage>>().IsSubscribed.Should().BeTrue("it should subscribe regardless");
+        recording.Inner.Entries.Should().Contain(e => e.Level == LogLevel.Debug && e.Message.Contains("HostOptions.ShutdownTimeout"),
+            "it should note at Debug level that the check was skipped");
+        await service.StopAsync(TestContext.Current.CancellationToken);
+    }
+    [Fact(Timeout = 10_000)]
+    public async Task When_A_Configured_Queue_Is_Not_Below_The_Hosts_ShutdownTimeout()
+    {
+        var services = new ServiceCollection();
+        var recording = new RecordingLogger<MessageQueueHostedService<TestMessage>>();
+        services.AddSingleton<ILogger<MessageQueueHostedService<TestMessage>>>(recording);
+        services.AddSingleton(new Script());
+        services.AddScoped<ScopedProbe>();
+        services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(30));
+        services.AddMessageQueue<TestMessage>(new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Queues:Orders:Provider"] = "InMemory",
+            ["Queues:Orders:QueueName"] = "orders",
+            ["Queues:Orders:ShutdownTimeout"] = "00:00:40"
+        }).Build(), "Queues:Orders");
+        services.AddMessageProcessor<TestMessage, ScriptedProcessor>();
+        services.AddHostedService<MessageQueueHostedService<TestMessage>>();
+        await using var built = services.BuildServiceProvider();
+        var service = built.GetServices<IHostedService>().OfType<MessageQueueHostedService<TestMessage>>().Single();
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+        await service.StopAsync(TestContext.Current.CancellationToken);
+
+        recording.Inner.Entries.Where(e => e.Level == LogLevel.Warning).Should().ContainSingle()
+            .Which.Message.Should().Contain("Lower Queues:Orders:ShutdownTimeout", "it should name the queue's own configuration key");
+    }
+
+    sealed class FailingBudgetedSubscriber : IMessageSubscriber<TestMessage>, IShutdownBudget
+    {
+        public TimeSpan ShutdownTimeout => TimeSpan.FromSeconds(30);
+
+        public Task SubscribeAsync(Func<TestMessage, Task<bool>> handler, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("broker unreachable");
+
+        public Task SubscribeAsync(Func<TestMessage, MessageContext, CancellationToken, Task<MessageResult>> handler, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("broker unreachable");
+
+        public Task UnsubscribeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    [Fact(Timeout = 10_000)]
+    public async Task When_Subscribing_Fails_After_The_Shutdown_Budget_Was_Checked()
+    {
+        var services = new ServiceCollection();
+        services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(30));
+        await using var built = services.BuildServiceProvider();
+        var recording = new RecordingLogger<MessageQueueHostedService<TestMessage>>();
+        var service = new MessageQueueHostedService<TestMessage>(new FailingBudgetedSubscriber(), built.GetRequiredService<IServiceScopeFactory>(), recording);
+
+        var start = () => service.StartAsync(TestContext.Current.CancellationToken);
+
+        await start.Should().ThrowAsync<InvalidOperationException>("it should still fail the start when subscribing fails");
+        recording.Inner.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.Contains("HostOptions.ShutdownTimeout"),
+            "it should give the shutdown advice before subscribing, so a failing start still shows it");
     }
 }

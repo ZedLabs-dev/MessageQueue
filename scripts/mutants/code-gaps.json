@@ -1,0 +1,282 @@
+{
+  "description": "Code gaps found while documenting (ADRs 0025-0027): publish-side size limit, RabbitMQ ExchangeType validation, RabbitMQ transport-error telemetry, shutdown budget, Debug publish logs, bounded concurrency under load. Integration filters need Docker.",
+  "defaults": {
+    "filter": "Category=Unit"
+  },
+  "mutants": [
+    {
+      "id": "G01",
+      "name": "publish size check lets a body one byte over through",
+      "file": "src/ESE.MessageQueue/Providers/PublishValidation.cs",
+      "find": "if (bodyLength <= maxMessageSizeBytes)",
+      "replace": "if (bodyLength <= maxMessageSizeBytes + 1)"
+    },
+    {
+      "id": "G02",
+      "name": "publish size check refuses a body exactly at the limit",
+      "file": "src/ESE.MessageQueue/Providers/PublishValidation.cs",
+      "find": "if (bodyLength <= maxMessageSizeBytes)",
+      "replace": "if (bodyLength < maxMessageSizeBytes)"
+    },
+    {
+      "id": "G03",
+      "name": "size error names no batch index",
+      "file": "src/ESE.MessageQueue/Providers/PublishValidation.cs",
+      "find": "var which = batchIndex is { } index ? $\"The message at index {index} of the batch\" : \"The message\";",
+      "replace": "var which = \"The message\";"
+    },
+    {
+      "id": "G04",
+      "name": "in-memory single publish not size-checked",
+      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "find": "        PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, config.QueueName);\n",
+      "replace": ""
+    },
+    {
+      "id": "G05",
+      "name": "in-memory batch not size-checked",
+      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "find": "            PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, config.QueueName, index);\n",
+      "replace": ""
+    },
+    {
+      "id": "G06",
+      "name": "RabbitMQ single publish not size-checked",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "        PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, queueName);\n",
+      "replace": ""
+    },
+    {
+      "id": "G07",
+      "name": "RabbitMQ batch not size-checked",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "            PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, queueName, index);\n",
+      "replace": ""
+    },
+    {
+      "id": "G08",
+      "name": "Service Bus single publish not size-checked",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "find": "        PublishValidation.ValidateBodySize(serviceBusMessage.Body.ToMemory().Length, config.MaxMessageSizeBytes, publishEntity);\n",
+      "replace": ""
+    },
+    {
+      "id": "G09",
+      "name": "Service Bus batch not size-checked",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "find": "            PublishValidation.ValidateBodySize(serviceBusMessage.Body.ToMemory().Length, config.MaxMessageSizeBytes, publishEntity, index);\n",
+      "replace": ""
+    },
+    {
+      "id": "G10",
+      "name": "exchange types matched case-insensitively",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqExchangeTypes.cs",
+      "find": "BuiltIn.Contains(exchangeType, StringComparer.Ordinal)",
+      "replace": "BuiltIn.Contains(exchangeType, StringComparer.OrdinalIgnoreCase)"
+    },
+    {
+      "id": "G11",
+      "name": "bare x- accepted as a plugin type",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqExchangeTypes.cs",
+      "find": "exchangeType.Length > PluginPrefix.Length",
+      "replace": "exchangeType.Length >= PluginPrefix.Length"
+    },
+    {
+      "id": "G12",
+      "name": "plugin prefix matched case-insensitively",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqExchangeTypes.cs",
+      "find": "exchangeType.StartsWith(PluginPrefix, StringComparison.Ordinal)",
+      "replace": "exchangeType.StartsWith(PluginPrefix, StringComparison.OrdinalIgnoreCase)"
+    },
+    {
+      "id": "G13",
+      "name": "empty exchange type reported twice",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqExchangeTypes.cs",
+      "find": "if (string.IsNullOrEmpty(exchangeType) || IsKnown(exchangeType))",
+      "replace": "if (exchangeType is null || IsKnown(exchangeType))"
+    },
+    {
+      "id": "G14",
+      "name": "library-initiated connection close counted",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "        if (reason.Initiator != ShutdownInitiator.Application)\n            CountTransportError(RabbitMqTransportErrors.ConnectionShutdown);",
+      "replace": "        CountTransportError(RabbitMqTransportErrors.ConnectionShutdown);"
+    },
+    {
+      "id": "G15",
+      "name": "consumer channel counted with its lost connection",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "if (reason.Initiator != ShutdownInitiator.Application && connectionOpen)",
+      "replace": "if (reason.Initiator != ShutdownInitiator.Application)"
+    },
+    {
+      "id": "G16",
+      "name": "library-initiated channel close counted",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "if (reason.Initiator != ShutdownInitiator.Application && connectionOpen)",
+      "replace": "if (connectionOpen)"
+    },
+    {
+      "id": "G17",
+      "name": "failed connect not counted",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "            CountTransportError(RabbitMqTransportErrors.ConnectionFailed);\n",
+      "replace": ""
+    },
+    {
+      "id": "G18",
+      "name": "connection events not watched",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "            WatchConnection(amqp);\n",
+      "replace": "",
+      "filter": "Category=Integration&FullyQualifiedName~It_Counts_A_Transport_Error"
+    },
+    {
+      "id": "G19",
+      "name": "recovery errors not watched",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "        amqp.ConnectionRecoveryErrorAsync += (_, _) => OnRecoveryFailedAsync();\n",
+      "replace": ""
+    },
+    {
+      "id": "G20",
+      "name": "consumer channel not watched",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "                WatchConsumerChannel(channel, current.Amqp);\n",
+      "replace": "",
+      "filter": "Category=Unit|FullyQualifiedName~Consumer_Channel_It_Counts"
+    },
+    {
+      "id": "G21",
+      "name": "broker cancel not counted",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "            await cancelledByBroker();\n",
+      "replace": "",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_queue.When_The_Broker_Cancels_The_Consumer"
+    },
+    {
+      "id": "G22",
+      "name": "throwing telemetry escapes the client event",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "            telemetry.RecordTransportError(publishTarget, errorType);\n        }\n        catch (Exception ex)\n        {\n            RabbitMqLog.TelemetryFailed(logger, queueName, ex);\n        }",
+      "replace": "            telemetry.RecordTransportError(publishTarget, errorType);\n        }\n        finally\n        {\n        }"
+    },
+    {
+      "id": "G23",
+      "name": "in-memory default ShutdownTimeout back to 30 s",
+      "file": "src/ESE.MessageQueue/InMemory/InMemoryConfig.cs",
+      "find": "DefaultShutdownTimeout = TimeSpan.FromSeconds(25);",
+      "replace": "DefaultShutdownTimeout = TimeSpan.FromSeconds(30);"
+    },
+    {
+      "id": "G24",
+      "name": "RabbitMQ default ShutdownTimeout back to 30 s",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqConfig.cs",
+      "find": "DefaultShutdownTimeout = TimeSpan.FromSeconds(25);",
+      "replace": "DefaultShutdownTimeout = TimeSpan.FromSeconds(30);"
+    },
+    {
+      "id": "G25",
+      "name": "Service Bus default ShutdownTimeout back to 30 s",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusConfig.cs",
+      "find": "DefaultShutdownTimeout = TimeSpan.FromSeconds(25);",
+      "replace": "DefaultShutdownTimeout = TimeSpan.FromSeconds(30);"
+    },
+    {
+      "id": "G26",
+      "name": "equal shutdown timeouts not warned",
+      "file": "src/ESE.MessageQueue/Hosting/MessageQueueHostedService.cs",
+      "find": "budget.ShutdownTimeout >= host)",
+      "replace": "budget.ShutdownTimeout > host)"
+    },
+    {
+      "id": "G27",
+      "name": "shutdown budget never checked",
+      "file": "src/ESE.MessageQueue/Hosting/MessageQueueHostedService.cs",
+      "find": "        WarnIfTheHostStopsWaitingFirst();\n",
+      "replace": ""
+    },
+    {
+      "id": "G28",
+      "name": "unreadable host options not logged",
+      "file": "src/ESE.MessageQueue/Hosting/MessageQueueHostedService.cs",
+      "find": "            HostedServiceLog.HostOptionsUnreadable(logger, MessageType, ex);\n",
+      "replace": ""
+    },
+    {
+      "id": "G29",
+      "name": "unreadable host options fail the start",
+      "file": "src/ESE.MessageQueue/Hosting/MessageQueueHostedService.cs",
+      "find": "        catch (Exception ex)\n        {\n            // Advice only",
+      "replace": "        catch (Exception ex) when (ex is NotSupportedException)\n        {\n            // Advice only"
+    },
+    {
+      "id": "G30",
+      "name": "in-memory publish not logged",
+      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "find": "        PublishLog.Published(logger, messageId, publishTarget.Destination);\n",
+      "replace": ""
+    },
+    {
+      "id": "G31",
+      "name": "in-memory batch publish not logged",
+      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "find": "        PublishLog.PublishedBatch(logger, batch.Count, publishTarget.Destination);\n",
+      "replace": ""
+    },
+    {
+      "id": "G32",
+      "name": "Service Bus publish logged before the send",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "find": "            await SendAsync(token => sender.SendAsync(serviceBusMessage, token), cancellationToken);\n            PublishLog.Published(logger, serviceBusMessage.MessageId, publishTarget.Destination);",
+      "replace": "            PublishLog.Published(logger, serviceBusMessage.MessageId, publishTarget.Destination);\n            await SendAsync(token => sender.SendAsync(serviceBusMessage, token), cancellationToken);"
+    },
+    {
+      "id": "G33",
+      "name": "Service Bus batch publish not logged",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "find": "            PublishLog.PublishedBatch(logger, pending.Count, publishTarget.Destination);\n",
+      "replace": ""
+    },
+    {
+      "id": "G34",
+      "name": "RabbitMQ publish logged before the confirm",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "            await PublishCoreAsync(current, body, options with { MessageId = messageId }, trace.TraceHeaders, cancellationToken);\n            PublishLog.Published(logger, messageId, publishTarget.Destination);",
+      "replace": "            PublishLog.Published(logger, messageId, publishTarget.Destination);\n            await PublishCoreAsync(current, body, options with { MessageId = messageId }, trace.TraceHeaders, cancellationToken);",
+      "filter": "FullyQualifiedName~Not_Logged_As_Published|FullyQualifiedName~Debug_Logging"
+    },
+    {
+      "id": "G35",
+      "name": "RabbitMQ batch publish not logged",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "            PublishLog.PublishedBatch(logger, bodies.Count, publishTarget.Destination);\n",
+      "replace": "",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_queue.When_Publishing_With_Debug_Logging"
+    },
+    {
+      "id": "G36",
+      "name": "in-memory runs more handlers than MaxConcurrentCalls",
+      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "find": "using var slots = new SemaphoreSlim(config.MaxConcurrentCalls, config.MaxConcurrentCalls);",
+      "replace": "using var slots = new SemaphoreSlim(config.MaxConcurrentCalls + 4, config.MaxConcurrentCalls + 4);",
+      "filter": "Category=Unit&FullyQualifiedName~under_load"
+    },
+    {
+      "id": "G37",
+      "name": "RabbitMQ runs more handlers than MaxConcurrentCalls",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "consumerDispatchConcurrency: (ushort)config.MaxConcurrentCalls)",
+      "replace": "consumerDispatchConcurrency: (ushort)(config.MaxConcurrentCalls * 2))",
+      "filter": "Category=Integration&FullyQualifiedName~under_load"
+    },
+    {
+      "id": "G38",
+      "name": "in-memory completion settles before the pipeline returns (idle before consume telemetry)",
+      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "find": "            Handled = true;\n            return Task.CompletedTask;\n        }\n\n        // Real backoff",
+      "replace": "            Handled = true;\n            owner.Settle();\n            return Task.CompletedTask;\n        }\n\n        // Real backoff",
+      "filter": "FullyQualifiedName~Given_an_in_memory_queue.When_Recording_Telemetry"
+    }
+  ]
+}

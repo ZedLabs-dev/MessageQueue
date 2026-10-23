@@ -10,6 +10,7 @@ sealed class RabbitMqConfigValidator : MessageQueueConfigValidator<RabbitMqConfi
         foreach (var error in RabbitMqConnections.Validate(options))
             errors.Add(error);
         RabbitMqNames.Validate(options, errors);
+        RabbitMqExchangeTypes.Validate(options.ExchangeType, errors);
 
         if (options.ConfirmTimeout <= TimeSpan.Zero)
             errors.Add("ConfirmTimeout must be > 0");

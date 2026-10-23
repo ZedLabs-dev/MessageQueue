@@ -29,7 +29,7 @@ or delivery proceeds. Nothing is formatted or tagged while nobody listens.
 | `messaging.process.duration` | histogram | `s` | per delivery | Receipt to settlement: deserialization, your handler and the ack, retry copy or dead-letter |
 | `ese.messagequeue.messages.retried` | counter | `{message}` | per retry scheduled | Deliveries rescheduled for another attempt |
 | `ese.messagequeue.messages.dead_lettered` | counter | `{message}` | per dead letter | Deliveries dead-lettered, tagged `ese.messagequeue.dead_letter.reason`. Not counted when `EnableDeadLetterQueue = false` (the message is dropped: event 1004) |
-| `ese.messagequeue.transport.errors` | counter | `{error}` | per processor error | **Azure Service Bus only**: errors the SDK processor reported outside a delivery (authentication, entity not found, network, throttling); `error.type` = the `ServiceBusFailureReason` or the exception type. RabbitMQ transport trouble shows as log events 2001 and 2003 |
+| `ese.messagequeue.transport.errors` | counter | `{error}` | per transport error | Broker trouble outside a delivery. **Azure Service Bus:** errors the SDK processor reported (authentication, entity not found, network, throttling); `error.type` = the `ServiceBusFailureReason` or the exception type. **RabbitMQ:** `error.type` = `ConnectionFailed` (connecting or declaring the topology failed, event 2003; calls refused during the reconnect backoff are not counted), `ConnectionShutdown` (the broker closed the connection or it was lost), `RecoveryFailed` (one automatic reconnect attempt failed), `ChannelShutdown` (the consumer channel was closed while the connection stayed open, for example by `consumer_timeout`), `ConsumerCancelled` (the broker cancelled the consumer: its queue was deleted). Closes the library makes itself are not counted. Not recorded by the in-memory provider |
 | `ese.messagequeue.dead_letters.replayed` | counter | `{message}` | per replay call | Dead letters moved back to their queue |
 | `ese.messagequeue.dead_letters.purged` | counter | `{message}` | per purge call | Dead letters deleted |
 
@@ -96,6 +96,10 @@ categories start with `ESE.MessageQueue` (the queue classes, `ESE.MessageQueue.H
 { "Logging": { "LogLevel": { "ESE.MessageQueue": "Information" } } }
 ```
 
+Publishing logs nothing at Information: a line per message would drown everything else, its outcome is in the publish
+metrics and spans, and a failure throws to the caller. To trace publishes, raise the queue's category to Debug for a
+while (events 1010 and 1011), for example `"ESE.MessageQueue.RabbitMQ": "Debug"`.
+
 Messages never contain connection strings, passwords or exception messages from a broker client; exceptions are
 attached to the log entry (except event 3003, where even the exception could carry the connection string). Repeating
 transport errors (2001, 3001, 3008, 3009, 3010, 3011) are throttled to one entry per 10 seconds per kind, with the
@@ -117,6 +121,8 @@ hosted service, 6000s health checks.
 | 1007 | Error | DeliveryUnreadable | Message {MessageId} on queue {QueueName} could not be read ({ExceptionType}); dead-lettering it as DeliveryFailed | A delivery's metadata or body could not be read (broker-side corruption, a foreign publisher); it is dead-lettered as `DeliveryFailed` |
 | 1008 | Warning | CallbackFailed | Queue {QueueName}: a cancellation callback registered by a handler threw during shutdown; the shutdown continues | A cancellation callback registered by a handler threw during shutdown; the shutdown continued |
 | 1009 | Warning | PublishTelemetryFailed | Publish telemetry for queue {QueueName} failed; the message is published regardless | Telemetry threw while publishing; the message was published regardless |
+| 1010 | Debug | Published | Published message {MessageId} to {Destination} | A `PublishAsync` of one message reached the broker (confirmed, on RabbitMQ). Debug level: off by default, enable it to trace a message from its publisher. Never content or headers; control characters are removed from the id. A failed or refused publish throws to the caller instead |
+| 1011 | Debug | PublishedBatch | Published a batch of {MessageCount} messages to {Destination} | A batch `PublishAsync` reached the broker. Debug level, like 1010 |
 | 1101 | Warning | BackoffUnsupported | Queue {QueueName}: this provider or entity has no broker-side delayed redelivery (Capabilities.DelayedRedelivery = false), so the retry backoff ({InitialDelay} to {MaxDelay}) is applied in process or not at all | At startup: the provider or entity cannot delay a retry (a Service Bus subscription) but the policy has a backoff. Set `RequireDelayedRedelivery = true` to make this fatal |
 | 1201 | Information | Replayed | Dead-letter replay on queue {QueueName}: {Replayed} replayed, {Failed} failed, {Skipped} skipped (dry run: {DryRun}) | Summary of a dead-letter replay (also for a dry run) |
 | 1202 | Warning | Purged | Dead-letter purge on queue {QueueName}: {Purged} dead letter(s) deleted | Summary of a dead-letter purge: messages were permanently deleted |
@@ -131,6 +137,7 @@ hosted service, 6000s health checks.
 | 2005 | Warning | RequeueFailed | RabbitMQ queue {QueueName}: could not requeue a delivery; the broker requeues it when the channel closes | RabbitMQ: a requeue failed; the broker requeues the delivery when the channel closes |
 | 2006 | Warning | CancelFailed | RabbitMQ queue {QueueName}: cancelling the consumer failed | RabbitMQ: cancelling the consumer during shutdown failed (usually the channel was already closed) |
 | 2007 | Debug | CloseFailed | RabbitMQ queue {QueueName}: closing a channel failed | RabbitMQ: closing a channel failed. Debug level; harmless during shutdown or after a connection loss |
+| 2008 | Warning | TelemetryFailed | RabbitMQ queue {QueueName}: telemetry failed while counting a transport error; the error is handled regardless | RabbitMQ: the telemetry provider threw while counting a transport error |
 | 2009 | Debug | UnhandledRequeueFailed | RabbitMQ queue {QueueName}: an unhandled delivery could not be returned without using an attempt; requeued instead | RabbitMQ: a prefetched delivery that was never handled could not be returned without using an attempt, so it was requeued (it then counts as a redelivery) |
 | 2010 | Warning | ConcurrencyAbovePrefetch | RabbitMQ queue {QueueName}: MaxConcurrentCalls ({MaxConcurrentCalls}) is above PrefetchCount ({PrefetchCount}), so at most PrefetchCount handlers run at once | RabbitMQ, at startup: `MaxConcurrentCalls` is above `PrefetchCount`, so only `PrefetchCount` handlers can run. Raise `PrefetchCount` |
 | 2011 | Warning | CloseAbandoned | RabbitMQ queue {QueueName}: the connection did not close in time (a handler is still running); it closes in the background | RabbitMQ: the connection did not close within a second of shutdown because a handler still runs; it closes in the background |
@@ -162,10 +169,12 @@ hosted service, 6000s health checks.
 | 5002 | Information | Stopping | Stopping message queue hosted service for {MessageType} | The hosted service is unsubscribing (host shutdown) |
 | 5003 | Warning | NoProcessor | No IMessageProcessor<{MessageType}> is registered; the hosted service will not consume messages | No `IMessageProcessor<T>` is registered, so this hosted service consumes nothing. A registration bug |
 | 5004 | Warning | ScopeDisposalFailed | Disposing the DI scope for {MessageType} message {MessageId} failed; the processor's result is kept | Disposing the per-message DI scope failed; the processor's result stands |
+| 5005 | Warning | ShutdownTimeoutNotBelowHost | The {MessageType} queue may wait up to its ShutdownTimeout ({ShutdownTimeout}) for running handlers, not less than the host's HostOptions.ShutdownTimeout ({HostShutdownTimeout}): the host can stop waiting first and lose their results. Lower {ShutdownTimeoutSetting} or raise HostOptions.ShutdownTimeout | At startup: the queue's drain can outlast the host's shutdown wait (never when the host waits forever: `ShutdownTimeout` zero or less), so a slow handler's result can be lost on shutdown. Keep the queue's `ShutdownTimeout` below the host's ([failure modes](failure-modes.md#shutdown-with-handlers-in-flight)) |
+| 5006 | Debug | HostOptionsUnreadable | Could not read HostOptions.ShutdownTimeout for the {MessageType} queue; the shutdown budget is not checked | At startup: the host's options could not be read, so warning 5005 is not checked. Harmless |
 | 6001 | Warning | Failed | Health check {HealthCheck} failed with {ExceptionType} | A health check probe failed; the exception (with its details) is here, never in the health result |
 
 The levels to page on are Error (2001, 2003, 3001, 3003, 3009, 4001, 4002, 1007) and the dead-letter and retry rates
-from metrics; see [alerts](alerts.md). Warning events at startup (1101, 2010, 2013, 3012, 3015, 3016) are
+from metrics; see [alerts](alerts.md). Warning events at startup (1101, 2010, 2013, 3012, 3015, 3016, 5005) are
 configuration advice: review them on every deployment.
 
 ## Health checks
