@@ -10,6 +10,10 @@ dotnet run --project samples/ESE.MessageQueue.Samples -- --environment RabbitMq 
 dotnet run --project samples/ESE.MessageQueue.Samples -- --environment AzureServiceBus     # Entra ID (DefaultAzureCredential)
 ```
 
+`DeadLetterInspector` then shows the dead-letter operations (ADR 0023) once, after `Sample:DeadLetterDelay`:
+`Sample:DeadLetters` = `Peek` (the default in `appsettings.json`) logs the dead letters, `Replay` also counts them with a
+dry run and replays them (the rejected order is dead-lettered again), `None` skips it.
+
 The `--` hands `--environment` to the sample (`dotnet run` has its own `--environment` option). Settings are read from
 the output folder, so the commands work from any directory. The broker providers are registered with
 `AddRabbitMqProvider()` / `AddAzureServiceBusProvider()` before `AddMessageQueue<OrderCreated>` (`SampleHost.cs`).

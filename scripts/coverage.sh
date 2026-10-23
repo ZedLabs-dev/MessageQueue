@@ -12,8 +12,8 @@
 # less. Ratchet the thresholds up, never down (OPTIMIZATION-PLAN.md section 5).
 set -euo pipefail
 
-THRESHOLD="${COVERAGE_THRESHOLD:-88}"
-ASSEMBLY_FLOOR="${COVERAGE_ASSEMBLY_FLOOR:-86}"
+THRESHOLD="${COVERAGE_THRESHOLD:-89}"
+ASSEMBLY_FLOOR="${COVERAGE_ASSEMBLY_FLOOR:-87}"
 RESULTS_DIR="${RESULTS_DIR:-TestResults}"
 REPORT_DIR="$RESULTS_DIR/coverage-report"
 ASSEMBLIES=(ESE.MessageQueue ESE.MessageQueue.RabbitMQ ESE.MessageQueue.AzureServiceBus)

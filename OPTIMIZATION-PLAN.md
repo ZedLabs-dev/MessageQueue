@@ -316,6 +316,10 @@ Linux-only store specs, which pass in a Linux SDK container); line coverage 89.9
 `deferred-items.json` 55/55 and the reviewer's `review-deferred-items.json` 36/37 killed plus one documented equivalent
 (R-P8), `review-deferred-items-2.json` 2/2; R-T17/R-T18 are killed on Linux only.
 
+**Dead-letter operations (2026-10-22, ADR 0023):** `IDeadLetterQueue<T>` (peek, replay, purge) on every provider, a
+shared `DeadLetterQueue<T>` over the `IDeadLetterStore` SPI, `Capabilities.DeadLetterOperations`, metrics and logs;
+operator how-to `docs/dead-letter-operations.md` (PRODUCTION-READINESS-PLAN "drain and replay dead-letter queues").
+
 **Deferred (decided, not forgotten):**
 - RabbitMQ.Client 6.x vs 7.x benchmark (Phase 5 exit criterion): the 6.x provider no longer exists (ADR 0014,
   `docs/benchmarks.md`).

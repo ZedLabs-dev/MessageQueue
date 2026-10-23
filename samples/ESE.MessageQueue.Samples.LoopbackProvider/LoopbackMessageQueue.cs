@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Threading.Channels;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Providers;
@@ -12,16 +11,18 @@ namespace ESE.MessageQueue.Samples.LoopbackProvider;
 /// A minimal in-process transport built only on the public provider SPI: publishing validates, serializes and traces
 /// through the SPI helpers, and every delivery goes through <see cref="MessageDispatcher{T}"/>, so retry, backoff,
 /// dead-lettering and consume spans behave exactly as on the first-party providers. One subscriber, one delivery at
-/// a time; retries wait in process.
+/// a time; retries wait in process. Dead-letter operations come from <see cref="DeadLetterQueue{T}"/> over the queue's
+/// own <see cref="IDeadLetterStore"/>.
 /// </summary>
-public sealed class LoopbackMessageQueue<T> : IMessageQueue<T>, IAsyncDisposable where T : class
+public sealed class LoopbackMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue<T>, IAsyncDisposable where T : class
 {
     readonly LoopbackConfig config;
     readonly ITelemetryProvider telemetry;
     readonly ILogger logger;
     readonly TelemetryTarget target;
     readonly Channel<Envelope> channel = Channel.CreateUnbounded<Envelope>();
-    readonly ConcurrentQueue<(Envelope Envelope, DeadLetterReason Reason)> deadLetters = new();
+    readonly List<DeadLetter> deadLetters = [];
+    readonly DeadLetterQueue<T> deadLetterQueue;
     CancellationTokenSource? stopping;
     Task? loop;
 
@@ -32,12 +33,30 @@ public sealed class LoopbackMessageQueue<T> : IMessageQueue<T>, IAsyncDisposable
         this.telemetry = telemetry ?? NullTelemetryProvider.Instance;
         this.logger = logger ?? NullLogger.Instance;
         target = new TelemetryTarget("ese.loopback", config.QueueName, typeof(T).Name);
+        deadLetterQueue = new DeadLetterQueue<T>(new Store(this), config, target, this.telemetry, this.logger);
     }
 
-    public MessageQueueCapabilities Capabilities { get; } = new(Durable: false, DeadLetter: true, DelayedRedelivery: false);
+    public MessageQueueCapabilities Capabilities { get; } =
+        new(Durable: false, DeadLetter: true, DelayedRedelivery: false) { DeadLetterOperations = DeadLetterOperations.All };
 
     /// <summary>Dead-lettered message ids with their reason code.</summary>
-    public IReadOnlyList<(string MessageId, string Reason)> DeadLetters => [.. deadLetters.Select(d => (d.Envelope.MessageId, d.Reason.Code))];
+    public IReadOnlyList<(string MessageId, string Reason)> DeadLetters
+    {
+        get
+        {
+            lock (deadLetters)
+                return [.. deadLetters.Select(d => (d.Envelope.MessageId, d.Reason.Code))];
+        }
+    }
+
+    public Task<IReadOnlyList<DeadLetterMessage<T>>> PeekAsync(int maxCount, CancellationToken cancellationToken = default) =>
+        deadLetterQueue.PeekAsync(maxCount, cancellationToken);
+
+    public Task<DeadLetterReplayResult> ReplayAsync(DeadLetterReplayOptions<T> options, CancellationToken cancellationToken = default) =>
+        deadLetterQueue.ReplayAsync(options, cancellationToken);
+
+    public Task<int> PurgeAsync(DeadLetterPurgeOptions<T> options, CancellationToken cancellationToken = default) =>
+        deadLetterQueue.PurgeAsync(options, cancellationToken);
 
     public Task PublishAsync(T message, CancellationToken cancellationToken = default) =>
         PublishAsync(message, new PublishOptions(), cancellationToken);
@@ -131,9 +150,75 @@ public sealed class LoopbackMessageQueue<T> : IMessageQueue<T>, IAsyncDisposable
 
         public Task DeadLetterAsync(DeadLetterReason reason, CancellationToken cancellationToken)
         {
-            if (queue.deadLetters.Count < queue.config.MaxDeadLetters)
-                queue.deadLetters.Enqueue((envelope, reason));
+            lock (queue.deadLetters)
+            {
+                if (queue.deadLetters.Count < queue.config.MaxDeadLetters)
+                    queue.deadLetters.Add(new DeadLetter(envelope, reason, DateTimeOffset.UtcNow));
+            }
             return Task.CompletedTask;
+        }
+    }
+
+    // Compared by reference, so replaying or purging one dead letter never touches an equal one.
+    sealed class DeadLetter(Envelope envelope, DeadLetterReason reason, DateTimeOffset at)
+    {
+        public Envelope Envelope { get; } = envelope;
+        public DeadLetterReason Reason { get; } = reason;
+        public DateTimeOffset At { get; } = at;
+    }
+
+    // The dead-letter seam: a pass over a snapshot of the list; an entry acts on its own dead letter while it is there.
+    sealed class Store(LoopbackMessageQueue<T> queue) : IDeadLetterStore
+    {
+        public DeadLetterOperations Operations => DeadLetterOperations.All;
+
+        public Task<IDeadLetterScan> OpenScanAsync(bool browseOnly, CancellationToken cancellationToken)
+        {
+            lock (queue.deadLetters)
+                return Task.FromResult<IDeadLetterScan>(new Scan(queue, new Queue<DeadLetter>(queue.deadLetters)));
+        }
+    }
+
+    sealed class Scan(LoopbackMessageQueue<T> queue, Queue<DeadLetter> pending) : IDeadLetterScan
+    {
+        public Task<IDeadLetterEntry?> NextAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IDeadLetterEntry?>(pending.TryDequeue(out var next) ? new Entry(queue, next) : null);
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    sealed class Entry(LoopbackMessageQueue<T> queue, DeadLetter letter) : IDeadLetterEntry
+    {
+        public DeadLetterMetadata Metadata { get; } = new()
+        {
+            MessageId = letter.Envelope.MessageId,
+            CorrelationId = letter.Envelope.CorrelationId,
+            ReasonCode = letter.Reason.Code,
+            ReasonDetail = letter.Reason.Detail,
+            DeadLetteredAt = letter.At,
+            DeliveryAttempt = letter.Envelope.Attempt,
+            Headers = letter.Envelope.Headers
+        };
+
+        public ReadOnlyMemory<byte> Body => letter.Envelope.Body;
+
+        // Queued first (as attempt 1, same id, headers and trace), then removed.
+        public async Task ReplayAsync(CancellationToken cancellationToken)
+        {
+            await queue.channel.Writer.WriteAsync(letter.Envelope with { Attempt = 1 }, cancellationToken);
+            Remove();
+        }
+
+        public Task RemoveAsync(CancellationToken cancellationToken)
+        {
+            Remove();
+            return Task.CompletedTask;
+        }
+
+        void Remove()
+        {
+            lock (queue.deadLetters)
+                queue.deadLetters.Remove(letter);
         }
     }
 }

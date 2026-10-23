@@ -52,6 +52,18 @@ public sealed class Given_a_service_bus_transport : IAsyncDisposable
         peeker.Inner.EntityPath.Should().Be("events/Subscriptions/billing", "it should peek the subscription it consumes from");
     }
 
+    [Theory]
+    [InlineData(null, "orders/$DeadLetterQueue")]
+    [InlineData("billing", "orders/Subscriptions/billing/$DeadLetterQueue")]
+    public async Task When_Creating_A_Dead_Letter_Receiver(string? subscription, string expectedPath)
+    {
+        await using var receiver = (ServiceBusTransport.DeadLetterReceiver)transport.CreateDeadLetterReceiver("orders", subscription);
+
+        receiver.Inner.EntityPath.Should().Be(expectedPath, "it should read the entity's dead-letter subqueue");
+        receiver.Inner.ReceiveMode.Should().Be(ServiceBusReceiveMode.PeekLock, "it should lock what it receives until it settles it");
+        receiver.Inner.PrefetchCount.Should().Be(0, "it should not prefetch locks it may never use");
+    }
+
     [Fact]
     public async Task When_Creating_A_Sender()
     {

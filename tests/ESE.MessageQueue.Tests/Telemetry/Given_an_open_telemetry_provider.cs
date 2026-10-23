@@ -366,8 +366,30 @@ public class Given_an_open_telemetry_provider
             ["messaging.process.duration"] = "s",
             ["ese.messagequeue.messages.retried"] = "{message}",
             ["ese.messagequeue.messages.dead_lettered"] = "{message}",
-            ["ese.messagequeue.transport.errors"] = "{error}"
+            ["ese.messagequeue.transport.errors"] = "{error}",
+            ["ese.messagequeue.dead_letters.replayed"] = "{message}",
+            ["ese.messagequeue.dead_letters.purged"] = "{message}"
         }, "it should use the semantic conventions' units");
+    }
+
+    [Fact]
+    public void When_Dead_Letters_Are_Replayed_Or_Purged()
+    {
+        var source = $"ESE.MessageQueue.Tests.{Guid.NewGuid():N}";
+        using var metrics = new MetricCapture(source);
+        using var provider = new OpenTelemetryProvider(source);
+        string[] common = ["messaging.system", "messaging.destination.name", "messaging.operation.name", "ese.messagequeue.message_type"];
+
+        provider.RecordDeadLettersReplayed(Target, 3);
+        provider.RecordDeadLettersPurged(Target, 2);
+
+        var replayed = metrics.For("ese.messagequeue.dead_letters.replayed").Single();
+        replayed.Value.Should().Be(3, "it should count every replayed dead letter");
+        replayed.Tags.Keys.Should().BeEquivalentTo(common, "it should tag replays with the low-cardinality attributes only");
+        replayed.Tags["messaging.operation.name"].Should().Be("replay", "it should name the operation");
+        var purged = metrics.For("ese.messagequeue.dead_letters.purged").Single();
+        purged.Value.Should().Be(2, "it should count every purged dead letter");
+        purged.Tags["messaging.operation.name"].Should().Be("purge", "it should name the operation");
     }
 
     [Fact]

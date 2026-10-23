@@ -138,6 +138,7 @@ public static class MessageQueueServiceCollectionExtensions
         services.AddSingleton<IMessageQueue<T>>(queue);
         services.AddSingleton<IMessagePublisher<T>>(queue);
         services.AddSingleton<IMessageSubscriber<T>>(queue);
+        services.AddSingleton<IDeadLetterQueue<T>>(queue);
         return services;
     }
 

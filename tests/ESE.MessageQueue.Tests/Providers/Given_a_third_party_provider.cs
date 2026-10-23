@@ -87,6 +87,37 @@ public sealed class Given_a_third_party_provider : IAsyncDisposable
             "it should dead-letter with the shared reason code once retries are exhausted");
     }
 
+    // ADR 0023: dead-letter operations through the public SPI alone (IDeadLetterStore + DeadLetterQueue<T>).
+    [Fact(Timeout = 10_000)]
+    public async Task When_It_Opts_Into_Dead_Letter_Operations()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var queue = provider.GetRequiredService<IMessageQueue<TestMessage>>();
+        var deadLetters = provider.GetRequiredService<IDeadLetterQueue<TestMessage>>();
+        var attempts = new List<(string Id, int Attempt)>();
+        var accept = false;
+        await queue.SubscribeAsync((_, context, _) =>
+        {
+            lock (attempts)
+                attempts.Add((context.MessageId, context.DeliveryAttempt));
+            return Task.FromResult(Volatile.Read(ref accept) ? MessageResult.Acknowledge : MessageResult.DeadLetter);
+        }, token);
+        await queue.PublishAsync(new TestMessage("1", "rejected"), new PublishOptions { MessageId = "m-1" }, token);
+        await Wait.UntilAsync(() => ((LoopbackMessageQueue<TestMessage>)queue).DeadLetters.Count == 1, Wait.DeliveryTimeout);
+
+        var peeked = await deadLetters.PeekAsync(10, token);
+        Volatile.Write(ref accept, true);
+        var result = await deadLetters.ReplayAsync(new DeadLetterReplayOptions<TestMessage> { MaxCount = 10 }, token);
+        await Wait.UntilAsync(() => attempts.Count == 2, Wait.DeliveryTimeout);
+
+        queue.Capabilities.DeadLetterOperations.Should().Be(DeadLetterOperations.All, "it should declare the operations it supports");
+        deadLetters.Should().BeSameAs(queue, "it should resolve the dead-letter operations as the queue");
+        peeked.Should().ContainSingle("it should peek the dead letter").Which.ReasonCode.Should().Be(DeadLetterReasons.Rejected);
+        result.Replayed.Should().Be(1, "it should replay the dead letter");
+        attempts.Should().Equal([("m-1", 1), ("m-1", 1)], "it should redeliver the same message as a first attempt");
+        ((LoopbackMessageQueue<TestMessage>)queue).DeadLetters.Should().BeEmpty("it should remove the replayed dead letter");
+    }
+
     [Fact(Timeout = 10_000)]
     public async Task When_A_Message_Is_Traced()
     {

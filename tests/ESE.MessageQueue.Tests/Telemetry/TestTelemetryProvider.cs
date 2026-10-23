@@ -80,6 +80,14 @@ public class TestTelemetryProvider : ITelemetryProvider
 
     public void RecordTransportError(TelemetryTarget target, string errorType) => TransportErrors.Enqueue((target, errorType));
 
+    public ConcurrentQueue<(TelemetryTarget Target, int Count)> DeadLettersReplayed { get; } = new();
+
+    public ConcurrentQueue<(TelemetryTarget Target, int Count)> DeadLettersPurged { get; } = new();
+
+    public void RecordDeadLettersReplayed(TelemetryTarget target, int count) => DeadLettersReplayed.Enqueue((target, count));
+
+    public void RecordDeadLettersPurged(TelemetryTarget target, int count) => DeadLettersPurged.Enqueue((target, count));
+
     public IReadOnlyList<RecordedActivity> Consumes => [.. Activities.Where(a => a.OperationName == "consume")];
 
     public IReadOnlyList<RecordedActivity> Publishes => [.. Activities.Where(a => a.OperationName == "publish")];

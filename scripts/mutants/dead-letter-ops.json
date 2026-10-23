@@ -1,0 +1,562 @@
+{
+  "description": "Dead-letter operations (ADR 0023): the shared DeadLetterQueue<T> and the in-memory, RabbitMQ and Azure Service Bus stores. RabbitMQ store mutants need Docker (integration filter).",
+  "defaults": {
+    "filter": "Category=Unit&(FullyQualifiedName~dead_letter|FullyQualifiedName~third_party_provider|FullyQualifiedName~Samples)"
+  },
+  "mutants": [
+    {
+      "id": "D01",
+      "name": "dry run replays",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "if (options.DryRun)\n                    continue;",
+      "replace": "if (options.DryRun && false)\n                    continue;"
+    },
+    {
+      "id": "D02",
+      "name": "dry run opens a settling pass",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "browseOnly: options.DryRun",
+      "replace": "browseOnly: false"
+    },
+    {
+      "id": "D03",
+      "name": "max count off by one",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "while (matched < options.MaxCount && examined",
+      "replace": "while (matched <= options.MaxCount && examined"
+    },
+    {
+      "id": "D04",
+      "name": "purge ignores the filter",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "Selected(Snapshot(entry), options.ReasonCodes, [], options.Filter)",
+      "replace": "Selected(Snapshot(entry), options.ReasonCodes, [], null)"
+    },
+    {
+      "id": "D05",
+      "name": "purge ignores reason codes",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "Selected(Snapshot(entry), options.ReasonCodes, [], options.Filter)",
+      "replace": "Selected(Snapshot(entry), null, [], options.Filter)"
+    },
+    {
+      "id": "D06",
+      "name": "replay replays MessageTooLarge/DeserializationFailed by default",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "Selected(letter, options.ReasonCodes, NotReplayedByDefault, options.Filter)",
+      "replace": "Selected(letter, options.ReasonCodes, [], options.Filter)"
+    },
+    {
+      "id": "D07",
+      "name": "replay ignores the filter",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "Selected(letter, options.ReasonCodes, NotReplayedByDefault, options.Filter)",
+      "replace": "Selected(letter, options.ReasonCodes, NotReplayedByDefault, null)"
+    },
+    {
+      "id": "D08",
+      "name": "explicit reason codes ignored",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": ": letter.ReasonCode is { } code && reasonCodes.Contains(code, StringComparer.Ordinal);",
+      "replace": ": true;"
+    },
+    {
+      "id": "D09",
+      "name": "a message id is replayed twice in one call",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "|| replayedKeys.Contains(key))",
+      "replace": "|| false)"
+    },
+    {
+      "id": "D10",
+      "name": "messages without an id are grouped",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "        if (letter.MessageId.Length > 0)\n            return \"id:\" + letter.MessageId;",
+      "replace": "        if (letter.MessageId.Length >= 0)\n            return \"id:\" + letter.MessageId;"
+    },
+    {
+      "id": "D11",
+      "name": "no scan cap",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "while (matched < options.MaxCount && examined < DeadLetterLimits.MaxScanCount)",
+      "replace": "while (matched < options.MaxCount)"
+    },
+    {
+      "id": "D12",
+      "name": "purge max count off by one",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "while (purged < options.MaxCount && examined",
+      "replace": "while (purged <= options.MaxCount && examined"
+    },
+    {
+      "id": "D13",
+      "name": "failure list unbounded",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "if (failures.Count < DeadLetterLimits.MaxReportedFailures)",
+      "replace": "if (true)"
+    },
+    {
+      "id": "D14",
+      "name": "failure reports exception text",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "new DeadLetterReplayFailure(letter.MessageId, error)",
+      "replace": "new DeadLetterReplayFailure(letter.MessageId, ex.Message)"
+    },
+    {
+      "id": "D15",
+      "name": "oversized body deserialized",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "Message = body.Length <= config.MaxMessageSizeBytes ? TryDeserialize(body) : null,",
+      "replace": "Message = TryDeserialize(body),"
+    },
+    {
+      "id": "D16",
+      "name": "size limit off by one",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "body.Length <= config.MaxMessageSizeBytes",
+      "replace": "body.Length < config.MaxMessageSizeBytes"
+    },
+    {
+      "id": "D17",
+      "name": "unsupported operation allowed",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "if (!store.Operations.HasFlag(operation))",
+      "replace": "if (false)"
+    },
+    {
+      "id": "D18",
+      "name": "peek count unbounded",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "ArgumentOutOfRangeException.ThrowIfGreaterThan(maxCount, DeadLetterLimits.MaxPeekCount);",
+      "replace": ""
+    },
+    {
+      "id": "D19",
+      "name": "operations overlap",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "await gate.WaitAsync(cancellationToken);\n        try\n        {\n            return await ReplayCoreAsync(options, cancellationToken);\n        }\n        finally\n        {\n            gate.Release();\n        }",
+      "replace": "return await ReplayCoreAsync(options, cancellationToken);"
+    },
+    {
+      "id": "D20",
+      "name": "message id not sanitized",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "MessageId = DeliveryText.MessageId(metadata.MessageId),",
+      "replace": "MessageId = metadata.MessageId,"
+    },
+    {
+      "id": "D21",
+      "name": "reason detail unbounded",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "ReasonDetail = BoundedText.Truncate(metadata.ReasonDetail),",
+      "replace": "ReasonDetail = metadata.ReasonDetail,"
+    },
+    {
+      "id": "D22",
+      "name": "replays not counted",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "            await ReturnHeldAsync(scan);\n            Count(replayed, purged: false);",
+      "replace": "            await ReturnHeldAsync(scan);"
+    },
+    {
+      "id": "D23",
+      "name": "peek does not hand back what it held",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "            return letters;\n        }\n        catch (Exception ex) when (!IsCallerCancellation(ex, cancellationToken))\n        {\n            throw Aborted(\"peek\", letters.Count, ex);\n        }\n        finally\n        {\n            await ReturnHeldAsync(scan);",
+      "replace": "            return letters;\n        }\n        catch (Exception ex) when (!IsCallerCancellation(ex, cancellationToken))\n        {\n            throw Aborted(\"peek\", letters.Count, ex);\n        }\n        finally\n        {"
+    },
+    {
+      "id": "D24",
+      "name": "cancellation not honoured between messages",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "                cancellationToken.ThrowIfCancellationRequested();\n                if (await scan.NextAsync(cancellationToken) is not { } entry)\n                    break;\n                examined++;\n\n                var letter",
+      "replace": "                if (await scan.NextAsync(CancellationToken.None) is not { } entry)\n                    break;\n                examined++;\n\n                var letter"
+    },
+    {
+      "id": "D25",
+      "name": "empty reason-code list accepted",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "if (reasonCodes.Count == 0)",
+      "replace": "if (reasonCodes.Count < 0)"
+    },
+    {
+      "id": "D26",
+      "name": "replay failure counted as success",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "                    failed++;\n                    var error",
+      "replace": "                    replayed++;\n                    var error"
+    },
+    {
+      "id": "I01",
+      "name": "in-memory replay keeps the old attempt",
+      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "find": "var context = stored.Letter.Context with { DeliveryAttempt = 1 };",
+      "replace": "var context = stored.Letter.Context;",
+      "filter": "Category=Unit&FullyQualifiedName~in_memory_dead_letter_queue"
+    },
+    {
+      "id": "I02",
+      "name": "in-memory replay leaves the dead letter",
+      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "find": "\"The queue was disposed; the dead letter was kept\");\n                }\n                owner.deadLetters.Remove(stored);",
+      "replace": "\"The queue was disposed; the dead letter was kept\");\n                }",
+      "filter": "Category=Unit&FullyQualifiedName~in_memory_dead_letter_queue"
+    },
+    {
+      "id": "I03",
+      "name": "in-memory replay not tracked as pending",
+      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "find": "                if (owner.pending++ == 0)\n                    owner.idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);\n                if (!owner.queue.Writer.TryWrite",
+      "replace": "                if (!owner.queue.Writer.TryWrite",
+      "filter": "Category=Unit&FullyQualifiedName~in_memory_dead_letter_queue"
+    },
+    {
+      "id": "I04",
+      "name": "in-memory replay removes a dead letter it could not queue",
+      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "find": "if (!owner.queue.Writer.TryWrite(new Envelope(stored.Letter.Body.ToArray(), context)))",
+      "replace": "if (!owner.queue.Writer.TryWrite(new Envelope(stored.Letter.Body.ToArray(), context)) && false)",
+      "filter": "Category=Unit&FullyQualifiedName~in_memory_dead_letter_queue"
+    },
+    {
+      "id": "I05",
+      "name": "in-memory removal by value instead of by reference",
+      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "find": "                ThrowIfGone();\n                owner.deadLetters.Remove(stored);\n            }\n            return Task.CompletedTask;",
+      "replace": "                ThrowIfGone();\n                owner.deadLetters.RemoveAll(d => d.Letter == stored.Letter);\n            }\n            return Task.CompletedTask;",
+      "filter": "Category=Unit&FullyQualifiedName~in_memory_dead_letter_queue",
+      "equivalent": "InMemoryDeadLetter<T> compares Body as ReadOnlyMemory<byte>, i.e. by backing array reference, and every publish serializes into its own array (a replay copies with ToArray; retries reuse one envelope, which is dead-lettered once), so two stored dead letters are never equal by value; removal by reference is defensive."
+    },
+    {
+      "id": "R01",
+      "name": "replay keeps x- headers",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "if (!key.StartsWith(\"x-\", StringComparison.OrdinalIgnoreCase))\n                    headers[key] = value;",
+      "replace": "headers[key] = value;",
+      "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_dead_letter"
+    },
+    {
+      "id": "R02",
+      "name": "replay strips x- headers case-sensitively",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "if (!key.StartsWith(\"x-\", StringComparison.OrdinalIgnoreCase))\n                    headers[key] = value;",
+      "replace": "if (!key.StartsWith(\"x-\", StringComparison.Ordinal))\n                    headers[key] = value;",
+      "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_dead_letter"
+    },
+    {
+      "id": "R03",
+      "name": "broker reason not used",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "ReasonCode = reason ?? brokerReason,",
+      "replace": "ReasonCode = reason,",
+      "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_dead_letter"
+    },
+    {
+      "id": "R04",
+      "name": "non-positive attempt reported",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "out var parsed) && parsed > 0 ? parsed : null;",
+      "replace": "out var parsed) ? parsed : null;",
+      "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_dead_letter"
+    },
+    {
+      "id": "R05",
+      "name": "ack before the confirm",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "await scan.confirmed.PublishAsync(string.Empty, scan.store.queueName, mandatory: true, ReplayProperties(properties), body, cancellationToken);\n                scan.ThrowIfUnusable();\n                await scan.channel.BasicAckAsync(handle.DeliveryTag, multiple: false, CancellationToken.None);",
+      "replace": "await scan.channel.BasicAckAsync(handle.DeliveryTag, multiple: false, CancellationToken.None);\n                await scan.confirmed.PublishAsync(string.Empty, scan.store.queueName, mandatory: true, ReplayProperties(properties), body, cancellationToken);",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
+    },
+    {
+      "id": "R06",
+      "name": "replay not mandatory",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "PublishAsync(string.Empty, scan.store.queueName, mandatory: true,",
+      "replace": "PublishAsync(string.Empty, scan.store.queueName, mandatory: false,",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
+    },
+    {
+      "id": "R07",
+      "name": "held messages returned by closing the channel",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "await channel.BasicNackAsync(handle.DeliveryTag, multiple: false, requeue: true);",
+      "replace": "await Task.CompletedTask;",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
+    },
+    {
+      "id": "R08",
+      "name": "held messages nacked without requeue",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "await channel.BasicNackAsync(handle.DeliveryTag, multiple: false, requeue: true);",
+      "replace": "await channel.BasicNackAsync(handle.DeliveryTag, multiple: false, requeue: false);",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
+    },
+    {
+      "id": "R09",
+      "name": "dead-letter time not recorded",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "properties.Headers[RabbitMqDeadLetterStore.DeadLetteredAtHeader] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();",
+      "replace": "",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
+    },
+    {
+      "id": "R10",
+      "name": "operations offered without a dead-letter queue",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "RabbitMqDeadLetterStore.OperationsFor(config.EnableDeadLetterQueue)",
+      "replace": "RabbitMqDeadLetterStore.OperationsFor(true)",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
+    },
+    {
+      "id": "R11",
+      "name": "replay through the configured exchange",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "PublishAsync(string.Empty, scan.store.queueName, mandatory: true,",
+      "replace": "PublishAsync(\"amq.fanout\", scan.store.queueName, mandatory: true,",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
+    },
+    {
+      "id": "A01",
+      "name": "replay keeps the attempt it died on",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
+      "find": "var copy = Copy(deadLetter, OriginalMessageId(deadLetter), nextAttempt: 1);",
+      "replace": "var copy = Copy(deadLetter, OriginalMessageId(deadLetter), nextAttempt: 3);",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A02",
+      "name": "replay keeps the broker's dead-letter properties (any case)",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
+      "find": "        foreach (var key in copy.ApplicationProperties.Keys.Where(IsBrokerDeadLetterProperty).ToList())\n            copy.ApplicationProperties.Remove(key);",
+      "replace": "",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A03",
+      "name": "replay uses the retry copy's id as the message id",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
+      "find": "public static ServiceBusMessage ReplayCopy(ServiceBusReceivedMessage deadLetter)\n    {\n        var copy = Copy(deadLetter, OriginalMessageId(deadLetter)",
+      "replace": "public static ServiceBusMessage ReplayCopy(ServiceBusReceivedMessage deadLetter)\n    {\n        var copy = Copy(deadLetter, deadLetter.MessageId",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A04",
+      "name": "dead letter completed before the copy is sent",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "find": "        await sender.SendAsync(copy, timeout.Token);\n        await receiver.CompleteAsync(deadLetter, timeout.Token);\n    }",
+      "replace": "        await receiver.CompleteAsync(deadLetter, timeout.Token);\n        await sender.SendAsync(copy, timeout.Token);\n    }",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A05",
+      "name": "skipped dead letters stay locked",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "find": "await receiver.AbandonAsync(entry.Message, CancellationToken.None);",
+      "replace": "await Task.CompletedTask;",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A06",
+      "name": "no sequence-number dedupe",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "find": "if (seen.Add(message.SequenceNumber))\n                    buffer.Enqueue(entry);\n                else\n                    ended = true;",
+      "replace": "buffer.Enqueue(entry);",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A07",
+      "name": "receive waits the SDK default",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "find": "ReceiveWait = TimeSpan.FromSeconds(1);",
+      "replace": "ReceiveWait = TimeSpan.FromSeconds(60);",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A08",
+      "name": "subscription replay not explained",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "find": "        if (subscriptionMode)\n            throw new NotSupportedException(\n                $\"Replaying",
+      "replace": "        if (false)\n            throw new NotSupportedException(\n                $\"Replaying",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A09",
+      "name": "original message id ignored",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
+      "find": "is { Length: > 0 } original\n            ? original",
+      "replace": "is { Length: > 100000 } original\n            ? original",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A10",
+      "name": "peek locks",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "find": "var page = browseOnly\n",
+      "replace": "var page = false\n",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A11",
+      "name": "transactions retried after a refusal",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "find": "if (Interlocked.Exchange(ref transactionsRefused, 1) == 0)",
+      "replace": "if (Interlocked.Exchange(ref transactionsRefused, 0) == 0)",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A12",
+      "name": "dead-letter attempt not recorded",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
+      "find": "properties[DeadLetterAttemptProperty] = deadAttempt;",
+      "replace": "_ = deadAttempt;",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A13",
+      "name": "replay not transactional",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "find": "if (config.TransactionalRetries && Volatile.Read(ref transactionsRefused) == 0)",
+      "replace": "if (false)",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A14",
+      "name": "subscription offered replay",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "find": "config.UsesSubscription ? DeadLetterOperations.Peek | DeadLetterOperations.Purge : DeadLetterOperations.All;",
+      "replace": "DeadLetterOperations.All;",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A15",
+      "name": "SDK and stale properties reported as headers",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
+      "find": "if (!IsInternal(key) && !IsBrokerDeadLetterProperty(key) && Text(value) is { } text)",
+      "replace": "if (!IsInternal(key) && Text(value) is { } text)",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "D27",
+      "name": "failed pass not counted",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "        catch (Exception ex)\n        {\n            throw Aborted(\"replay\", replayed, ex);\n        }\n        finally\n        {\n            await ReturnHeldAsync(scan);\n            Count(replayed, purged: false);\n        }",
+      "replace": "        catch (Exception ex)\n        {\n            throw Aborted(\"replay\", replayed, ex);\n        }\n        finally\n        {\n            await ReturnHeldAsync(scan);\n            if (cancellationToken.IsCancellationRequested) Count(replayed, purged: false);\n        }"
+    },
+    {
+      "id": "D28",
+      "name": "store failure not wrapped (client text escapes)",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "        if (error is Exceptions.MessageQueueException or ObjectDisposedException)",
+      "replace": "        if (true)"
+    },
+    {
+      "id": "D29",
+      "name": "filter exception wrapped instead of rethrown",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "        if (error is FilterFailedException)\n            return Rethrow(inner);",
+      "replace": ""
+    },
+    {
+      "id": "D30",
+      "name": "id-less key ignores the body",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": "        hash.AppendData(body.Span);",
+      "replace": ""
+    },
+    {
+      "id": "D31",
+      "name": "id-less key ignores the correlation id and headers",
+      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "find": ".Prepend($\"\\0{letter.CorrelationId}\"))",
+      "replace": ".Take(0))"
+    },
+    {
+      "id": "R12",
+      "name": "quorum dead-letter queue keeps the delivery limit",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "                [\"x-delivery-limit\"] = -1\n",
+      "replace": "",
+      "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_dead_letter"
+    },
+    {
+      "id": "R13",
+      "name": "pass reads on after its channel was lost",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "            if (Lost)\n                return null;\n            BasicGetResult? result;",
+      "replace": "            BasicGetResult? result;",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
+    },
+    {
+      "id": "R14",
+      "name": "entry usable after the channel was lost",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "            if (Lost)\n                throw new InvalidOperationException(\"The pass's channel was closed; the broker has returned the dead letter\");",
+      "replace": "",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
+    },
+    {
+      "id": "R15",
+      "name": "scan retains entries and their bodies",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "            return new Entry(this, handle, result.BasicProperties, result.Body.ToArray());",
+      "replace": "            var entry = new Entry(this, handle, result.BasicProperties, result.Body.ToArray());\n            channel.BasicAcksAsync += (_, _) => { GC.KeepAlive(entry); return Task.CompletedTask; };\n            return entry;",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
+    },
+    {
+      "id": "R16",
+      "name": "existing dead-letter queue without the limit fails startup",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "        catch (OperationInterruptedException ex) when (config.UseQuorumQueues && ex.ShutdownReason?.ReplyCode == PreconditionFailed)",
+      "replace": "        catch (OperationInterruptedException ex) when (ex is null)",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
+    },
+    {
+      "id": "A16",
+      "name": "disposed client counted as a refusal",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusSettlement.cs",
+      "find": "        exception is not ObjectDisposedException\n            and not System.Transactions.TransactionAbortedException",
+      "replace": "        exception is not System.Transactions.TransactionAbortedException",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A17",
+      "name": "aborted transaction counted as a refusal",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusSettlement.cs",
+      "find": "            and not System.Transactions.TransactionAbortedException\n",
+      "replace": "",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A18",
+      "name": "in-doubt transaction counted as a refusal",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusSettlement.cs",
+      "find": "            and not System.Transactions.TransactionInDoubtException\n",
+      "replace": "",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A19",
+      "name": "no cap on held dead letters",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "find": "            if (held.Count(e => !e.Settled) >= MaxHeldMessages)",
+      "replace": "            if (false)",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "A20",
+      "name": "dead-letter properties stripped case-sensitively",
+      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
+      "find": "    static bool IsBrokerDeadLetterProperty(string key) =>\n        key.Equals(BrokerDeadLetterReasonProperty, StringComparison.OrdinalIgnoreCase)\n        || key.Equals(BrokerDeadLetterDescriptionProperty, StringComparison.OrdinalIgnoreCase);",
+      "replace": "    static bool IsBrokerDeadLetterProperty(string key) =>\n        key.Equals(BrokerDeadLetterReasonProperty, StringComparison.Ordinal)\n        || key.Equals(BrokerDeadLetterDescriptionProperty, StringComparison.Ordinal);",
+      "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
+    },
+    {
+      "id": "R17",
+      "name": "quorum dead-letter queue keeps the delivery limit (on a broker)",
+      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "find": "                [\"x-delivery-limit\"] = -1\n",
+      "replace": "",
+      "filter": "Category=Integration&FullyQualifiedName~When_Connections_Close_While_A_Pass_Holds_A_Dead_Letter"
+    }
+  ]
+}

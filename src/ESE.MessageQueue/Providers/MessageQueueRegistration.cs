@@ -135,6 +135,9 @@ static class QueueRegistration
         services.AddSingleton<IMessageQueue<T>>(sp => sp.GetRequiredService<TQueue>());
         services.AddSingleton<IMessagePublisher<T>>(sp => sp.GetRequiredService<IMessageQueue<T>>());
         services.AddSingleton<IMessageSubscriber<T>>(sp => sp.GetRequiredService<IMessageQueue<T>>());
+        // Dead-letter operations (ADR 0023) resolve as the same queue, when it has them.
+        if (typeof(IDeadLetterQueue<T>).IsAssignableFrom(typeof(TQueue)))
+            services.AddSingleton(sp => (IDeadLetterQueue<T>)sp.GetRequiredService<TQueue>());
     }
 
     static void Dispose(object queue)

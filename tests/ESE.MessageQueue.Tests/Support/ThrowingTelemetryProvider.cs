@@ -32,5 +32,8 @@ public sealed class ThrowingTelemetryProvider : ITelemetryProvider
         throw Broken();
     }
 
+    public void RecordDeadLettersReplayed(TelemetryTarget target, int count) => throw Broken();
+    public void RecordDeadLettersPurged(TelemetryTarget target, int count) => throw Broken();
+
     static InvalidOperationException Broken() => new("telemetry exporter failed");
 }

@@ -14,6 +14,46 @@ resolved.
   EULA is the owner's to accept). They skip without `MQ_ASB_CONNECTION_STRING`; the provider is verified only through
   its unit specs over the SDK seams. Run `Category=Integration` with a namespace or the emulator, then remove this item.
 
+### Dead-letter operations (PRODUCTION-READINESS-PLAN "drain and replay dead-letter queues", ADR 0023)
+
+#### Added
+- **`IDeadLetterQueue<T>`**: `PeekAsync(maxCount)` (read-only `DeadLetterMessage<T>` snapshots: ids, reason code and
+  detail, enqueue and dead-letter time, attempt, headers, the message or the body length), `ReplayAsync(options)` (back to
+  the queue as a first delivery with the full retry budget, same message id, correlation id, headers and trace;
+  at-least-once: confirmed send, then removal; `DryRun`; `DeadLetterReplayResult` with bounded failures) and
+  `PurgeAsync(options)` (explicit `MaxCount`, no parameterless purge-all). Options select by `ReasonCodes` and a
+  `Filter`; replay skips `MessageTooLarge` and `DeserializationFailed` unless they are named. Implemented by the
+  in-memory, RabbitMQ and Azure Service Bus queues and registered in DI next to `IMessageQueue<T>`.
+- `MessageQueueCapabilities.DeadLetterOperations` (`DeadLetterOperations` flags, an `init` property): all on in-memory,
+  RabbitMQ (none with `EnableDeadLetterQueue = false`) and Service Bus queues; peek and purge on Service Bus topic
+  subscriptions, where a resend would reach every subscription.
+- Provider SPI: `IDeadLetterStore`, `IDeadLetterScan`, `IDeadLetterEntry`, `DeadLetterMetadata` and `DeadLetterQueue<T>`
+  (the shared selection, limits, counting, telemetry and logging); the loopback sample provider opts in with them.
+- `DeadLetterLimits` (peek 1000, 10,000 examined per call, 100 listed failures).
+- Telemetry: `ITelemetryProvider.RecordDeadLettersReplayed`/`RecordDeadLettersPurged` (default no-op) and the metrics
+  `ese.messagequeue.dead_letters.replayed` / `.purged`. Log events 1201-1205, 2012, 3018, 3019.
+- The sample worker's `Sample:DeadLetters` (`None`, `Peek`, `Replay`); operator how-to `docs/dead-letter-operations.md`.
+
+#### Changed (tooling)
+- Coverage gate raised to 89% combined and the per-package floor to 87% (`scripts/coverage.sh`; measured 90.1%, lowest
+  package 88.1%).
+
+#### Changed
+- `MessageQueueCapabilities` equality and `ToString()` include `DeadLetterOperations`: a first-party queue's
+  `Capabilities` no longer equals `new(Durable, DeadLetter, DelayedRedelivery)` built without it.
+- Dead letters record when they were dead-lettered (`x-ese-dead-lettered-at`, RabbitMQ and Service Bus) and, on Service
+  Bus, the attempt (`x-ese-dead-letter-attempt`).
+- **RabbitMQ:** a new quorum dead-letter queue is declared with `x-delivery-limit = -1`, so a dead letter returned by
+  lost connections is never dropped by the default delivery limit (20). An existing one cannot be redeclared: the
+  queue starts with warning 2013; apply a `delivery-limit: -1` policy (`docs/dead-letter-operations.md`).
+- **Service Bus:** only a genuine refusal (`InvalidOperationException`, `NotSupportedException`, `TransactionException`)
+  switches retries and replays to send-then-complete; `ObjectDisposedException`, `TransactionAbortedException` and
+  `TransactionInDoubtException` now fail that message (a retry is handed back) and keep transactions on.
+- A dead-letter call whose pass fails counts and logs what it did (event 1206) and throws `MessageQueueException`
+  naming only the failure's type; a throwing `Filter` keeps its exception. Messages without an id are replayed once per
+  call (keyed by body, correlation id and headers). RabbitMQ passes keep only delivery tags of held dead letters and
+  end when their channel is lost; a Service Bus pass ends once it holds 1000 skipped dead letters.
+
 ### Deferred items closed (OPTIMIZATION-PLAN §9)
 
 Design records: `docs/adr/0019` (source-generated JSON metadata), `0020` (`RequireDelayedRedelivery`), `0021`

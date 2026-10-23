@@ -145,6 +145,14 @@ redelivery, without using up an attempt.
   settlement that fails is retried after a per-message backoff (100 ms, doubling, at most 30 s) by abandoning the
   message; abandons count towards `MaxDeliveryCount`, which ends a persistent failure in the dead-letter queue.
 
+- **Dead-letter operations** (`IDeadLetterQueue<T>`, ADR 0023): `PeekAsync` browses the dead-letter subqueue without
+  locking (Listen); `PurgeAsync` completes selected dead letters (Listen); `ReplayAsync` (queues only, Send and Listen)
+  sends each as a copy with a new broker id and the original id in `x-ese-message-id` (so `MessageContext.MessageId` is
+  unchanged and duplicate detection cannot drop it), attempt 1, then completes the dead letter, in one transaction while
+  `TransactionalRetries` is on and the entity accepts it. On a topic subscription replay throws
+  `NotSupportedException`: a resend to the topic would reach every subscription. Dead letters also record
+  `x-ese-dead-lettered-at` and `x-ese-dead-letter-attempt`. See [dead-letter-operations.md](dead-letter-operations.md).
+
 ## Configuration (`AzureServiceBusConfig`)
 
 | Property | Default | Description |

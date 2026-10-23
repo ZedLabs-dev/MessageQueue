@@ -38,6 +38,7 @@ public static class SampleHost
         services.AddMessageProcessor<OrderCreated, OrderCreatedProcessor>();
         services.AddHostedService<MessageQueueHostedService<OrderCreated>>();
         services.AddHostedService<OrderPublisher>();
+        services.AddHostedService<DeadLetterInspector>();
         services.AddOptions<SampleOptions>().Bind(configuration.GetSection(SampleOptions.SectionName));
 
         // The library only emits System.Diagnostics spans and metrics; choosing exporters is the host's job.

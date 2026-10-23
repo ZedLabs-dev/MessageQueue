@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 
 namespace ESE.MessageQueue.RabbitMQ;
 
@@ -21,7 +22,7 @@ namespace ESE.MessageQueue.RabbitMQ;
 /// topology are created on first use, or up front with <see cref="InitializeAsync"/> or <see cref="RabbitMqMessageQueue.CreateAsync{T}"/>
 /// (ADR 0007). Retries wait in per-delay retry queues on the broker (ADR 0006).
 /// </summary>
-public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnectionProbe, IDisposable, IAsyncDisposable where T : class
+public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue<T>, IRabbitMqConnectionProbe, IDisposable, IAsyncDisposable where T : class
 {
     // Library-owned headers. Publishers cannot set them: PublishValidation reserves every "x-" name.
     internal const string DeliveryAttemptHeader = "x-delivery-attempt";
@@ -33,7 +34,6 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnect
     const string BrokerDeliveryCountHeader = "x-delivery-count";
     const string DeathHeader = "x-death";
 
-    static readonly MessageQueueCapabilities RabbitMqCapabilities = new(Durable: true, DeadLetter: true, DelayedRedelivery: true);
     static readonly TimeSpan MaxConnectBackoff = TimeSpan.FromSeconds(30);
     static readonly TimeSpan DrainQuietPeriod = TimeSpan.FromMilliseconds(100);
 
@@ -48,6 +48,9 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnect
     readonly string deadLetterQueueName;
     readonly string retryQueuePrefix;
     readonly TelemetryTarget publishTarget;
+    readonly MessageQueueCapabilities capabilities;
+    readonly DeadLetterQueue<T> deadLetterQueue;
+    readonly RabbitMqDeadLetterStore deadLetterStore;
     readonly SemaphoreSlim connectLock = new(1, 1);
     readonly SemaphoreSlim subscriptionLock = new(1, 1);
     readonly ConcurrentDictionary<long, RetryQueue> retryQueues = new();
@@ -81,17 +84,30 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnect
         // on consume, collapsed when the routing key is the queue name, as it is here; so both sides join.
         publishTarget = new TelemetryTarget(MessagingSystems.RabbitMq, $"{exchangeName}:{queueName}", typeof(T).Name) { RoutingKey = queueName };
 
+        capabilities = new MessageQueueCapabilities(Durable: true, DeadLetter: true, DelayedRedelivery: true)
+        {
+            DeadLetterOperations = RabbitMqDeadLetterStore.OperationsFor(config.EnableDeadLetterQueue)
+        };
+        deadLetterStore = new RabbitMqDeadLetterStore(queueName, deadLetterQueueName, config.EnableDeadLetterQueue, DeadLetterConnectionAsync, this.logger);
+        deadLetterQueue = new DeadLetterQueue<T>(deadLetterStore, config, publishTarget, this.telemetry, this.logger);
+
         if (config.MaxConcurrentCalls > config.PrefetchCount)
             RabbitMqLog.ConcurrencyAbovePrefetch(this.logger, queueName, config.MaxConcurrentCalls, config.PrefetchCount);
     }
 
-    /// <summary>Durable, with a dead-letter queue and broker-side delayed redelivery (per-delay retry queues).</summary>
-    public MessageQueueCapabilities Capabilities => RabbitMqCapabilities;
+    /// <summary>
+    /// Durable, with a dead-letter queue and broker-side delayed redelivery (per-delay retry queues); every dead-letter
+    /// operation while <c>EnableDeadLetterQueue</c> is on, none without it.
+    /// </summary>
+    public MessageQueueCapabilities Capabilities => capabilities;
 
     // Test seams: the consumer channel of the latest subscription, and a fault injected before a delivery is read.
     internal IChannel? LatestSubscriptionChannel { get; private set; }
 
     internal Action<BasicDeliverEventArgs>? ReadFault { get; set; }
+
+    // Test seam: the dead-letter store behind the IDeadLetterQueue<T> methods.
+    internal IDeadLetterStore DeadLetterStore => deadLetterStore;
 
     /// <summary>
     /// Connects and declares the exchange and queues, if that has not happened yet. Optional: the first publish or
@@ -207,7 +223,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnect
 
         if (config.EnableDeadLetterQueue)
         {
-            await DeclareDeadLetterQueueAsync(channel, cancellationToken);
+            await DeclareDeadLetterQueueAsync(amqp, cancellationToken);
 
             // The library publishes dead letters itself; the broker uses these only for its own rejections, such as
             // the quorum delivery limit.
@@ -226,19 +242,34 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnect
         await channel.QueueBindAsync(queueName, exchangeName, queueName, cancellationToken: cancellationToken);
     }
 
-    async Task DeclareDeadLetterQueueAsync(IChannel channel, CancellationToken cancellationToken)
+    // On a channel of its own: a quorum dead-letter queue declared before ADR 0023 has no x-delivery-limit argument,
+    // and redeclaring it with one is refused (406, which closes the channel). Then it is used as it is, with a warning:
+    // without an unlimited delivery limit (or a policy setting one) a dead letter returned by lost channels more than
+    // 20 times is dropped.
+    async Task DeclareDeadLetterQueueAsync(IConnection amqp, CancellationToken cancellationToken)
     {
-        var deadLetterQueueArgs = new Dictionary<string, object?>();
-
-        if (config.UseQuorumQueues)
+        var channel = await amqp.CreateChannelAsync(cancellationToken: cancellationToken);
+        try
         {
-            deadLetterQueueArgs.Add("x-queue-type", "quorum");
-            deadLetterQueueArgs.Add("x-quorum-initial-group-size", config.QuorumInitialGroupSize);
+            await channel.QueueDeclareAsync(deadLetterQueueName, durable: true, exclusive: false, autoDelete: false,
+                arguments: RabbitMqDeadLetterStore.DeadLetterQueueArguments(config), cancellationToken: cancellationToken);
+            return;
+        }
+        catch (OperationInterruptedException ex) when (config.UseQuorumQueues && ex.ShutdownReason?.ReplyCode == PreconditionFailed)
+        {
+            RabbitMqLog.DeadLetterQueueWithoutDeliveryLimit(logger, queueName, deadLetterQueueName);
+        }
+        finally
+        {
+            await CloseQuietlyAsync(channel);
         }
 
-        await channel.QueueDeclareAsync(deadLetterQueueName, durable: true, exclusive: false, autoDelete: false,
-            arguments: deadLetterQueueArgs, cancellationToken: cancellationToken);
+        // It exists with other arguments: make sure it is there, without changing it.
+        await using var check = await amqp.CreateChannelAsync(cancellationToken: cancellationToken);
+        await check.QueueDeclarePassiveAsync(deadLetterQueueName, cancellationToken);
     }
+
+    const int PreconditionFailed = 406;
 
     /// <inheritdoc />
     public Task PublishAsync(T message, CancellationToken cancellationToken = default) =>
@@ -340,6 +371,33 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnect
         {
             throw new MessageQueueException($"Failed to serialize {typeof(T).Name} for '{queueName}' ({ex.GetType().Name})", ex);
         }
+    }
+
+    /// <summary>
+    /// Reads the dead-letter queue with <c>basic.get</c> on a channel of its own and returns every message it read with
+    /// <c>basic.nack</c> + requeue (ADR 0023). Messages being read are briefly unavailable to other readers of that queue.
+    /// </summary>
+    /// <inheritdoc />
+    public Task<IReadOnlyList<DeadLetterMessage<T>>> PeekAsync(int maxCount, CancellationToken cancellationToken = default) =>
+        deadLetterQueue.PeekAsync(maxCount, cancellationToken);
+
+    /// <summary>
+    /// Publishes each selected dead letter to this queue through the default exchange (never to other queues bound to
+    /// the queue's exchange), mandatory and confirmed, then acks the dead letter (ADR 0023).
+    /// </summary>
+    /// <inheritdoc />
+    public Task<DeadLetterReplayResult> ReplayAsync(DeadLetterReplayOptions<T> options, CancellationToken cancellationToken = default) =>
+        deadLetterQueue.ReplayAsync(options, cancellationToken);
+
+    /// <summary>Acks (deletes) the selected messages of the dead-letter queue (ADR 0023).</summary>
+    /// <inheritdoc />
+    public Task<int> PurgeAsync(DeadLetterPurgeOptions<T> options, CancellationToken cancellationToken = default) =>
+        deadLetterQueue.PurgeAsync(options, cancellationToken);
+
+    async ValueTask<(IConnection Amqp, PublisherPool Confirmed)> DeadLetterConnectionAsync(CancellationToken cancellationToken)
+    {
+        var current = await ConnectAsync(cancellationToken);
+        return (current.Amqp, current.Confirmed);
     }
 
     /// <inheritdoc />
@@ -761,11 +819,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnect
         return name;
     }
 
-    async Task RedeclareDeadLetterQueueAsync(Connection current)
-    {
-        await using var channel = await current.Amqp.CreateChannelAsync();
-        await DeclareDeadLetterQueueAsync(channel, CancellationToken.None);
-    }
+    Task RedeclareDeadLetterQueueAsync(Connection current) => DeclareDeadLetterQueueAsync(current.Amqp, CancellationToken.None);
 
     // Retry and dead-letter copies go through the default exchange straight to their queue (other queues bound to
     // a custom exchange must not see them), mandatory so a missing queue fails instead of silently dropping, and
@@ -781,6 +835,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnect
             if (reason is { } deadLetter)
             {
                 properties.Headers![DeadLetterReasonHeader] = deadLetter.Code;
+                properties.Headers[RabbitMqDeadLetterStore.DeadLetteredAtHeader] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 if (deadLetter.Detail is not null)
                     properties.Headers[DeadLetterDetailHeader] = deadLetter.Detail;
             }
@@ -1052,6 +1107,14 @@ static partial class RabbitMqLog
 
     [LoggerMessage(EventId = 2009, Level = LogLevel.Debug, Message = "RabbitMQ queue {QueueName}: an unhandled delivery could not be returned without using an attempt; requeued instead")]
     public static partial void UnhandledRequeueFailed(ILogger logger, string queueName, Exception exception);
+
+    [LoggerMessage(EventId = 2013, Level = LogLevel.Warning,
+        Message = "RabbitMQ queue {QueueName}: the quorum dead-letter queue {DeadLetterQueueName} exists without x-delivery-limit = -1 and cannot be redeclared with it; unless a policy sets delivery-limit: -1 for it, a dead letter returned by a lost channel more than 20 times is dropped (see docs/dead-letter-operations.md)")]
+    public static partial void DeadLetterQueueWithoutDeliveryLimit(ILogger logger, string queueName, string deadLetterQueueName);
+
+    [LoggerMessage(EventId = 2012, Level = LogLevel.Warning,
+        Message = "RabbitMQ queue {QueueName}: handing back the dead letters a pass held failed; closing its channel returns them (on a quorum queue that counts as a failed delivery)")]
+    public static partial void DeadLetterReturnFailed(ILogger logger, string queueName, Exception exception);
 
     [LoggerMessage(EventId = 2011, Level = LogLevel.Warning,
         Message = "RabbitMQ queue {QueueName}: the connection did not close in time (a handler is still running); it closes in the background")]

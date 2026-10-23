@@ -38,6 +38,17 @@ sealed class ServiceBusSettlement
         }
     }
 
+    // How the SDK and System.Transactions refuse a transaction: NotAllowed maps to InvalidOperationException,
+    // NotImplemented to NotSupportedException, and a failed enlistment to TransactionException. Not a refusal, so never
+    // a reason to stop using transactions: a disposed client (ObjectDisposedException derives from
+    // InvalidOperationException) or a transaction that aborted (timeout) or is in doubt. The SDK has no failure reason
+    // that names a refusal, so a refusal reported as a ServiceBusException is not recognised (ADR 0023).
+    public static bool IsTransactionRefusal(Exception exception) =>
+        exception is not ObjectDisposedException
+            and not System.Transactions.TransactionAbortedException
+            and not System.Transactions.TransactionInDoubtException
+        && exception is InvalidOperationException or NotSupportedException or System.Transactions.TransactionException;
+
     public static bool IsLockLost(Exception exception) =>
         exception is ServiceBusException { Reason: ServiceBusFailureReason.MessageLockLost or ServiceBusFailureReason.SessionLockLost };
 }

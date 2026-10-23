@@ -20,9 +20,10 @@ namespace ESE.MessageQueue.InMemory;
 /// are lost when the process stops. Use it for local development, tests, and deployments that accept that.
 /// </para>
 /// </summary>
-public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAsyncDisposable where T : class
+public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue<T>, IDisposable, IAsyncDisposable where T : class
 {
-    static readonly MessageQueueCapabilities InMemoryCapabilities = new(Durable: false, DeadLetter: true, DelayedRedelivery: true);
+    static readonly MessageQueueCapabilities InMemoryCapabilities =
+        new(Durable: false, DeadLetter: true, DelayedRedelivery: true) { DeadLetterOperations = DeadLetterOperations.All };
 
     readonly InMemoryConfig config;
     readonly ITelemetryProvider telemetry;
@@ -34,7 +35,8 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
     readonly object gate = new();
     readonly List<T> published = [];
     readonly List<T> processed = [];
-    readonly List<InMemoryDeadLetter<T>> deadLetters = [];
+    readonly List<StoredDeadLetter> deadLetters = [];
+    readonly DeadLetterQueue<T> deadLetterQueue;
     TaskCompletionSource idle = NewCompletedSignal();
     Subscription? subscription;
     int pending;
@@ -52,11 +54,12 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
         this.logger = logger ?? NullLogger.Instance;
         publishTarget = new TelemetryTarget(MessagingSystems.InMemory, this.config.QueueName, typeof(T).Name);
         stopping = lifetime.Token;
+        deadLetterQueue = new DeadLetterQueue<T>(new DeadLetterStore(this), this.config, publishTarget, this.telemetry, this.logger);
     }
 
     /// <summary>
-    /// Not durable; dead letters are kept in <see cref="DeadLetters"/>; retries wait for their backoff without holding a
-    /// concurrency slot.
+    /// Not durable; dead letters are kept in <see cref="DeadLetters"/> and support every dead-letter operation; retries
+    /// wait for their backoff without holding a concurrency slot.
     /// </summary>
     public MessageQueueCapabilities Capabilities => InMemoryCapabilities;
 
@@ -91,7 +94,7 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
         {
             lock (gate)
             {
-                return [.. deadLetters];
+                return [.. deadLetters.Select(d => d.Letter)];
             }
         }
     }
@@ -253,6 +256,24 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
         }
     }
 
+    /// <summary>Reads up to <paramref name="maxCount"/> entries of <see cref="DeadLetters"/> as snapshots (ADR 0023).</summary>
+    /// <inheritdoc />
+    public Task<IReadOnlyList<DeadLetterMessage<T>>> PeekAsync(int maxCount, CancellationToken cancellationToken = default) =>
+        deadLetterQueue.PeekAsync(maxCount, cancellationToken);
+
+    /// <summary>
+    /// Queues the selected entries of <see cref="DeadLetters"/> again as first deliveries (same message id, correlation
+    /// id, headers and trace context; attempt 1) and removes them; they are not added to <see cref="PublishedMessages"/>.
+    /// </summary>
+    /// <inheritdoc />
+    public Task<DeadLetterReplayResult> ReplayAsync(DeadLetterReplayOptions<T> options, CancellationToken cancellationToken = default) =>
+        deadLetterQueue.ReplayAsync(options, cancellationToken);
+
+    /// <summary>Removes the selected entries of <see cref="DeadLetters"/>.</summary>
+    /// <inheritdoc />
+    public Task<int> PurgeAsync(DeadLetterPurgeOptions<T> options, CancellationToken cancellationToken = default) =>
+        deadLetterQueue.PurgeAsync(options, cancellationToken);
+
     /// <summary>Clears the recorded published, processed and dead-lettered messages. Queued messages are kept.</summary>
     public void Clear()
     {
@@ -383,7 +404,8 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
         var message = reason.Code == DeadLetterReasons.MessageTooLarge ? null : TryDeserialize(envelope.Body);
         lock (gate)
         {
-            deadLetters.Add(new InMemoryDeadLetter<T>(message, envelope.Body, envelope.Context, reason.Code, reason.Detail));
+            deadLetters.Add(new StoredDeadLetter(
+                new InMemoryDeadLetter<T>(message, envelope.Body, envelope.Context, reason.Code, reason.Detail), DateTimeOffset.UtcNow));
         }
         Settle();
     }
@@ -458,6 +480,96 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
     }
 
     internal sealed record Envelope(byte[] Body, MessageContext Context);
+
+    // A dead letter and when it was dead-lettered. A class compared by reference: two dead letters can be equal by
+    // value (InMemoryDeadLetter is), and replaying or purging one must not touch the other.
+    sealed class StoredDeadLetter(InMemoryDeadLetter<T> letter, DateTimeOffset deadLetteredAt)
+    {
+        public InMemoryDeadLetter<T> Letter { get; } = letter;
+        public DateTimeOffset DeadLetteredAt { get; } = deadLetteredAt;
+    }
+
+    // ADR 0023: the dead letters list as the store. Nothing needs holding: one pass runs at a time, and an entry acts on
+    // its own dead letter only while it is still in the list.
+    sealed class DeadLetterStore(InMemoryMessageQueue<T> owner) : IDeadLetterStore, IDeadLetterScan
+    {
+        Queue<StoredDeadLetter>? pass;
+
+        public DeadLetterOperations Operations => DeadLetterOperations.All;
+
+        public Task<IDeadLetterScan> OpenScanAsync(bool browseOnly, CancellationToken cancellationToken)
+        {
+            lock (owner.gate)
+            {
+                ObjectDisposedException.ThrowIf(owner.disposed == 1, owner);
+                pass = new Queue<StoredDeadLetter>(owner.deadLetters);
+            }
+            return Task.FromResult<IDeadLetterScan>(this);
+        }
+
+        public Task<IDeadLetterEntry?> NextAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IDeadLetterEntry?>(pass is not null && pass.TryDequeue(out var next) ? new Entry(owner, next) : null);
+
+        public ValueTask DisposeAsync()
+        {
+            pass = null;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    sealed class Entry(InMemoryMessageQueue<T> owner, StoredDeadLetter stored) : IDeadLetterEntry
+    {
+        public DeadLetterMetadata Metadata { get; } = new()
+        {
+            MessageId = stored.Letter.Context.MessageId,
+            CorrelationId = stored.Letter.Context.CorrelationId,
+            ReasonCode = stored.Letter.Reason,
+            ReasonDetail = stored.Letter.Detail,
+            EnqueuedAt = stored.Letter.Context.Timestamp,
+            DeadLetteredAt = stored.DeadLetteredAt,
+            DeliveryAttempt = stored.Letter.Context.DeliveryAttempt,
+            Headers = stored.Letter.Context.Headers
+        };
+
+        public ReadOnlyMemory<byte> Body => stored.Letter.Body;
+
+        // Queued first, then removed, under the lock: a dead letter is never both gone and not queued.
+        public Task ReplayAsync(CancellationToken cancellationToken)
+        {
+            lock (owner.gate)
+            {
+                ThrowIfGone();
+                var context = stored.Letter.Context with { DeliveryAttempt = 1 };
+                if (owner.pending++ == 0)
+                    owner.idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                if (!owner.queue.Writer.TryWrite(new Envelope(stored.Letter.Body.ToArray(), context)))
+                {
+                    if (--owner.pending == 0)
+                        owner.idle.TrySetResult();
+                    throw new ObjectDisposedException(owner.GetType().FullName, "The queue was disposed; the dead letter was kept");
+                }
+                owner.deadLetters.Remove(stored);
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task RemoveAsync(CancellationToken cancellationToken)
+        {
+            lock (owner.gate)
+            {
+                ThrowIfGone();
+                owner.deadLetters.Remove(stored);
+            }
+            return Task.CompletedTask;
+        }
+
+        // Clear() may have removed it since the pass read it.
+        void ThrowIfGone()
+        {
+            if (!owner.deadLetters.Contains(stored))
+                throw new InvalidOperationException("The dead letter was removed while the pass held it");
+        }
+    }
 
     sealed record Subscription(CancellationTokenSource Cancellation, Task Loop);
 

@@ -248,4 +248,39 @@ public sealed class Given_a_running_azure_service_bus : IAsyncLifetime
         seen.Select(a => a.Attempt).Should().Equal([1, 2], "it should redeliver to the same subscription as the next attempt");
         (seen[1].At - seen[0].At).Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1), "it should hold the message for the backoff");
     }
+
+    // ADR 0023: the replay sends to the queue and completes on its dead-letter subqueue, in one transaction when the
+    // entity accepts it (else the provider falls back to send-then-complete). Verified only here, against a namespace.
+    [Fact(Timeout = 120_000)]
+    public async Task When_A_Dead_Letter_Is_Replayed_With_Transactional_Retries()
+    {
+        config = config with { TransactionalRetries = true };
+        var queue = CreateQueue();
+        var message = NewMessage("dead-letter-replay");
+        var handled = new ConcurrentQueue<MessageContext>();
+        var accept = false;
+        await queue.SubscribeAsync((msg, context, _) =>
+        {
+            if (!IsMine(msg))
+                return Task.FromResult(MessageResult.Acknowledge);
+            handled.Enqueue(context);
+            return Task.FromResult(Volatile.Read(ref accept) ? MessageResult.Acknowledge : MessageResult.DeadLetter);
+        }, TestContext.Current.CancellationToken);
+        await queue.PublishAsync(message, new PublishOptions { MessageId = message.Id }, TestContext.Current.CancellationToken);
+        await Wait.UntilAsync(() => handled.Count == 1, TimeSpan.FromSeconds(30));
+        Volatile.Write(ref accept, true);
+
+        var result = await queue.ReplayAsync(new DeadLetterReplayOptions<TestMessage>
+        {
+            MaxCount = 10,
+            Filter = letter => letter.MessageId == message.Id
+        }, TestContext.Current.CancellationToken);
+        await Wait.UntilAsync(() => handled.Count == 2, TimeSpan.FromSeconds(30));
+
+        result.Replayed.Should().Be(1, "it should replay the dead letter");
+        handled.Last().MessageId.Should().Be(message.Id, "it should deliver the replay under the original message id");
+        handled.Last().DeliveryAttempt.Should().Be(1, "it should deliver the replay as a first attempt");
+        (await queue.PeekAsync(100, TestContext.Current.CancellationToken)).Should().NotContain(l => l.MessageId == message.Id,
+            "it should complete the dead letter");
+    }
 }

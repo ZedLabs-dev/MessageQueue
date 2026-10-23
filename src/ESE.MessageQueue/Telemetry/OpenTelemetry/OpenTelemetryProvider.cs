@@ -26,6 +26,8 @@ public sealed class OpenTelemetryProvider : ITelemetryProvider, IDisposable
     readonly Counter<long> messagesRetried;
     readonly Counter<long> messagesDeadLettered;
     readonly Counter<long> transportErrors;
+    readonly Counter<long> deadLettersReplayed;
+    readonly Counter<long> deadLettersPurged;
     readonly bool recordExceptionDetails;
 
     /// <summary>
@@ -50,6 +52,8 @@ public sealed class OpenTelemetryProvider : ITelemetryProvider, IDisposable
         messagesRetried = meter.CreateCounter<long>(TelemetryNames.RetriedMessages, "{message}", "Number of deliveries rescheduled for a retry");
         messagesDeadLettered = meter.CreateCounter<long>(TelemetryNames.DeadLetteredMessages, "{message}", "Number of deliveries dead-lettered");
         transportErrors = meter.CreateCounter<long>(TelemetryNames.TransportErrors, "{error}", "Number of transport errors handled outside a delivery");
+        deadLettersReplayed = meter.CreateCounter<long>(TelemetryNames.ReplayedDeadLetters, "{message}", "Number of dead letters moved back to their queue");
+        deadLettersPurged = meter.CreateCounter<long>(TelemetryNames.PurgedDeadLetters, "{message}", "Number of dead letters deleted");
     }
 
     /// <inheritdoc />
@@ -152,6 +156,20 @@ public sealed class OpenTelemetryProvider : ITelemetryProvider, IDisposable
             return;
 
         transportErrors.Add(1, Tags(target, "process", errorType, consumer: true));
+    }
+
+    /// <inheritdoc />
+    public void RecordDeadLettersReplayed(TelemetryTarget target, int count)
+    {
+        if (deadLettersReplayed.Enabled)
+            deadLettersReplayed.Add(count, Tags(target, "replay", null, consumer: true));
+    }
+
+    /// <inheritdoc />
+    public void RecordDeadLettersPurged(TelemetryTarget target, int count)
+    {
+        if (deadLettersPurged.Enabled)
+            deadLettersPurged.Add(count, Tags(target, "purge", null, consumer: true));
     }
 
     // Only consume spans use the parent, so nothing is parsed while no span would be recorded.

@@ -11,3 +11,6 @@ ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateStoreName.get -> Sy
 ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateStoreName.set -> void
 ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateThumbprint.get -> string!
 ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateThumbprint.set -> void
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.PeekAsync(int maxCount, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<ESE.MessageQueue.Abstractions.DeadLetterMessage<T!>!>!>!
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.PurgeAsync(ESE.MessageQueue.Abstractions.DeadLetterPurgeOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+ESE.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.ReplayAsync(ESE.MessageQueue.Abstractions.DeadLetterReplayOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ESE.MessageQueue.Abstractions.DeadLetterReplayResult!>!

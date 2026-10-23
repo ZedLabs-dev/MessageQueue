@@ -161,6 +161,49 @@ The retry *count* behaves the same everywhere. RabbitMQ, in-memory and Azure Ser
 *delay* without holding the message; an Azure Service Bus topic subscription holds it under its lock (when the delay
 fits the lock-renewal budget) and logs a startup warning when the retry policy has a backoff.
 
+### `IDeadLetterQueue<T>` (dead-letter operations, ADR 0023)
+
+Implemented by the provider's queue and registered next to `IMessageQueue<T>` when the provider has it (resolve
+`IDeadLetterQueue<T>`, or cast the queue). `Capabilities.DeadLetterOperations` says which operations work; the others
+throw `NotSupportedException`. An operator how-to is in [dead-letter-operations.md](dead-letter-operations.md).
+
+| Member | Purpose |
+|---|---|
+| `PeekAsync(int maxCount, CancellationToken ct = default)` | Up to `maxCount` (1..`DeadLetterLimits.MaxPeekCount` = 1000) `DeadLetterMessage<T>` snapshots; removes and alters nothing (a RabbitMQ quorum queue moves what it read to the end) |
+| `ReplayAsync(DeadLetterReplayOptions<T> options, CancellationToken ct = default)` | Moves the selected dead letters back to the queue as first deliveries; returns `DeadLetterReplayResult` |
+| `PurgeAsync(DeadLetterPurgeOptions<T> options, CancellationToken ct = default)` | Deletes the selected dead letters; returns how many |
+
+- **`DeadLetterMessage<T>`:** `MessageId`, `CorrelationId`, `ReasonCode` (a `DeadLetterReasons` code, else the broker's
+  own reason, else null), `ReasonDetail` (an exception type), `EnqueuedAt`, `DeadLetteredAt` and `DeliveryAttempt`
+  (null when unknown), `Headers`, `Message` (null when the body does not deserialize or exceeds `MaxMessageSizeBytes`,
+  which is then not read) and `BodyLength`. Values from the broker are bounded like consumed metadata.
+- **Selection** (both option types): `MaxCount` (required, at least 1), `ReasonCodes` (exact matches; never empty) and
+  `Filter` (a predicate on the snapshot). Replay without `ReasonCodes` takes every reason **except** `MessageTooLarge`
+  and `DeserializationFailed`, which would fail again: list them to replay them anyway. Purge without `ReasonCodes`
+  takes every reason. `DeadLetterReplayOptions<T>.DryRun` only counts.
+- **`DeadLetterReplayResult`:** `Matched` (selected), `Replayed`, `Skipped` (examined, not selected), `Failed` and
+  `Failures` (the first 100: message id and exception type).
+- **A replay is a fresh first delivery**: `DeliveryAttempt` 1 with the full retry budget; message id (the idempotency
+  key), correlation id, application headers and trace context are kept.
+- **Guarantees:** one operation per queue at a time, safe while the subscriber runs. Each call examines at most
+  `DeadLetterLimits.MaxScanCount` (10,000) dead letters, holding the ones it skips until it ends, and replays a message
+  id at most once. At-least-once: the copy is published (confirmed) before the dead letter is removed, so a failure or a
+  cancellation in between leaves a duplicate, never a loss. A cancelled call throws `OperationCanceledException`. A
+  message without an id is keyed by its body, correlation id and headers. A failed pass (lost connection, failing
+  broker call) counts and logs what it did and throws `MessageQueueException` (type only); a throwing `Filter` ends the
+  call with its own exception. RabbitMQ declares a quorum dead-letter queue with `x-delivery-limit = -1` (an existing
+  one needs a policy, see the how-to); a Service Bus pass ends once it holds 1000 skipped dead letters.
+
+| Provider | Operations | Store | Replay goes |
+|---|---|---|---|
+| RabbitMQ | all (none with `EnableDeadLetterQueue = false`) | `{QueueName}.deadletter`, read with `basic.get` and returned with `basic.nack` | through the default exchange to `{QueueName}` (never to other queues bound to the exchange), mandatory, confirmed |
+| Azure Service Bus (queue) | all | `$DeadLetterQueue` subqueue: peek browses, replay and purge lock | a copy to the queue with a new broker id (`MessageContext.MessageId` stays the original), sent and completed in one transaction when the entity allows |
+| Azure Service Bus (topic subscription) | peek, purge | the subscription's `$DeadLetterQueue` | not supported: a resend to the topic would reach every subscription |
+| In-memory | all | `DeadLetters` | back on the in-process queue |
+
+Metrics: `ese.messagequeue.dead_letters.replayed` and `ese.messagequeue.dead_letters.purged` (tags: system,
+destination, operation, message type). Log events 1201-1205 (core), 2012 (RabbitMQ), 3018-3019 (Service Bus).
+
 ### `PublishOptions` Record
 
 - `MessageId` (string?): message id and idempotency key; consumers see it as `MessageContext.MessageId`.
@@ -203,7 +246,8 @@ for every message, so scoped dependencies (a `DbContext`, say) live for one mess
 `IAsyncDisposable`; `AddMessageQueue<T>` registers them as container-owned singletons.
 
 `InMemoryMessageQueue<T>` also exposes `PublishedMessages`, `ProcessedMessages`, `DeadLetters`, `PendingCount`,
-`WaitForIdleAsync()` (completes when nothing is queued, running or waiting to retry) and `Clear()`.
+`WaitForIdleAsync()` (completes when nothing is queued, running or waiting to retry) and `Clear()`. Every provider
+class implements `IDeadLetterQueue<T>` (above).
 
 ## Configuration Options
 

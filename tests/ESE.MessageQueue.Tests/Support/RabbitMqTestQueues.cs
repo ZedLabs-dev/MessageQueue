@@ -48,11 +48,12 @@ sealed class RabbitMqTestQueues : IAsyncDisposable
         exchanges.Add(string.IsNullOrWhiteSpace(config.ExchangeName) ? config.QueueName : config.ExchangeName);
     }
 
-    public RabbitMqMessageQueue<TestMessage> Create(RabbitMqConfig config)
+    public RabbitMqMessageQueue<TestMessage> Create(RabbitMqConfig config, ESE.MessageQueue.Telemetry.ITelemetryProvider? telemetry = null,
+        Microsoft.Extensions.Logging.ILogger? logger = null)
     {
         Track(config);
 
-        var queue = new RabbitMqMessageQueue<TestMessage>(config);
+        var queue = new RabbitMqMessageQueue<TestMessage>(config, telemetry, logger);
         created.Add(queue);
         return queue;
     }

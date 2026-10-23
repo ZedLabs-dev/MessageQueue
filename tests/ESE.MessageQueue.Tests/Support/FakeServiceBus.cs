@@ -15,7 +15,12 @@ namespace ESE.MessageQueue.Tests;
 // on it: sends and settlements complete asynchronously and enlist in the ambient transaction (applied on commit,
 // discarded on rollback), StopAsync cancels the deliveries' tokens and waits for running handlers (as
 // StopProcessingAsync does), a processor's handlers can be registered once, a delivery can be settled once, and
-// batches enforce a byte limit.
+// batches enforce a byte limit. Each entity has a dead-letter subqueue: deliveries dead-lettered through a processor land
+// in it (with the SDK's DeadLetterReason/DeadLetterErrorDescription properties and a new sequence number), a receiver
+// peeks it with its own cursor, receives under a lock that only that receiver can settle once (each receive is one
+// delivery: DeliveryCount + 1), an abandon or an expired lock makes the message receivable again, a lock stays held
+// after the receiver is disposed until it expires (ExpireLocks), and pages can be capped (MaxPageSize) as the broker
+// may return fewer messages than asked for.
 sealed class FakeServiceBus : IServiceBusTransportFactory, IServiceBusTransport
 {
     public ConcurrentQueue<string> Operations { get; } = new();
@@ -23,6 +28,8 @@ sealed class FakeServiceBus : IServiceBusTransportFactory, IServiceBusTransport
     public List<FakeServiceBusSender> Senders { get; } = [];
     public List<FakeServiceBusProcessor> Processors { get; } = [];
     public List<FakeServiceBusPeeker> Peekers { get; } = [];
+    public List<FakeServiceBusDeadLetterReceiver> DeadLetterReceivers { get; } = [];
+    public ConcurrentDictionary<string, FakeDeadLetterSubqueue> DeadLetterQueues { get; } = new();
     public Exception? CreateFailure { get; set; }
     public long BatchLimitBytes { get; set; } = 1024;
     public bool Disposed => DisposeCount > 0;
@@ -62,6 +69,17 @@ sealed class FakeServiceBus : IServiceBusTransportFactory, IServiceBusTransport
         var peeker = new FakeServiceBusPeeker(entityPath, subscriptionName);
         Peekers.Add(peeker);
         return peeker;
+    }
+
+    public FakeDeadLetterSubqueue DeadLetterQueue(string entityPath, string? subscriptionName = null) =>
+        DeadLetterQueues.GetOrAdd(subscriptionName is null ? entityPath : $"{entityPath}/Subscriptions/{subscriptionName}", _ => new FakeDeadLetterSubqueue(this));
+
+    public IServiceBusDeadLetterReceiver CreateDeadLetterReceiver(string entityPath, string? subscriptionName)
+    {
+        var receiver = new FakeServiceBusDeadLetterReceiver(this, DeadLetterQueue(entityPath, subscriptionName), entityPath, subscriptionName);
+        lock (DeadLetterReceivers)
+            DeadLetterReceivers.Add(receiver);
+        return receiver;
     }
 
     public ValueTask DisposeAsync()
@@ -232,7 +250,7 @@ sealed class FakeServiceBusProcessor : IServiceBusProcessor
     // Hands a message to the provider the way the processor does: on a pool thread, awaited until the handler returns.
     public FakeServiceBusDelivery Deliver(ServiceBusReceivedMessage message, Func<string, Exception?>? fail = null)
     {
-        var delivery = new FakeServiceBusDelivery(bus, message, stopping.Token) { Fail = fail };
+        var delivery = new FakeServiceBusDelivery(bus, message, stopping.Token) { Fail = fail, DeadLetterQueue = bus.DeadLetterQueue(EntityPath, SubscriptionName) };
         delivery.Handled = Run(delivery);
         return delivery;
     }
@@ -292,6 +310,7 @@ sealed class FakeServiceBusDelivery : IServiceBusDelivery
     public Task Handled { get; set; } = Task.CompletedTask;
     public Exception? HandlerException { get; set; }
     public Func<string, Exception?>? Fail { get; set; }
+    public FakeDeadLetterSubqueue? DeadLetterQueue { get; set; }
     public ConcurrentQueue<string> Attempts { get; } = new();
     public string? Settlement { get; private set; }
     public IDictionary<string, object>? Properties { get; private set; }
@@ -326,6 +345,8 @@ sealed class FakeServiceBusDelivery : IServiceBusDelivery
         {
             Settlement = action;
             Properties = snapshot;
+            if (action == "deadletter")
+                DeadLetterQueue?.AddDeadLettered(Message, snapshot!, DeadLetterReason!, DeadLetterDescription!);
             settled.TrySetResult();
         }, rollback: () => Interlocked.Decrement(ref settlements));
     }
@@ -350,6 +371,229 @@ sealed class FakeServiceBusPeeker : IServiceBusPeeker
         Interlocked.Increment(ref Peeks);
         return Failure is null ? Task.CompletedTask : Task.FromException(Failure);
     }
+
+    public ValueTask DisposeAsync()
+    {
+        Disposed = true;
+        return ValueTask.CompletedTask;
+    }
+}
+
+// One entity's dead-letter subqueue, in sequence-number order.
+sealed class FakeDeadLetterSubqueue
+{
+    // The SDK's names for the dead-letter reason and description application properties.
+    public const string ReasonProperty = "DeadLetterReason";
+    public const string DescriptionProperty = "DeadLetterErrorDescription";
+
+    readonly FakeServiceBus bus;
+    readonly object gate = new();
+    readonly List<Slot> slots = [];
+    long nextSequenceNumber = 1;
+
+    public FakeDeadLetterSubqueue(FakeServiceBus bus)
+    {
+        this.bus = bus;
+    }
+
+    sealed class Slot(ServiceBusReceivedMessage message)
+    {
+        public ServiceBusReceivedMessage Message { get; set; } = message;
+        public object? LockedBy { get; set; }
+        public bool Settling { get; set; }
+    }
+
+    public IReadOnlyList<ServiceBusReceivedMessage> Messages
+    {
+        get
+        {
+            lock (gate)
+                return [.. slots.Select(s => s.Message)];
+        }
+    }
+
+    // Runs before each receive, for example to let locks expire in the middle of a pass.
+    public Action? BeforeReceive { get; set; }
+
+    // The most messages one peek or receive returns, whatever was asked for.
+    public int MaxPageSize { get; set; } = int.MaxValue;
+
+    // A failure for an abandon of the given message, before the lock is released.
+    public Func<ServiceBusReceivedMessage, Exception?>? AbandonFailure { get; set; }
+
+    public int LockedCount
+    {
+        get
+        {
+            lock (gate)
+                return slots.Count(s => s.LockedBy is not null);
+        }
+    }
+
+    // A message as the broker stores it in the subqueue: a new sequence number, delivery count 0 until received.
+    public ServiceBusReceivedMessage Add(
+        string messageId = "m-1",
+        TestMessage? body = null,
+        IDictionary<string, object>? properties = null,
+        string? correlationId = null,
+        DateTimeOffset enqueuedTime = default,
+        byte[]? rawBody = null)
+    {
+        lock (gate)
+        {
+            var message = Create(
+                BinaryData.FromBytes(rawBody ?? MessageSerializer.Serialize(body ?? new TestMessage(messageId, "content"), SerializationFormat.Json)),
+                messageId, correlationId, properties ?? new Dictionary<string, object>(), deliveryCount: 0,
+                nextSequenceNumber++, enqueuedTime == default ? DateTimeOffset.UtcNow : enqueuedTime);
+            slots.Add(new Slot(message));
+            return message;
+        }
+    }
+
+    // What DeadLetterMessageAsync does: the message moves here with the given properties plus the SDK's reason and
+    // description properties.
+    public void AddDeadLettered(ServiceBusReceivedMessage original, IDictionary<string, object> propertiesToModify, string reason, string description)
+    {
+        var properties = new Dictionary<string, object>(original.ApplicationProperties);
+        foreach (var (key, value) in propertiesToModify)
+            properties[key] = value;
+        // The broker's own properties replace any of the same name, whatever its case.
+        foreach (var key in properties.Keys.Where(k => k.Equals(ReasonProperty, StringComparison.OrdinalIgnoreCase)
+            || k.Equals(DescriptionProperty, StringComparison.OrdinalIgnoreCase)).ToList())
+            properties.Remove(key);
+        properties[ReasonProperty] = reason;
+        properties[DescriptionProperty] = description;
+        Add(original.MessageId, properties: properties, correlationId: original.CorrelationId, enqueuedTime: original.EnqueuedTime,
+            rawBody: original.Body.ToArray());
+    }
+
+    // Every lock runs out: the messages are receivable again (the next receive counts the delivery).
+    public void ExpireLocks()
+    {
+        lock (gate)
+        {
+            foreach (var slot in slots.Where(s => s.LockedBy is not null && !s.Settling))
+                slot.LockedBy = null;
+        }
+    }
+
+    internal IReadOnlyList<ServiceBusReceivedMessage> Peek(long afterSequenceNumber, int maxMessages)
+    {
+        lock (gate)
+            return [.. slots.Where(s => s.Message.SequenceNumber > afterSequenceNumber).Take(Math.Min(maxMessages, MaxPageSize)).Select(s => s.Message)];
+    }
+
+    internal IReadOnlyList<ServiceBusReceivedMessage> Receive(object receiver, int maxMessages)
+    {
+        lock (gate)
+        {
+            var taken = slots.Where(s => s.LockedBy is null).Take(Math.Min(maxMessages, MaxPageSize)).ToList();
+            foreach (var slot in taken)
+            {
+                slot.LockedBy = receiver;
+                slot.Message = WithDeliveryCount(slot.Message, slot.Message.DeliveryCount + 1);
+            }
+            return [.. taken.Select(s => s.Message)];
+        }
+    }
+
+    internal async Task CompleteAsync(object receiver, ServiceBusReceivedMessage message)
+    {
+        await Task.Yield();
+        bus.Record("dlq-complete", message.MessageId);
+        Slot slot;
+        lock (gate)
+        {
+            slot = Locked(receiver, message);
+            slot.Settling = true;
+        }
+        FakeServiceBus.Apply(() =>
+        {
+            lock (gate)
+                slots.Remove(slot);
+        }, rollback: () =>
+        {
+            lock (gate)
+                slot.Settling = false;
+        });
+    }
+
+    internal async Task AbandonAsync(object receiver, ServiceBusReceivedMessage message)
+    {
+        await Task.Yield();
+        bus.Record("dlq-abandon", message.MessageId);
+        if (AbandonFailure?.Invoke(message) is { } failure)
+            throw failure;
+        lock (gate)
+        {
+            var slot = Locked(receiver, message);
+            slot.LockedBy = null;
+        }
+    }
+
+    // Like the broker: only the receiver holding the lock can settle, once.
+    Slot Locked(object receiver, ServiceBusReceivedMessage message) =>
+        slots.FirstOrDefault(s => s.Message.SequenceNumber == message.SequenceNumber && ReferenceEquals(s.LockedBy, receiver) && !s.Settling)
+            ?? throw new ServiceBusException("The lock supplied is invalid", ServiceBusFailureReason.MessageLockLost);
+
+    static ServiceBusReceivedMessage WithDeliveryCount(ServiceBusReceivedMessage message, int deliveryCount) =>
+        Create(message.Body, message.MessageId, message.CorrelationId, new Dictionary<string, object>(message.ApplicationProperties),
+            deliveryCount, message.SequenceNumber, message.EnqueuedTime);
+
+    static ServiceBusReceivedMessage Create(BinaryData body, string messageId, string? correlationId, IDictionary<string, object> properties,
+        int deliveryCount, long sequenceNumber, DateTimeOffset enqueuedTime) =>
+        ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: body,
+            messageId: messageId,
+            correlationId: correlationId,
+            properties: properties,
+            deliveryCount: deliveryCount,
+            sequenceNumber: sequenceNumber,
+            lockedUntil: DateTimeOffset.UtcNow.AddMinutes(1),
+            enqueuedTime: enqueuedTime);
+}
+
+sealed class FakeServiceBusDeadLetterReceiver : IServiceBusDeadLetterReceiver
+{
+    readonly FakeServiceBus bus;
+    readonly FakeDeadLetterSubqueue subqueue;
+    long peekCursor;
+
+    public FakeServiceBusDeadLetterReceiver(FakeServiceBus bus, FakeDeadLetterSubqueue subqueue, string entityPath, string? subscriptionName)
+    {
+        this.bus = bus;
+        this.subqueue = subqueue;
+        EntityPath = entityPath;
+        SubscriptionName = subscriptionName;
+    }
+
+    public string EntityPath { get; }
+    public string? SubscriptionName { get; }
+    public ConcurrentQueue<TimeSpan> ReceiveWaits { get; } = new();
+    public int Peeks;
+    public bool Disposed { get; private set; }
+
+    public async Task<IReadOnlyList<ServiceBusReceivedMessage>> PeekAsync(int maxMessages, CancellationToken cancellationToken)
+    {
+        await Task.Yield();
+        Interlocked.Increment(ref Peeks);
+        var page = subqueue.Peek(peekCursor, maxMessages);
+        if (page.Count > 0)
+            peekCursor = page[^1].SequenceNumber;
+        return page;
+    }
+
+    public async Task<IReadOnlyList<ServiceBusReceivedMessage>> ReceiveAsync(int maxMessages, TimeSpan maxWaitTime, CancellationToken cancellationToken)
+    {
+        await Task.Yield();
+        ReceiveWaits.Enqueue(maxWaitTime);
+        subqueue.BeforeReceive?.Invoke();
+        return subqueue.Receive(this, maxMessages);
+    }
+
+    public Task CompleteAsync(ServiceBusReceivedMessage message, CancellationToken cancellationToken) => subqueue.CompleteAsync(this, message);
+
+    public Task AbandonAsync(ServiceBusReceivedMessage message, CancellationToken cancellationToken) => subqueue.AbandonAsync(this, message);
 
     public ValueTask DisposeAsync()
     {

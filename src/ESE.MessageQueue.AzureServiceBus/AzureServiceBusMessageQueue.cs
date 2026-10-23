@@ -20,7 +20,7 @@ namespace ESE.MessageQueue.AzureServiceBus;
 /// queue are scheduled copies (broker-side backoff); on a subscription they wait under the message lock and are
 /// abandoned (ADR 0009). Shutdown is bounded by <c>ShutdownTimeout</c> (ADR 0010). The client connects on first use.
 /// </summary>
-public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureServiceBusProbe, IDisposable, IAsyncDisposable where T : class
+public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue<T>, IAzureServiceBusProbe, IDisposable, IAsyncDisposable where T : class
 {
     // Service Bus's default MaxDeliveryCount. The entity's real value needs Manage rights to read, so it is assumed.
     internal const int DefaultEntityMaxDeliveryCount = 10;
@@ -39,6 +39,7 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureSer
     readonly IServiceBusTransport transport;
     readonly IServiceBusSender sender;
     readonly MessageQueueCapabilities capabilities;
+    readonly DeadLetterQueue<T> deadLetterQueue;
     readonly bool subscriptionMode;
     readonly string publishEntity;
     readonly TelemetryTarget publishTarget;
@@ -87,7 +88,10 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureSer
         // Publish and consume name the same entity (the topic in subscription mode), so their telemetry joins.
         publishTarget = new TelemetryTarget(MessagingSystems.ServiceBus, publishEntity, typeof(T).Name) { PublishOperation = "send" };
         consumeTarget = publishTarget with { Subscription = subscriptionMode ? config.SubscriptionName : null };
-        capabilities = new MessageQueueCapabilities(Durable: true, DeadLetter: true, DelayedRedelivery: config.SupportsDelayedRedelivery);
+        capabilities = new MessageQueueCapabilities(Durable: true, DeadLetter: true, DelayedRedelivery: config.SupportsDelayedRedelivery)
+        {
+            DeadLetterOperations = ServiceBusDeadLetterStore.OperationsFor(config)
+        };
 
         CapabilityChecks.WarnIfBackoffUnsupported(capabilities, config, this.logger);
         if (subscriptionMode && config.Retry.MaxRetries + 1 > DefaultEntityMaxDeliveryCount)
@@ -114,6 +118,9 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureSer
             throw new MessageQueueException(
                 $"Failed to create the Azure Service Bus client for '{config.QueueName}' ({ex.GetType().Name}). Check ConnectionString or FullyQualifiedNamespace.");
         }
+
+        deadLetterQueue = new DeadLetterQueue<T>(
+            new ServiceBusDeadLetterStore(transport, sender, config, this.logger), config, consumeTarget, this.telemetry, this.logger);
     }
 
     /// <summary>
@@ -262,6 +269,43 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureSer
         }
 
         return serviceBusMessage;
+    }
+
+    /// <summary>
+    /// Browses the entity's dead-letter subqueue (the queue's, or the subscription's) without locking it (ADR 0023).
+    /// Needs Listen rights.
+    /// </summary>
+    /// <inheritdoc />
+    public Task<IReadOnlyList<DeadLetterMessage<T>>> PeekAsync(int maxCount, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        return deadLetterQueue.PeekAsync(maxCount, cancellationToken);
+    }
+
+    /// <summary>
+    /// Queue mode only: sends each selected dead letter back to the queue as a copy (a new broker message id, the
+    /// original id in <see cref="MessageContext.MessageId"/>, attempt 1), then completes the dead letter, in one transaction
+    /// while <c>TransactionalRetries</c> is on and the entity accepts it, else send first (ADR 0023). Needs Send and Listen.
+    /// </summary>
+    /// <inheritdoc />
+    /// <exception cref="NotSupportedException">The queue consumes a topic subscription: a copy sent to the topic would
+    /// reach every subscription.</exception>
+    public Task<DeadLetterReplayResult> ReplayAsync(DeadLetterReplayOptions<T> options, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (subscriptionMode)
+            throw new NotSupportedException(
+                $"Replaying the dead letters of subscription '{config.SubscriptionName}' is not supported: a copy sent to topic '{config.TopicName}' " +
+                "would reach every subscription. Peek or purge them, or resubmit them with a tool that targets this subscription only.");
+        return deadLetterQueue.ReplayAsync(options, cancellationToken);
+    }
+
+    /// <summary>Completes (deletes) the selected messages of the entity's dead-letter subqueue (ADR 0023). Needs Listen rights.</summary>
+    /// <inheritdoc />
+    public Task<int> PurgeAsync(DeadLetterPurgeOptions<T> options, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        return deadLetterQueue.PurgeAsync(options, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -619,10 +663,7 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureSer
         transaction.Complete();
     }
 
-    // How the SDK and System.Transactions refuse a transaction: NotAllowed maps to InvalidOperationException,
-    // NotImplemented to NotSupportedException, and a failed commit or enlistment to TransactionException.
-    static bool IsTransactionRefusal(Exception exception) =>
-        exception is InvalidOperationException or NotSupportedException or TransactionException;
+    static bool IsTransactionRefusal(Exception exception) => ServiceBusSettlement.IsTransactionRefusal(exception);
 
     // Subscription: a copy sent to the topic would reach every subscription, so the retry waits under the message
     // lock (auto-renewed by the processor) when the delay fits the remaining renewal budget, then the message is
@@ -807,7 +848,7 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureSer
 
         public Task DeadLetterAsync(DeadLetterReason reason, CancellationToken cancellationToken) =>
             settlement.SettleAsync((d, token) =>
-                d.DeadLetterAsync(ServiceBusMessages.DeadLetterProperties(reason), reason.Code, reason.Detail ?? string.Empty, token));
+                d.DeadLetterAsync(ServiceBusMessages.DeadLetterProperties(reason, context?.DeliveryAttempt), reason.Code, reason.Detail ?? string.Empty, token));
     }
 }
 
@@ -878,6 +919,14 @@ static partial class AzureServiceBusLog
     [LoggerMessage(EventId = 3013, Level = LogLevel.Warning,
         Message = "Azure Service Bus queue {QueueName}: the client did not close in time (a handler is still running); it closes in the background")]
     public static partial void CloseAbandoned(ILogger logger, string queueName);
+
+    [LoggerMessage(EventId = 3018, Level = LogLevel.Warning,
+        Message = "Azure Service Bus queue {QueueName}: handing back a dead letter a pass held failed; it is returned when its lock expires")]
+    public static partial void DeadLetterAbandonFailed(ILogger logger, string queueName, Exception exception);
+
+    [LoggerMessage(EventId = 3019, Level = LogLevel.Warning,
+        Message = "Azure Service Bus queue {QueueName}: the entity refused a transaction for a dead-letter replay ({ExceptionType}); replays now send the copy, then complete the dead letter (at-least-once: a failure in between leaves a duplicate)")]
+    public static partial void ReplayTransactionsRefused(ILogger logger, string queueName, string exceptionType, Exception exception);
 
     [LoggerMessage(EventId = 3017, Level = LogLevel.Warning,
         Message = "Azure Service Bus queue {QueueName}: telemetry failed while counting a processor error; the error is handled regardless")]

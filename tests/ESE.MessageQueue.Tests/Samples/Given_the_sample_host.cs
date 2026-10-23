@@ -33,6 +33,91 @@ public class Given_the_sample_host
         inMemory.DeadLetters.Should().BeEmpty("it should not dead-letter a valid order");
     }
 
+    [Fact(Timeout = 30_000)]
+    public async Task When_It_Peeks_And_Replays_Dead_Letters()
+    {
+        using var host = SampleHost.CreateBuilder(
+        [
+            "--Sample:OrdersToPublish=3",
+            "--Sample:DeadLetters=Replay",
+            "--Sample:DeadLetterDelay=00:00:01",
+            "--Telemetry:ConsoleExporter=false",
+            "--Logging:LogLevel:Default=Warning"
+        ]).Build();
+
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        var inspector = host.Services.GetServices<IHostedService>().OfType<DeadLetterInspector>().Single();
+        await inspector.ExecuteTask!.WaitAsync(TestContext.Current.CancellationToken);
+        await host.StopAsync(TestContext.Current.CancellationToken);
+
+        inspector.Peeked.Should().ContainSingle("it should peek the order the processor rejected")
+            .Which.MessageId.Should().Be("order-2", "it should show the rejected order's id");
+        inspector.Previewed.Should().BeEquivalentTo(new { DryRun = true, Matched = 1 }, "it should count with a dry run before replaying");
+        inspector.Replayed!.Replayed.Should().Be(1, "it should replay it");
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task When_It_Runs_With_The_Default_Dead_Letter_Setting()
+    {
+        using var host = SampleHost.CreateBuilder(
+        [
+            "--Sample:OrdersToPublish=3",
+            "--Sample:DeadLetterDelay=00:00:01",
+            "--Telemetry:ConsoleExporter=false",
+            "--Logging:LogLevel:Default=Warning"
+        ]).Build();
+
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        var inspector = host.Services.GetServices<IHostedService>().OfType<DeadLetterInspector>().Single();
+        await inspector.ExecuteTask!.WaitAsync(TestContext.Current.CancellationToken);
+        await host.StopAsync(TestContext.Current.CancellationToken);
+
+        inspector.Peeked.Should().ContainSingle("it should peek by default").Which.MessageId.Should().Be("order-2");
+        inspector.Previewed.Should().BeNull("it should not count a replay by default");
+        inspector.Replayed.Should().BeNull("it should never replay by default");
+    }
+
+    [Fact]
+    public void When_Dead_Letter_Settings_Are_Missing() =>
+        new SampleOptions().DeadLetters.Should().Be(DeadLetterMode.None,
+            "it should not touch dead letters unless the configuration asks for it");
+
+    [Fact(Timeout = 30_000)]
+    public async Task When_The_Provider_Has_No_Dead_Letter_Operations()
+    {
+        var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IMessageQueue<OrderCreated>, QueueWithoutDeadLetterOperations>()
+            .AddSingleton<IDeadLetterQueue<OrderCreated>, QueueWithoutDeadLetterOperations>()
+            .Configure<SampleOptions>(options =>
+            {
+                options.DeadLetters = DeadLetterMode.Replay;
+                options.DeadLetterDelay = TimeSpan.Zero;
+            });
+        await using var provider = services.BuildServiceProvider();
+        var inspector = ActivatorUtilities.CreateInstance<DeadLetterInspector>(provider);
+
+        await inspector.StartAsync(TestContext.Current.CancellationToken);
+        await inspector.ExecuteTask!.WaitAsync(TestContext.Current.CancellationToken);
+
+        inspector.ExecuteTask.IsCompletedSuccessfully.Should().BeTrue("it should log and stop, not crash the host, when the provider has no dead-letter operations");
+        inspector.Peeked.Should().BeEmpty("it should not peek");
+    }
+
+    sealed class QueueWithoutDeadLetterOperations : IMessageQueue<OrderCreated>, IDeadLetterQueue<OrderCreated>
+    {
+        public MessageQueueCapabilities Capabilities { get; } = new(Durable: true, DeadLetter: false, DelayedRedelivery: false);
+        public Task PublishAsync(OrderCreated message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task PublishAsync(OrderCreated message, PublishOptions options, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task PublishAsync(IEnumerable<OrderCreated> messages, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SubscribeAsync(Func<OrderCreated, MessageContext, CancellationToken, Task<MessageResult>> handler, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SubscribeAsync(Func<OrderCreated, Task<bool>> handler, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task UnsubscribeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<IReadOnlyList<DeadLetterMessage<OrderCreated>>> PeekAsync(int maxCount, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<DeadLetterReplayResult> ReplayAsync(DeadLetterReplayOptions<OrderCreated> options, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<int> PurgeAsync(DeadLetterPurgeOptions<OrderCreated> options, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
     [Fact]
     public void When_It_Is_Pointed_At_RabbitMq_Without_Credentials()
     {

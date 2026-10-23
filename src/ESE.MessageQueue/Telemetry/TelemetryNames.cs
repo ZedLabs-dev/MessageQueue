@@ -30,4 +30,6 @@ static class TelemetryNames
     public const string RetriedMessages = "ese.messagequeue.messages.retried";
     public const string DeadLetteredMessages = "ese.messagequeue.messages.dead_lettered";
     public const string TransportErrors = "ese.messagequeue.transport.errors";
+    public const string ReplayedDeadLetters = "ese.messagequeue.dead_letters.replayed";
+    public const string PurgedDeadLetters = "ese.messagequeue.dead_letters.purged";
 }

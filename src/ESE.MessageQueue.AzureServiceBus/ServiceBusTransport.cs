@@ -20,6 +20,9 @@ interface IServiceBusTransport : IAsyncDisposable
     IServiceBusProcessor CreateProcessor(string entityPath, string? subscriptionName, ServiceBusProcessorOptions options);
 
     IServiceBusPeeker CreatePeeker(string entityPath, string? subscriptionName);
+
+    // A PeekLock receiver on the entity's dead-letter subqueue (ADR 0023); one per pass, so its peek cursor starts fresh.
+    IServiceBusDeadLetterReceiver CreateDeadLetterReceiver(string entityPath, string? subscriptionName);
 }
 
 interface IServiceBusSender : IAsyncDisposable
@@ -54,6 +57,19 @@ interface IServiceBusDelivery
     Task AbandonAsync(IDictionary<string, object>? propertiesToModify, CancellationToken cancellationToken);
 
     Task DeadLetterAsync(IDictionary<string, object> propertiesToModify, string reason, string description, CancellationToken cancellationToken);
+}
+
+// The dead-letter subqueue: browse without locking, or receive under a lock and settle each message once.
+interface IServiceBusDeadLetterReceiver : IAsyncDisposable
+{
+    // Continues after the last message this receiver peeked.
+    Task<IReadOnlyList<ServiceBusReceivedMessage>> PeekAsync(int maxMessages, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<ServiceBusReceivedMessage>> ReceiveAsync(int maxMessages, TimeSpan maxWaitTime, CancellationToken cancellationToken);
+
+    Task CompleteAsync(ServiceBusReceivedMessage message, CancellationToken cancellationToken);
+
+    Task AbandonAsync(ServiceBusReceivedMessage message, CancellationToken cancellationToken);
 }
 
 interface IServiceBusPeeker : IAsyncDisposable
@@ -102,7 +118,41 @@ sealed class ServiceBusTransport : IServiceBusTransport
             ? client.CreateReceiver(entityPath)
             : client.CreateReceiver(entityPath, subscriptionName));
 
+    public IServiceBusDeadLetterReceiver CreateDeadLetterReceiver(string entityPath, string? subscriptionName)
+    {
+        var options = new ServiceBusReceiverOptions { SubQueue = SubQueue.DeadLetter, ReceiveMode = ServiceBusReceiveMode.PeekLock, PrefetchCount = 0 };
+        return new DeadLetterReceiver(subscriptionName is null
+            ? client.CreateReceiver(entityPath, options)
+            : client.CreateReceiver(entityPath, subscriptionName, options));
+    }
+
     public ValueTask DisposeAsync() => client.DisposeAsync();
+
+    internal sealed class DeadLetterReceiver : IServiceBusDeadLetterReceiver
+    {
+        readonly ServiceBusReceiver receiver;
+
+        public DeadLetterReceiver(ServiceBusReceiver receiver)
+        {
+            this.receiver = receiver;
+        }
+
+        internal ServiceBusReceiver Inner => receiver;
+
+        public async Task<IReadOnlyList<ServiceBusReceivedMessage>> PeekAsync(int maxMessages, CancellationToken cancellationToken) =>
+            await receiver.PeekMessagesAsync(maxMessages, cancellationToken: cancellationToken);
+
+        public async Task<IReadOnlyList<ServiceBusReceivedMessage>> ReceiveAsync(int maxMessages, TimeSpan maxWaitTime, CancellationToken cancellationToken) =>
+            await receiver.ReceiveMessagesAsync(maxMessages, maxWaitTime, cancellationToken);
+
+        public Task CompleteAsync(ServiceBusReceivedMessage message, CancellationToken cancellationToken) =>
+            receiver.CompleteMessageAsync(message, cancellationToken);
+
+        public Task AbandonAsync(ServiceBusReceivedMessage message, CancellationToken cancellationToken) =>
+            receiver.AbandonMessageAsync(message, cancellationToken: cancellationToken);
+
+        public ValueTask DisposeAsync() => receiver.DisposeAsync();
+    }
 
     internal sealed class Sender : IServiceBusSender
     {

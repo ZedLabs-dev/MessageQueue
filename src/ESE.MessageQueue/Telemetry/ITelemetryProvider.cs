@@ -41,6 +41,18 @@ public interface ITelemetryProvider
     /// default implementation records nothing, so existing providers keep working.
     /// </summary>
     void RecordTransportError(TelemetryTarget target, string errorType) { }
+
+    /// <summary>
+    /// Counts dead letters moved back to the queue by one replay call (ADR 0023). The default implementation records
+    /// nothing, so existing providers keep working.
+    /// </summary>
+    void RecordDeadLettersReplayed(TelemetryTarget target, int count) { }
+
+    /// <summary>
+    /// Counts dead letters deleted by one purge call (ADR 0023). The default implementation records nothing, so
+    /// existing providers keep working.
+    /// </summary>
+    void RecordDeadLettersPurged(TelemetryTarget target, int count) { }
 }
 
 /// <summary>

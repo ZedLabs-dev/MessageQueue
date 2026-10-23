@@ -145,8 +145,8 @@ The compose file is for manual experiments only; the tests do not use it (see Te
 - [ ] `dotnet build ESE.MessageQueue.sln -warnaserror` is clean.
 - [ ] `dotnet format ESE.MessageQueue.sln --verify-no-changes` passes.
 - [ ] `dotnet test` reports 0 failed and **0 vacuous passes**; skips appear as skips.
-- [ ] `scripts/coverage.sh` passes: combined line coverage of the three packages at or above the gate (88%) and each
-      package at or above its floor (86%); never lower either.
+- [ ] `scripts/coverage.sh` passes: combined line coverage of the three packages at or above the gate (89%) and each
+      package at or above its floor (87%); never lower either.
 - [ ] Vulnerable-package scan reports none.
 - [ ] `CHANGELOG.md` Unreleased updated for any behavior or public-API change.
 - [ ] Adversarial review done for changes to `src/` (below) and its survivors turned into specs.

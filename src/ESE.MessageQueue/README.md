@@ -23,6 +23,9 @@ services.AddMessageQueueTelemetry("MyApp.Messaging");  // optional
 { "MessageQueue": { "Provider": "InMemory", "QueueName": "orders", "Retry": { "MaxRetries": 5 } } }
 ```
 
+Dead letters can be inspected, replayed and purged through `IDeadLetterQueue<T>` (resolved next to `IMessageQueue<T>`;
+see `Capabilities.DeadLetterOperations`).
+
 Writing a provider for another broker: implement `IMessageQueueProvider` and hand every delivery to
 `MessageDispatcher<T>` with an `IDeliveryActions` (namespace `ESE.MessageQueue.Providers`). See
 [ADR 0015](https://github.com/ericsewing/MessageQueue/blob/main/docs/adr/0015-provider-spi-and-package-split.md) and

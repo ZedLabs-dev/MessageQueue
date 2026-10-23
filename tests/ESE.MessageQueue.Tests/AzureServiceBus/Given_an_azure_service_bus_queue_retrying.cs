@@ -203,6 +203,36 @@ public class Given_an_azure_service_bus_queue_retrying : IAsyncDisposable
             "it should warn once that it fell back to send-then-complete");
     }
 
+    public static TheoryData<string> TransientTransactionFailures => ["Disposed", "Aborted", "InDoubt"];
+
+    static Exception TransientFailure(string kind) => kind switch
+    {
+        "Disposed" => new ObjectDisposedException("ServiceBusSender"),
+        "Aborted" => new System.Transactions.TransactionAbortedException("The transaction has aborted (timeout)"),
+        _ => new System.Transactions.TransactionInDoubtException("The transaction is in doubt")
+    };
+
+    // A transient failure inside the transaction is not the entity refusing transactions: it must not switch the queue
+    // to send-then-complete for good.
+    [Theory(Timeout = 10_000)]
+    [MemberData(nameof(TransientTransactionFailures))]
+    public async Task When_A_Transactional_Retry_Fails_Transiently(string failure)
+    {
+        var logger = new RecordingLogger();
+        await using var queue = bus.CreateQueue(AzureServiceBusTestConfigs.Queue(), logger);
+        await queue.SubscribeAsync(AzureServiceBusTestConfigs.Returns(MessageResult.Retry), TestContext.Current.CancellationToken);
+        var calls = 0;
+        bus.Sender.SendFailure = _ => Interlocked.Increment(ref calls) == 1 ? TransientFailure(failure) : null;
+
+        await bus.Processor.Deliver(FakeServiceBus.Message("order-1")).Handled.WaitAsync(TestContext.Current.CancellationToken);
+        await bus.Processor.Deliver(FakeServiceBus.Message("order-2")).Handled.WaitAsync(TestContext.Current.CancellationToken);
+
+        bus.Operations.Where(op => op.StartsWith("send:", StringComparison.Ordinal)).Should().AllSatisfy(op =>
+            op.Should().EndWith(":tx", "it should keep retrying in a transaction after a transient failure"));
+        logger.Entries.Should().NotContain(e => e.Message.Contains("refused a transaction", StringComparison.Ordinal),
+            "it should not report a transient failure as a refusal");
+    }
+
     // P7: a message resubmitted from the dead-letter queue starts over instead of inheriting the exhausted attempt.
     [Fact(Timeout = 10_000)]
     public async Task When_A_Dead_Letter_Is_Resubmitted()
