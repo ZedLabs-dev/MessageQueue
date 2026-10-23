@@ -24,7 +24,8 @@ env:
 jobs:
   build-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The full suite takes about 2.5 minutes locally; restore, the RabbitMQ image pull, coverage and pack add headroom.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 

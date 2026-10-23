@@ -96,7 +96,7 @@ The compose file is for manual experiments only; the tests do not use it (see Te
   (`IsTestingPlatformApplication=false` in the test project). That keeps `--filter Category=Unit` and
   `--collect:"XPlat Code Coverage"` working with plain `dotnet test`.
 - **RabbitMQ:** `Support/RabbitMqBrokerFixture` is an xunit collection fixture (`[Collection(RabbitMqCollection.Name)]`)
-  that starts one RabbitMQ container (image tag in `docker/test-broker/Dockerfile`, where Dependabot bumps it) via Testcontainers for the whole run and hands tests its
+  that starts one RabbitMQ container (image `tag@sha256:` digest in `docker/test-broker/Dockerfile`, where Dependabot bumps both) via Testcontainers for the whole run and hands tests its
   connection string (Testcontainers supplies the credentials; test configs set `RequireTls = false`). It starts only when an integration test in that
   collection runs, so the unit loop never touches Docker. `Support/RabbitMqTestQueues` creates per-test queues and
   deletes them (and their dead-letter queues, lazily created `{queue}.retry.*` queues and exchanges) in the test
@@ -145,8 +145,8 @@ The compose file is for manual experiments only; the tests do not use it (see Te
 - [ ] `dotnet build ESE.MessageQueue.sln -warnaserror` is clean.
 - [ ] `dotnet format ESE.MessageQueue.sln --verify-no-changes` passes.
 - [ ] `dotnet test` reports 0 failed and **0 vacuous passes**; skips appear as skips.
-- [ ] `scripts/coverage.sh` passes: combined line coverage of the three packages at or above the gate (87%) and each
-      package at or above its floor (85%); never lower either.
+- [ ] `scripts/coverage.sh` passes: combined line coverage of the three packages at or above the gate (88%) and each
+      package at or above its floor (86%); never lower either.
 - [ ] Vulnerable-package scan reports none.
 - [ ] `CHANGELOG.md` Unreleased updated for any behavior or public-API change.
 - [ ] Adversarial review done for changes to `src/` (below) and its survivors turned into specs.

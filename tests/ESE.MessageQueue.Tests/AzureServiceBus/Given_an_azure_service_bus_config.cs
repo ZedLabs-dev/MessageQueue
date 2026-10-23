@@ -4,6 +4,7 @@ using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.AzureServiceBus;
 using ESE.MessageQueue.Exceptions;
 using ESE.MessageQueue.Extensions;
+using ESE.MessageQueue.Retry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -232,4 +233,97 @@ public class Given_an_azure_service_bus_config : IAsyncDisposable
         ServiceBusTransportFactory.ResolveCredential(null).Should().BeSameAs(ServiceBusTransportFactory.ResolveCredential(null),
             "it should share one DefaultAzureCredential (and its token cache) across queues");
     }
+
+    // §3a.5 (ADR 0020): a subscription cannot delay a retry; RequireDelayedRedelivery turns the warning into a failure.
+    static ValidateOptionsResult ValidateConfig(AzureServiceBusConfig config) => new AzureServiceBusConfigValidator().Validate(null, config);
+
+    [Fact]
+    public void When_Delayed_Redelivery_Is_Required_On_A_Subscription_With_A_Backoff()
+    {
+        var result = ValidateConfig(AzureServiceBusTestConfigs.Subscription() with
+        {
+            RequireDelayedRedelivery = true,
+            Retry = new RetryPolicy { MaxRetries = 3, InitialDelay = TimeSpan.FromSeconds(1) }
+        });
+
+        result.Failed.Should().BeTrue("it should fail at startup when the backoff cannot be honored and the app requires it");
+        result.FailureMessage.Should().Contain("RequireDelayedRedelivery", "it should name the setting that made it fail");
+    }
+
+    [Fact]
+    public void When_Delayed_Redelivery_Is_Required_On_A_Queue() =>
+        ValidateConfig(AzureServiceBusTestConfigs.Queue() with
+        {
+            RequireDelayedRedelivery = true,
+            Retry = new RetryPolicy { MaxRetries = 3, InitialDelay = TimeSpan.FromSeconds(1) }
+        }).Succeeded.Should().BeTrue("it should accept a queue, which delays retries with scheduled copies");
+
+    [Theory]
+    [InlineData(0, 1000)]
+    [InlineData(3, 0)]
+    public void When_Delayed_Redelivery_Is_Required_On_A_Subscription_Without_A_Backoff(int maxRetries, int initialDelayMs) =>
+        ValidateConfig(AzureServiceBusTestConfigs.Subscription() with
+        {
+            RequireDelayedRedelivery = true,
+            Retry = new RetryPolicy { MaxRetries = maxRetries, InitialDelay = TimeSpan.FromMilliseconds(initialDelayMs), MaxDelay = TimeSpan.FromSeconds(1) }
+        }).Succeeded.Should().BeTrue("it should accept a subscription when there is no delay to honor");
+
+    [Fact]
+    public void When_Delayed_Redelivery_Is_Not_Required_On_A_Subscription_With_A_Backoff() =>
+        ValidateConfig(AzureServiceBusTestConfigs.Subscription() with
+        {
+            Retry = new RetryPolicy { MaxRetries = 3, InitialDelay = TimeSpan.FromSeconds(1) }
+        }).Succeeded.Should().BeTrue("it should only warn by default");
+
+    [Fact]
+    public async Task When_Delayed_Redelivery_Is_Required_On_A_Configured_Subscription()
+    {
+        var services = new ServiceCollection().AddAzureServiceBusProvider();
+        services.AddMessageQueue<TestMessage>(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["MessageQueue:Provider"] = "AzureServiceBus",
+            ["MessageQueue:ConnectionString"] = AzureServiceBusTestConfigs.Queue().ConnectionString,
+            ["MessageQueue:QueueName"] = "orders",
+            ["MessageQueue:TopicName"] = "events",
+            ["MessageQueue:SubscriptionName"] = "billing",
+            ["MessageQueue:RequireDelayedRedelivery"] = "true"
+        }).Build());
+        await using var provider = services.BuildServiceProvider();
+
+        var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
+
+        act.Should().Throw<OptionsValidationException>("it should fail ValidateOnStart with the default backoff on a subscription")
+            .WithMessage("*RequireDelayedRedelivery*");
+    }
+
+    sealed class ThrowingTransportFactory : IServiceBusTransportFactory
+    {
+        public IServiceBusTransport Create(AzureServiceBusConfig config, TokenCredential? credential) => throw LongNamedExceptions.Create();
+    }
+
+    [Fact]
+    public void When_The_Client_Fails_With_A_Very_Long_Exception_Type_Name()
+    {
+        var logger = new RecordingLogger();
+
+        var act = () => new AzureServiceBusMessageQueue<TestMessage>(AzureServiceBusTestConfigs.Queue(), null, null, logger, new ThrowingTransportFactory());
+
+        act.Should().Throw<MessageQueueException>("it should report that the client could not be created");
+        logger.Entries.Should().ContainSingle(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Error).Which.Message.Length
+            .Should().BeLessThan(ESE.MessageQueue.Abstractions.PublishOptions.MaxHeaderValueLength + 300, "it should log a bounded exception type name");
+    }
+
+    [Fact]
+    public void When_Delayed_Redelivery_Is_Required_On_A_Subscription_With_A_Custom_Delay() =>
+        ValidateConfig(AzureServiceBusTestConfigs.Subscription() with
+        {
+            RequireDelayedRedelivery = true,
+            Retry = new RetryPolicy
+            {
+                MaxRetries = 3,
+                InitialDelay = TimeSpan.Zero,
+                Strategy = RetryStrategy.Custom,
+                CustomDelayCalculator = attempt => TimeSpan.FromSeconds(attempt)
+            }
+        }).FailureMessage.Should().Contain("RequireDelayedRedelivery", "it should count a custom delay calculator as a backoff");
 }

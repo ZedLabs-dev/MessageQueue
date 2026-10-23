@@ -100,18 +100,49 @@ static class QueueRegistration
         var name = OptionsNames.For<T>();
         var builder = services.AddOptions<TConfig>(name);
         configure(builder);
+        // JSON metadata cannot come from configuration: AddMessageQueueJsonMetadata<T> supplies it in code (ADR 0019).
+        builder.PostConfigure<IEnumerable<QueueJsonMetadata<T>>>((config, metadata) =>
+        {
+            if (metadata.LastOrDefault() is { } json)
+                config.JsonTypeInfoResolver = json.Resolver;
+        });
+        builder.Validate(
+            config => config.SerializationFormat != Serialization.SerializationFormat.Json
+                || config.JsonTypeInfoResolver is null
+                || MessageSerializer.HasJsonMetadata(config.JsonTypeInfoResolver, typeof(T)),
+            $"JsonTypeInfoResolver has no JSON metadata for {typeof(T).FullName}: add [JsonSerializable(typeof({typeof(T).Name}))] to its JsonSerializerContext");
         builder.ValidateDataAnnotations().ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<TConfig>, TValidator>());
 
-        services.AddSingleton(sp => create(new QueueFactoryContext<TConfig>(
-            sp,
-            sp.GetRequiredService<IOptionsMonitor<TConfig>>().Get(name),
-            sp.GetService<ITelemetryProvider>() ?? NullTelemetryProvider.Instance,
-            sp.GetService<ILoggerFactory>()?.CreateLogger<TQueue>() ?? (ILogger)NullLogger.Instance)));
+        services.AddSingleton(sp =>
+        {
+            var config = sp.GetRequiredService<IOptionsMonitor<TConfig>>().Get(name);
+            var queue = create(new QueueFactoryContext<TConfig>(
+                sp,
+                config,
+                sp.GetService<ITelemetryProvider>() ?? NullTelemetryProvider.Instance,
+                sp.GetService<ILoggerFactory>()?.CreateLogger<TQueue>() ?? (ILogger)NullLogger.Instance));
+            // Every provider, third-party ones included, is held to RequireDelayedRedelivery through its Capabilities
+            // (ADR 0020); first-party providers already fail ValidateOnStart for it.
+            if (Processing.CapabilityChecks.UnsupportedRequiredBackoff(queue.Capabilities.DelayedRedelivery, config) is { } unsupported)
+            {
+                Dispose(queue);
+                throw new ConfigurationException($"Queue '{config.QueueName}' for {typeof(T).FullName}: {unsupported}");
+            }
+            return queue;
+        });
 
         services.AddSingleton<IMessageQueue<T>>(sp => sp.GetRequiredService<TQueue>());
         services.AddSingleton<IMessagePublisher<T>>(sp => sp.GetRequiredService<IMessageQueue<T>>());
         services.AddSingleton<IMessageSubscriber<T>>(sp => sp.GetRequiredService<IMessageQueue<T>>());
+    }
+
+    static void Dispose(object queue)
+    {
+        if (queue is IAsyncDisposable asyncDisposable)
+            asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        else if (queue is IDisposable disposable)
+            disposable.Dispose();
     }
 
     // Unknown keys (typos, or settings removed such as RetryAttempts) fail at startup instead of being ignored,
@@ -128,6 +159,17 @@ static class QueueRegistration
         if (services.Any(d => d.ServiceType == typeof(IMessageQueue<T>)))
             throw new ConfigurationException($"A message queue for {typeof(T).FullName} is already registered");
     }
+}
+
+// The JSON metadata AddMessageQueueJsonMetadata<T> registered for the queue of T.
+sealed class QueueJsonMetadata<T> where T : class
+{
+    public QueueJsonMetadata(System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver resolver)
+    {
+        Resolver = resolver;
+    }
+
+    public System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver Resolver { get; }
 }
 
 static class OptionsNames

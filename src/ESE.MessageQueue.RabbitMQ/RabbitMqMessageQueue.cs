@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Configuration;
@@ -52,6 +53,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnect
     readonly ConcurrentDictionary<long, RetryQueue> retryQueues = new();
     readonly BackgroundWork draining = new();
     Connection? connection;
+    X509Certificate2? clientCertificate;
     Subscription? subscription;
     int connectFailures;
     long nextConnectAttempt;
@@ -149,10 +151,17 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnect
         }
     }
 
+    // Called under connectLock. The client certificate (mutual TLS, ADR 0022) is loaded on the first connect and
+    // reused by every reconnect; the queue owns it and disposes it in DisposeAsync.
+    internal ConnectionFactory CreateConnectionFactory() =>
+        RabbitMqConnections.CreateFactory(config, () => clientCertificate ??= RabbitMqClientCertificates.Load(config.Tls));
+
+    internal X509Certificate2? ClientCertificate => clientCertificate;
+
     async Task<Connection> OpenAsync(CancellationToken cancellationToken)
     {
         // Invalid settings throw ConfigurationException here, before anything is dialled.
-        var factory = RabbitMqConnections.CreateFactory(config);
+        var factory = CreateConnectionFactory();
         IConnection? amqp = null;
         PublisherPool? publishers = null;
         PublisherPool? confirmed = null;
@@ -325,7 +334,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnect
     {
         try
         {
-            return MessageSerializer.Serialize(message, config.SerializationFormat);
+            return MessageSerializer.Serialize(message, config.SerializationFormat, config.JsonTypeInfoResolver);
         }
         catch (Exception ex) when (ex is not MessageQueueException)
         {
@@ -888,6 +897,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IRabbitMqConnect
                     RabbitMqLog.CloseAbandoned(logger, queueName);
                 }
             }
+            clientCertificate?.Dispose();
         }
         finally
         {

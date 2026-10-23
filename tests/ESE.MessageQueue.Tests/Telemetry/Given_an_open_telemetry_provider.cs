@@ -553,4 +553,61 @@ public class Given_an_open_telemetry_provider
 
         public void Dispose() => listener.Dispose();
     }
+
+    [Fact]
+    public void When_An_Exception_Type_Name_Is_Longer_Than_The_Limit()
+    {
+        var limit = PublishOptions.MaxHeaderValueLength;
+        using var spans = new SpanCapture();
+        var provider = new OpenTelemetryProvider(spans.SourceName);
+
+        using (var activity = provider.StartConsumeActivity(Target, Message, null))
+            activity!.SetError(LongNamedExceptions.Create());
+
+        var span = spans.Single(ActivityKind.Consumer);
+        ((string)span.GetTagItem("error.type")!).Should().HaveLength(limit, "it should cut a long error.type to the shared limit");
+        span.StatusDescription.Should().HaveLength(limit, "it should cut the status description to the shared limit");
+        ((string)span.Events.Single().Tags.Single(t => t.Key == "exception.type").Value!).Should().HaveLength(limit,
+            "it should cut the exception event's type to the shared limit");
+    }
+
+    [Fact]
+    public void When_A_Long_Error_Type_Is_Set_On_A_Span()
+    {
+        var limit = PublishOptions.MaxHeaderValueLength;
+        using var spans = new SpanCapture();
+        var provider = new OpenTelemetryProvider(spans.SourceName);
+
+        using (var activity = provider.StartConsumeActivity(Target, Message, null))
+            activity!.SetErrorType(new string('e', limit + 10));
+
+        var span = spans.Single(ActivityKind.Consumer);
+        ((string)span.GetTagItem("error.type")!).Should().HaveLength(limit, "it should cut a long error.type to the shared limit");
+        span.StatusDescription.Should().HaveLength(limit, "it should cut the status description to the shared limit");
+    }
+
+    [Fact]
+    public void When_Recording_Long_Error_Types_And_Reasons()
+    {
+        var limit = PublishOptions.MaxHeaderValueLength;
+        var source = $"ESE.MessageQueue.Tests.{Guid.NewGuid():N}";
+        using var metrics = new MetricCapture(source);
+        var provider = new OpenTelemetryProvider(source);
+        var longText = new string('e', limit + 10);
+
+        provider.RecordMessageConsumed(Target, TimeSpan.FromMilliseconds(1), longText);
+        provider.RecordMessagePublished(Target, 1, TimeSpan.FromMilliseconds(1), longText);
+        provider.RecordMessageDeadLettered(Target, longText);
+        provider.RecordTransportError(Target, longText);
+
+        ((string)metrics.For("messaging.client.consumed.messages").Single().Tags["error.type"]!).Should().HaveLength(limit,
+            "it should cut a consume error type to the shared limit");
+        ((string)metrics.For("messaging.client.sent.messages").Single().Tags["error.type"]!).Should().HaveLength(limit,
+            "it should cut a publish error type to the shared limit");
+        ((string)metrics.For("ese.messagequeue.messages.dead_lettered").Single().Tags["ese.messagequeue.dead_letter.reason"]!)
+            .Should().HaveLength(limit, "it should cut a dead-letter reason to the shared limit");
+        ((string)metrics.For("ese.messagequeue.transport.errors").Single().Tags["error.type"]!).Should().HaveLength(limit,
+            "it should cut a transport error type to the shared limit");
+    }
 }
+

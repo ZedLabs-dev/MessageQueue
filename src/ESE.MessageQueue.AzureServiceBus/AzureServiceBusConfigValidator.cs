@@ -1,3 +1,4 @@
+using ESE.MessageQueue.Processing;
 using ESE.MessageQueue.Providers;
 
 namespace ESE.MessageQueue.AzureServiceBus;
@@ -26,5 +27,8 @@ sealed class AzureServiceBusConfigValidator : MessageQueueConfigValidator<AzureS
 
         if (options.MaxAutoLockRenewalDuration < TimeSpan.Zero)
             errors.Add("MaxAutoLockRenewalDuration must be >= 0");
+
+        if (CapabilityChecks.UnsupportedRequiredBackoff(options.SupportsDelayedRedelivery, options) is { } unsupported)
+            errors.Add(unsupported);
     }
 }

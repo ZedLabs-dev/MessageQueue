@@ -132,4 +132,36 @@ public sealed class Given_a_third_party_provider : IAsyncDisposable
         act.Should().Throw<InvalidOperationException>("it should bind a third-party config as strictly as the built-in ones")
             .WithMessage("*RetryAttempts*");
     }
+
+    // §3a.5 (ADR 0020): a provider whose Capabilities say it cannot delay a retry is refused when the app requires it,
+    // even though the provider knows nothing about the setting.
+    [Fact]
+    public async Task When_Delayed_Redelivery_Is_Required_But_Not_Supported()
+    {
+        await using var strict = Build(new Dictionary<string, string?>
+        {
+            ["MessageQueue:Provider"] = "loopback",
+            ["MessageQueue:QueueName"] = "orders",
+            ["MessageQueue:RequireDelayedRedelivery"] = "true"
+        });
+
+        var act = () => strict.GetRequiredService<IMessageQueue<TestMessage>>();
+
+        act.Should().Throw<ESE.MessageQueue.Exceptions.ConfigurationException>("it should refuse a queue that cannot honor the required backoff")
+            .WithMessage("*RequireDelayedRedelivery*");
+    }
+
+    [Fact]
+    public async Task When_Delayed_Redelivery_Is_Required_Without_A_Backoff()
+    {
+        await using var strict = Build(new Dictionary<string, string?>
+        {
+            ["MessageQueue:Provider"] = "loopback",
+            ["MessageQueue:QueueName"] = "orders",
+            ["MessageQueue:RequireDelayedRedelivery"] = "true",
+            ["MessageQueue:Retry:InitialDelay"] = "00:00:00"
+        });
+
+        strict.GetRequiredService<IMessageQueue<TestMessage>>().Should().NotBeNull("it should accept the queue when there is no delay to honor");
+    }
 }

@@ -17,7 +17,8 @@ library deserialized with `ContractlessStandardResolver` and no security options
   (collision-resistant hashing for maps, depth limit). Specs check the option and that a hostile dictionary and a
   deeply nested payload throw instead of crashing the process.
 - **JSON**: System.Text.Json with an explicit `MaxDepth = 64` (also enforced inside ignored properties), camelCase,
-  invalid UTF-8 rejected. A spec checks that 100 levels of nesting throw.
+  invalid UTF-8 rejected. A spec checks that 100 levels of nesting throw. The same rules apply to source-generated
+  metadata supplied per queue (ADR 0019), checked by the same kinds of spec.
 - **Size first** (S9): the dispatcher compares the body with `MaxMessageSizeBytes` (default 1 MiB) before
   deserializing and dead-letters it as `MessageTooLarge` without reading it. On the wire, RabbitMQ.Client buffers at
   most `max(MaxMessageSizeBytes, 16 MiB)` per body (ADR 0007 note); Azure Service Bus is capped by the entity's

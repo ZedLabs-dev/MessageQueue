@@ -144,7 +144,7 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
     {
         try
         {
-            return MessageSerializer.Serialize(message, config.SerializationFormat);
+            return MessageSerializer.Serialize(message, config.SerializationFormat, config.JsonTypeInfoResolver);
         }
         catch (Exception ex)
         {
@@ -392,7 +392,7 @@ public sealed class InMemoryMessageQueue<T> : IMessageQueue<T>, IDisposable, IAs
     {
         try
         {
-            return MessageSerializer.Deserialize<T>(body, config.SerializationFormat);
+            return MessageSerializer.Deserialize<T>(body, config.SerializationFormat, config.JsonTypeInfoResolver);
         }
         catch (Exception)
         {

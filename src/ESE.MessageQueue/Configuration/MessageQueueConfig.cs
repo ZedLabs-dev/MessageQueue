@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization.Metadata;
 using ESE.MessageQueue.Retry;
 using ESE.MessageQueue.Serialization;
 
@@ -23,9 +24,13 @@ public abstract record MessageQueueConfig
 
     public bool EnableDeadLetterQueue { get; set; } = true;
 
+    public bool RequireDelayedRedelivery { get; set; }
+
     [Range(1, int.MaxValue)]
     public int MaxMessageSizeBytes { get; set; } = DefaultMaxMessageSizeBytes;
 
     [Range(1, MaxConcurrentCallsLimit)]
     public int MaxConcurrentCalls { get; set; } = DefaultMaxConcurrentCalls;
+
+    public IJsonTypeInfoResolver? JsonTypeInfoResolver { get; set; }
 }

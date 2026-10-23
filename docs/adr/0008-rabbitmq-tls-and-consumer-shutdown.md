@@ -1,6 +1,6 @@
 # 0008. RabbitMQ TLS enforcement, delivery settlement and consumer shutdown
 
-- Status: Accepted (2026-10-16)
+- Status: Accepted (2026-10-16); amended 2026-10-22 by ADR 0022 (client certificates)
 - Context: OPTIMIZATION-PLAN S7, S5; ADR 0002 (options validation), ADR 0004 (cancelled handlers)
 
 ## Context

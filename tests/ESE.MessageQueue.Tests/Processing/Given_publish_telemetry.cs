@@ -21,4 +21,16 @@ public class Given_publish_telemetry
         first.Should().BeSameAs(second, "it should not allocate per publish when no telemetry provider is registered");
         first.TraceHeaders.Should().BeEmpty("it should add no trace headers without telemetry");
     }
+
+    [Fact]
+    public void When_A_Publish_Fails_With_A_Very_Long_Exception_Type_Name()
+    {
+        var telemetry = new ESE.MessageQueue.Tests.Telemetry.TestTelemetryProvider();
+
+        using (var publish = PublishTelemetry.Start(telemetry, Target, 1, NullLogger.Instance, "m-1"))
+            publish.Failed(LongNamedExceptions.Create());
+
+        telemetry.Published.Should().ContainSingle().Which.ErrorType.Should().HaveLength(ESE.MessageQueue.Abstractions.PublishOptions.MaxHeaderValueLength,
+            "it should cut the error type it reports to the shared limit");
+    }
 }

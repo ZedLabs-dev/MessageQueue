@@ -14,8 +14,8 @@ public static class PublishValidation
     static readonly string[] ReservedNames = ["traceparent", "tracestate"];
 
     /// <summary>
-    /// Checks one message and its <see cref="PublishOptions"/>: non-null, a non-blank message id within
-    /// <see cref="PublishOptions.MaxMessageIdLength"/>, and headers within the limits on <see cref="PublishOptions"/>
+    /// Checks one message and its <see cref="PublishOptions"/>: non-null, a non-blank message id and a correlation id
+    /// (without control characters) within <see cref="PublishOptions.MaxMessageIdLength"/>, and headers within the limits on <see cref="PublishOptions"/>
     /// that do not use a reserved name (see <see cref="IsReserved"/>).
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="message"/> or <paramref name="options"/> is null.</exception>
@@ -28,6 +28,12 @@ public static class PublishValidation
         if (options.MessageId is { } id && (string.IsNullOrWhiteSpace(id) || id.Length > PublishOptions.MaxMessageIdLength))
             throw new ArgumentException(
                 $"MessageId must be non-blank and at most {PublishOptions.MaxMessageIdLength} characters", nameof(options));
+
+        // A correlation id is a key the application matches on: one that does not fit every broker is refused, not cut.
+        if (options.CorrelationId is { } correlationId
+            && (correlationId.Length > PublishOptions.MaxMessageIdLength || correlationId.Any(char.IsControl)))
+            throw new ArgumentException(
+                $"CorrelationId must be at most {PublishOptions.MaxMessageIdLength} characters, without control characters", nameof(options));
 
         if (options.Headers is not { } headers)
             return;

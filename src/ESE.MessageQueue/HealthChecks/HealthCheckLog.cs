@@ -11,7 +11,7 @@ static partial class HealthCheckLog
     static partial void Failed(ILogger logger, string healthCheck, string exceptionType, Exception exception);
 
     public static void ProbeFailed(ILogger logger, string healthCheck, Exception exception) =>
-        Failed(new Processing.SafeLogger(logger), healthCheck, exception.GetType().FullName ?? exception.GetType().Name, exception);
+        Failed(new Processing.SafeLogger(logger), healthCheck, Processing.BoundedText.TypeName(exception), exception);
 }
 
 // The logger health checks registered through the extensions log to: the container's, or none.

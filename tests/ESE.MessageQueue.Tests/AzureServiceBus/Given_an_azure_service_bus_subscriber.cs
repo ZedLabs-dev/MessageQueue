@@ -134,4 +134,17 @@ public class Given_an_azure_service_bus_subscriber : IAsyncDisposable
         bus.Processor.EntityPath.Should().Be("orders", "it should receive from the queue");
         bus.Processor.SubscriptionName.Should().BeNull("it should not use a subscription for a queue");
     }
+
+    [Fact]
+    public async Task When_A_Processor_Error_Has_A_Very_Long_Type_Name()
+    {
+        var telemetry = new ESE.MessageQueue.Tests.Telemetry.TestTelemetryProvider();
+        await using var queue = bus.CreateQueue(AzureServiceBusTestConfigs.Queue(), logger, telemetry: telemetry);
+        await queue.SubscribeAsync(AzureServiceBusTestConfigs.Returns(MessageResult.Acknowledge), TestContext.Current.CancellationToken);
+
+        await bus.Processor.RaiseErrorAsync(LongNamedExceptions.Create());
+
+        telemetry.TransportErrors.Should().ContainSingle().Which.ErrorType.Should().HaveLength(ESE.MessageQueue.Abstractions.PublishOptions.MaxHeaderValueLength,
+            "it should cut the counted error type to the shared limit");
+    }
 }

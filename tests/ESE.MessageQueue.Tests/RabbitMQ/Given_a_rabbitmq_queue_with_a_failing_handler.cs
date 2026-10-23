@@ -262,4 +262,18 @@ public sealed class Given_a_rabbitmq_queue_with_a_failing_handler : IAsyncLifeti
         attempts.Should().BeEquivalentTo(new Dictionary<string, int> { ["count"] = 1, ["attempt"] = 1 },
             "it should trust attempt headers only from the broker's redelivery and the library's own retry queues");
     }
+
+    [Fact(Timeout = 60_000)]
+    public async Task When_The_Handler_Throws_An_Exception_With_A_Very_Long_Type_Name()
+    {
+        var config = queues.NewConfig("long-type-test") with { Retry = RetryPolicy.None };
+        var queue = queues.Create(config);
+
+        await queue.SubscribeAsync((_, _, _) => throw LongNamedExceptions.Create(), TestContext.Current.CancellationToken);
+        await queue.PublishAsync(new TestMessage("boom", "throws"), TestContext.Current.CancellationToken);
+        var headers = await TakeDeadLetterAsync(config.EffectiveDeadLetterQueueName);
+
+        headers.Should().ContainKey(DetailHeader, "it should record the exception type")
+            .WhoseValue.Should().HaveLength(PublishOptions.MaxHeaderValueLength, "it should cut the detail header to the shared limit");
+    }
 }

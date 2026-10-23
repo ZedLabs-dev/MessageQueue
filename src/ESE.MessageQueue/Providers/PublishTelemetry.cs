@@ -78,7 +78,7 @@ public sealed class PublishTelemetry : IDisposable
         if (!enabled)
             return;
 
-        errorType = exception.GetType().FullName ?? exception.GetType().Name;
+        errorType = Processing.BoundedText.TypeName(exception);
         if (activity is not null)
             Guard((activity, exception), static s => s.activity.SetError(s.exception));
     }

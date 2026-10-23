@@ -16,6 +16,9 @@ static class MessageQueueConfigRules
         if (!Enum.IsDefined(config.SerializationFormat))
             errors.Add($"SerializationFormat '{config.SerializationFormat}' is not supported");
 
+        if (config.JsonTypeInfoResolver is not null && config.SerializationFormat != SerializationFormat.Json)
+            errors.Add($"JsonTypeInfoResolver is set, but SerializationFormat is {config.SerializationFormat}: JSON metadata applies only to SerializationFormat Json");
+
         if (config.Retry is { } retry)
             ValidateRetry(retry, errors);
 

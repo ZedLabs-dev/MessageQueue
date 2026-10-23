@@ -14,13 +14,15 @@ A mutant definition file is JSON:
         { "id": "D01", "name": "retry counter not incremented",
           "file": "src/ESE.MessageQueue/Providers/MessageDispatcher.cs",
           "find": "exact text that must occur exactly once", "replace": "the mutated text",
-          "filter": "optional dotnet test --filter, overrides the default" }
+          "filter": "optional dotnet test --filter, overrides the default",
+          "equivalent": "optional: why no test can tell this mutant from the original" }
       ]
     }
 
 Each mutant is applied to the copy, the test project is built (warnings allowed), the filtered tests are run, and
 the file is restored. Results: KILLED (a test failed), SURVIVED (all passed: a gap in the specs), COMPILE-ERROR
-(the mutant does not build: rewrite it), INVALID (find text not found exactly once). A baseline run must pass first.
+(the mutant does not build: rewrite it), INVALID (find text not found exactly once), EQUIVALENT (survived, and the
+definition says why it cannot be told apart from the original; it does not fail the run). A baseline run must pass first.
 Integration filters need Docker (MQ_REQUIRE_DOCKER=true is set). Exit code: 0 when every valid mutant was killed,
 1 when any survived, 2 on a setup error. A JSON report is written next to the definition file's name in the workdir.
 """
@@ -150,6 +152,8 @@ def main():
                         status, detail = "ERROR", tail
             finally:
                 open(path, "w", encoding="utf-8").write(original)
+            if status == "SURVIVED" and m.get("equivalent"):
+                status, detail = "EQUIVALENT", m["equivalent"]
             results.append({"id": m["id"], "name": m.get("name"), "status": status, "detail": detail,
                             "seconds": round(time.time() - started)})
             print(f"{label}: {status} {detail if status == 'KILLED' else ''}", flush=True)
@@ -157,7 +161,7 @@ def main():
         report = os.path.join(work, os.path.splitext(os.path.basename(args.definitions))[0] + ".results.json")
         with open(report, "w") as f:
             json.dump(results, f, indent=1)
-        counts = {s: sum(r["status"] == s for r in results) for s in ("KILLED", "SURVIVED", "COMPILE-ERROR", "INVALID", "ERROR")}
+        counts = {s: sum(r["status"] == s for r in results) for s in ("KILLED", "SURVIVED", "EQUIVALENT", "COMPILE-ERROR", "INVALID", "ERROR")}
         print(f"Summary: {counts} (report: {report})")
         return 1 if counts["SURVIVED"] or counts["ERROR"] else 0
     finally:

@@ -13,7 +13,10 @@ Prepare release $ARGUMENTS. Stop and ask before tagging or pushing; the owner pu
    The tag will be `v<VersionPrefix>[-<VersionSuffix>]`; `release.yml` refuses a mismatch.
 3. **Public API.** For each package in `src/*/`: append every line of `PublicAPI.Unshipped.txt` (except
    `#nullable enable`) to `PublicAPI.Shipped.txt`, keep the shipped file sorted, and leave Unshipped with only
-   `#nullable enable`. `release.yml` refuses a non-empty Unshipped file. After the first stable release, set
+   `#nullable enable`. A `*REMOVED*<entry>` line deletes `<entry>` from Shipped instead of being appended, and a
+   shipped `~` (oblivious) entry whose annotated form is being appended is deleted too
+   (`Packaging/Given_the_public_api_files` checks that every shipped `~` entry is retired that way).
+   `release.yml` refuses a non-empty Unshipped file. After the first stable release, set
    `PackageValidationBaselineVersion` in `src/Directory.Build.props` to the previous version.
 4. **Changelog.** Rename `## [Unreleased]` to `## [<version>] - <yyyy-mm-dd>` and add a fresh empty
    `## [Unreleased]` above it. The release notes on GitHub are that section, verbatim.

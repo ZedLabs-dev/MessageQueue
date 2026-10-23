@@ -256,4 +256,21 @@ public class Given_an_azure_service_bus_queue_retrying : IAsyncDisposable
 
         logger.Entries.Should().NotContain(e => e.Message.Contains("TransactionalRetries"), "it should not warn below the threshold or without transactions");
     }
+
+    [Fact(Timeout = 10_000)]
+    public async Task When_A_Handler_Throws_An_Exception_With_A_Very_Long_Type_Name()
+    {
+        var limit = PublishOptions.MaxHeaderValueLength;
+        await using var queue = bus.CreateQueue(AzureServiceBusTestConfigs.Queue() with { Retry = RetryPolicy.None });
+        await queue.SubscribeAsync((_, _, _) => throw LongNamedExceptions.Create(), TestContext.Current.CancellationToken);
+
+        var delivery = bus.Processor.Deliver(FakeServiceBus.Message("long-type"));
+        await delivery.Handled.WaitAsync(TestContext.Current.CancellationToken);
+
+        delivery.Settlement.Should().Be("deadletter", "it should dead-letter after the only attempt");
+        delivery.DeadLetterDescription.Should().HaveLength(limit,
+            "it should cut the dead-letter description to the shared limit (Service Bus refuses longer ones)");
+        ((string)delivery.Properties![ServiceBusMessages.DeadLetterDetailProperty]).Should().HaveLength(limit,
+            "it should cut the dead-letter detail property to the shared limit");
+    }
 }

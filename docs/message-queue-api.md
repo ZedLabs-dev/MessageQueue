@@ -165,7 +165,8 @@ fits the lock-renewal budget) and logs a startup warning when the retry policy h
 
 - `MessageId` (string?): message id and idempotency key; consumers see it as `MessageContext.MessageId`.
   Non-blank, at most `PublishOptions.MaxMessageIdLength` (128) characters.
-- `CorrelationId` (string?)
+- `CorrelationId` (string?): at most 128 characters and no control characters (refused, not cut). Consumers see it without control characters
+  and at most 128 characters long, whatever the publisher wrote.
 - `Headers` (IReadOnlyDictionary<string, string>?): delivered as `MessageContext.Headers`. At most `MaxHeaders` (64),
   names up to 128 characters, values up to 4096. Reserved names are rejected with `ArgumentException`: anything
   starting with `x-` (broker and library headers such as `x-delivery-attempt`), `traceparent` and `tracestate`.
@@ -217,6 +218,8 @@ for every message, so scoped dependencies (a `DbContext`, say) live for one mess
 | EnableDeadLetterQueue | bool | true | When false, messages that would be dead-lettered are dropped with a warning |
 | MaxMessageSizeBytes | int | 1048576 | Larger bodies are dead-lettered (`MessageTooLarge`) without being deserialized |
 | MaxConcurrentCalls | int | 10 | Handlers running at once (1..1000), on every provider. RabbitMQ: also bounded by `PrefetchCount` |
+| RequireDelayedRedelivery | bool | false | When true, startup fails if the provider or entity cannot delay a retry (`Capabilities.DelayedRedelivery = false`, e.g. a Service Bus topic subscription) and `Retry` has a backoff; when false that case only logs warning 1101 (ADR 0020) |
+| JsonTypeInfoResolver | `IJsonTypeInfoResolver` | null (reflection) | Code only, not bindable: source-generated JSON metadata, set with `services.AddMessageQueueJsonMetadata<T>(MyJsonContext.Default)` (ADR 0019). No reflection fallback; startup fails if it lacks `T` or the format is not `Json` |
 
 ### `Retry` section
 
@@ -241,6 +244,11 @@ The default waits 2 + 4 + 8 + 16 + 30 ≈ 60 s across five retries, then dead-le
 | Tls:Enabled | bool | false | TLS for the `HostName` form (`amqps://` enables it for a connection string) |
 | Tls:ServerName | string | the host | Name the server certificate must match |
 | Tls:AcceptablePolicyErrors | `SslPolicyErrors` flags | None | Certificate errors to accept; anything but `None` also needs `Tls:AllowInsecureCertificates = true` |
+| Tls:ClientCertificatePath | string | empty | Client certificate for mutual TLS: a PKCS#12 (`.pfx`/`.p12`) or PEM file, loaded and checked at startup (it must hold a private key). Needs TLS |
+| Tls:ClientCertificateKeyPath | string | empty | PEM private key file when it is not in the `ClientCertificatePath` file |
+| Tls:ClientCertificatePassword | string | empty | Password of the PFX or of an encrypted PEM key; redacted from `ToString()`, never logged |
+| Tls:ClientCertificateThumbprint | string | empty | Alternative to the file: SHA-1 thumbprint (case, whitespace, `:`, `-` and direction marks ignored) of a certificate with a private key in the OS store |
+| Tls:ClientCertificateStoreName / Tls:ClientCertificateStoreLocation | `StoreName` / `StoreLocation` | My / CurrentUser | Store searched for the thumbprint |
 | DeadLetterQueueName | string | `{QueueName}.deadletter` | Dead-letter queue |
 | UseQuorumQueues | bool | true | Quorum queues (main, dead-letter and retry queues) |
 | QuorumInitialGroupSize | int | 3 | Initial quorum group size |
@@ -369,6 +377,10 @@ take one as a constructor argument. `samples/ESE.MessageQueue.Samples` shows the
   `ese.messagequeue.retry.delay_ms` on retries, `ese.messagequeue.dead_letter.reason` on dead letters, and an
   `exception` event when the handler throws. Spans record the exception type only; pass
   `recordExceptionDetails: true` to also record messages and stack traces (truncated to 4096 characters).
+- **Bounded values (S6, ADR 0021):** every value the library writes from caller-, publisher- or exception-derived text
+  is cut to 4096 characters (never inside a surrogate pair): `error.type`, status descriptions, exception types,
+  dead-letter reasons and details (span, metric, broker property and log), so an exotic generic exception type cannot
+  stop a dead letter (Service Bus refuses longer descriptions) or a span export. Ids are cut to 128.
 - **Malformed headers:** `traceparent` is parsed strictly (W3C Trace Context level 1; at most 256 characters,
   `tracestate` at most 512 characters and 32 members). Invalid values are ignored, never thrown, and never stop a
   message. The sampled and random (level 2) flags are kept; an unsampled publisher stays unsampled.

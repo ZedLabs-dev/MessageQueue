@@ -87,7 +87,7 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureSer
         // Publish and consume name the same entity (the topic in subscription mode), so their telemetry joins.
         publishTarget = new TelemetryTarget(MessagingSystems.ServiceBus, publishEntity, typeof(T).Name) { PublishOperation = "send" };
         consumeTarget = publishTarget with { Subscription = subscriptionMode ? config.SubscriptionName : null };
-        capabilities = new MessageQueueCapabilities(Durable: true, DeadLetter: true, DelayedRedelivery: !subscriptionMode);
+        capabilities = new MessageQueueCapabilities(Durable: true, DeadLetter: true, DelayedRedelivery: config.SupportsDelayedRedelivery);
 
         CapabilityChecks.WarnIfBackoffUnsupported(capabilities, config, this.logger);
         if (subscriptionMode && config.Retry.MaxRetries + 1 > DefaultEntityMaxDeliveryCount)
@@ -110,7 +110,7 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureSer
         {
             // S10: the client's own message can echo the connection string, so neither its text nor the exception
             // itself is passed on or logged; the type is enough to diagnose.
-            AzureServiceBusLog.ClientCreationFailed(this.logger, config.QueueName, ex.GetType().FullName ?? ex.GetType().Name);
+            AzureServiceBusLog.ClientCreationFailed(this.logger, config.QueueName, BoundedText.TypeName(ex));
             throw new MessageQueueException(
                 $"Failed to create the Azure Service Bus client for '{config.QueueName}' ({ex.GetType().Name}). Check ConnectionString or FullyQualifiedNamespace.");
         }
@@ -239,7 +239,7 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureSer
         byte[] body;
         try
         {
-            body = MessageSerializer.Serialize(message, config.SerializationFormat);
+            body = MessageSerializer.Serialize(message, config.SerializationFormat, config.JsonTypeInfoResolver);
         }
         catch (Exception ex) when (ex is not MessageQueueException)
         {
@@ -551,7 +551,7 @@ public sealed class AzureServiceBusMessageQueue<T> : IMessageQueue<T>, IAzureSer
         var error = args.Exception;
         var reason = error is ServiceBusException serviceBus ? serviceBus.Reason.ToString() : string.Empty;
         // B6: every error is counted, logged or throttled; the type is bounded (a reason code or an exception type).
-        CountTransportError(reason.Length > 0 ? reason : error?.GetType().FullName ?? "unknown");
+        CountTransportError(reason.Length > 0 ? reason : error is null ? "unknown" : BoundedText.TypeName(error));
         var key = $"{args.ErrorSource}|{args.EntityPath}|{error?.GetType().FullName}|{reason}";
         if (!errorLog.ShouldLog(key, out var suppressed))
             return Task.CompletedTask;

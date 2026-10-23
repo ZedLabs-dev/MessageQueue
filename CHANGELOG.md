@@ -14,6 +14,49 @@ resolved.
   EULA is the owner's to accept). They skip without `MQ_ASB_CONNECTION_STRING`; the provider is verified only through
   its unit specs over the SDK seams. Run `Category=Integration` with a namespace or the emulator, then remove this item.
 
+### Deferred items closed (OPTIMIZATION-PLAN §9)
+
+Design records: `docs/adr/0019` (source-generated JSON metadata), `0020` (`RequireDelayedRedelivery`), `0021`
+(bounded values), `0022` (client certificates); `0001`, `0008` and `0018` amended.
+
+#### Breaking
+- `PublishOptions.CorrelationId` longer than 128 characters (`MaxMessageIdLength`) or containing control characters
+  is refused with `ArgumentException` on every provider (it was sent as is, and failed only on Service Bus).
+- Enum settings of every config type, nested ones included (`Tls:AcceptablePolicyErrors`, the new store settings),
+  must be names (or, for flags, comma-separated names); numbers such as `"2"` now fail at startup, as they already did
+  for `SerializationFormat` and `Retry:Strategy`.
+- `InMemoryDeadLetter<T>` is a sealed class instead of a positional record, and `DeadLetterReason` a plain readonly
+  struct instead of a record struct: equality, `==`/`!=`, `ToString()` and (for `InMemoryDeadLetter<T>`)
+  `Deconstruct` and `init` properties are unchanged, but `with` expressions on `InMemoryDeadLetter<T>` no longer
+  compile. Reason: the compiler's synthesized record members were nullable-oblivious (`~`) in the public API.
+  The old entries are retired in `PublicAPI.Unshipped.txt` (`*REMOVED*~` lines, or annotated replacements where the
+  analyzer treats both as the same member); `/release` drops them from Shipped.
+
+#### Added
+- **Source-generated JSON** (ADR 0019): `services.AddMessageQueueJsonMetadata<T>(MyJsonContext.Default)` and
+  `MessageQueueConfig.JsonTypeInfoResolver` (code only). Serialization then uses only that metadata (no reflection
+  fallback), with the same camelCase names, depth limit and UTF-8 rules; startup fails if the resolver lacks `T` or
+  the format is not `Json`. Provider SPI: `MessageSerializer.Serialize/Deserialize` overloads taking the resolver
+  (the two-argument ones stay the reflection path). Refused with `ConfigurationException` for a queue registered as
+  an instance, in either registration order.
+- **Mutual TLS for RabbitMQ** (ADR 0022): `Tls:ClientCertificatePath` (PFX or PEM), `Tls:ClientCertificateKeyPath`,
+  `Tls:ClientCertificatePassword` (redacted from `ToString()`), or `Tls:ClientCertificateThumbprint` with
+  `Tls:ClientCertificateStoreName`/`StoreLocation`. Checked at startup; loaded once per queue, reused across reconnects
+  and disposed with the queue; presented on both endpoint forms.
+- **`MessageQueueConfig.RequireDelayedRedelivery`** (ADR 0020, default false): fail at startup (or, for third-party
+  providers, when the queue is resolved) instead of warning when the retry backoff cannot be honored.
+
+#### Changed
+- **Bounded values** (S6, ADR 0021): dead-letter reason codes and details (`DeadLetterReason` constructor), exception
+  type names, `error.type` span and metric tags, span status descriptions and the dead-letter reason metric tag are
+  cut to 4096 characters (never inside a surrogate pair). A consumed `CorrelationId` loses control characters and is
+  cut to 128 characters, like the message id. Consumed ids lose C1 control characters (U+0080-U+009F) too, and a cut
+  never ends in half a surrogate pair.
+- Coverage gate raised to 88% combined and the per-package floor to 86% (`scripts/coverage.sh`).
+- Container images are pinned by digest (`tag@sha256:...`) in `docker/test-broker/Dockerfile` and the dev compose file.
+- CI: `ci.yml` job timeout 30 minutes; `release.yml` checks that the tag is on `main` from the checkout's own
+  `origin/main` (fetch-depth 0), with no second unauthenticated fetch, so private repositories work.
+
 ### Phase 7: package split, API lock, packaging, agentic tooling (OPTIMIZATION-PLAN Phase 7)
 
 Design records: `docs/adr/0015` (provider SPI and package split), `0016` (API lock and packaging), `0017` (tooling).

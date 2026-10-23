@@ -74,9 +74,9 @@ Reviewed 2026-10-16 against `main` @ `846883c`. This plan complements [PRODUCTIO
 | S3 ✅ | Medium | ASB only supports SAS connection strings. There is no managed identity or Entra ID. | Add `FullyQualifiedNamespace` and an optional `TokenCredential` (`DefaultAzureCredential`). Prefer identity and document it as the production default. *ASB rework: `FullyQualifiedNamespace` + `TokenCredential` (constructor, DI, else `DefaultAzureCredential`), exactly one of it or `ConnectionString`; Data Sender/Receiver roles documented as the production default; ADR 0011.* |
 | S4 ✅ | Medium | `AzureServiceBusHealthCheck` uses `ServiceBusAdministrationClient`, which **requires Manage rights**. That forces the app to hold over-privileged credentials. It also creates a new client on every probe. | Default to a receiver `PeekMessageAsync` liveness check, which needs only Listen. Make the admin-metrics check opt-in. Reuse a singleton client. *ASB rework: default check peeks (Listen) through the queue's own client or one cached client; admin metrics opt-in (`AddAzureServiceBusMetricsHealthCheck`); ADR 0011.* |
 | S5 ✅ | Medium | Health checks put `ex.Message` and the broker host name/port in `HealthCheckResult.Data`. Health endpoints are often unauthenticated. | Remove raw exception text and topology from `Data`. Log the details instead. *ASB rework: ASB checks and the generic `MessageQueueHealthCheck` carry no exception text, host or namespace.* *Phase 7 correction: results also attached the raw exception, which health endpoints can serialize; now no check attaches an exception or puts the queue in `Data`, the exception is logged (event 6001), and every health spec asserts it.* |
-| S6 ✅ | Medium | Exception text leaks into the broker and telemetry: ASB `AbandonMessageAsync` stores `OriginalException` (the message text) as an application property, dead-letter descriptions include `ex.Message`, and `OpenTelemetryActivity` records the **stack trace** on spans. | Store the exception *type* only. Make message and stack-trace capture opt-in. Truncate long values. | *Phase 4: the shared pipeline puts only the exception type in dead-letter details; spans record `exception.type` only unless the host opts in, and opted-in values are truncated to 4096 characters. Open: ASB abandon/dead-letter call sites are rewritten in the ASB step; truncation of other long values (header values are capped at 4096 on publish).* *ASB rework: dead-letter reason, description and `x-ese-dead-letter-*` properties carry the reason code and exception type only; `OriginalException` removed (ADR 0009). Still open elsewhere: truncation of other long values.*
+| S6 ✅ | Medium | Exception text leaks into the broker and telemetry: ASB `AbandonMessageAsync` stores `OriginalException` (the message text) as an application property, dead-letter descriptions include `ex.Message`, and `OpenTelemetryActivity` records the **stack trace** on spans. | Store the exception *type* only. Make message and stack-trace capture opt-in. Truncate long values. | *Phase 4: the shared pipeline puts only the exception type in dead-letter details; spans record `exception.type` only unless the host opts in, and opted-in values are truncated to 4096 characters. Open: ASB abandon/dead-letter call sites are rewritten in the ASB step; truncation of other long values (header values are capped at 4096 on publish).* *ASB rework: dead-letter reason, description and `x-ese-dead-letter-*` properties carry the reason code and exception type only; `OriginalException` removed (ADR 0009). Still open elsewhere: truncation of other long values.* *Deferred-items close-out (2026-10-22, ADR 0021): one shared bound (4096 characters, never inside a surrogate pair) for dead-letter codes and details at the `DeadLetterReason` constructor, exception type names, `error.type` tags, status descriptions and metric tags; consumed correlation ids get the message id's sanitizing; a publish-side correlation id over 128 characters is refused. Specs per provider.*
 | S7 ✅ | Low/Med | RabbitMQ has no TLS configuration and no enforcement. `amqp://` is accepted silently. | Add `RequireTls` (default `true` outside Development). Reject plain `amqp://` when it's set. Expose `SslOption` (server name, cert validation). | *Phase 5: `RequireTls` (unset = required except for loopback hosts), `Tls:ServerName`/`AcceptablePolicyErrors` (errors need `AllowInsecureCertificates`), `HostName`/credential settings; ADR 0008.*
-| S8 ✅ | Low | `docker-compose.dev.yml` and the tests hardcode a RabbitMQ admin user and password. The compose file uses floating tags (`3-management`, `latest`), and RabbitMQ 3.x is EOL. | Move credentials to `.env` (git-ignored) with a committed `.env.example`. Tests read env vars or use Testcontainers. Pin `rabbitmq:4.x-management` by digest. *Phase 6: no credentials in `.env.example`, compose or docs; compose requires `RABBITMQ_USER`/`RABBITMQ_PASS` (`${VAR:?}`), and the example ships `change-me` placeholders, so a copied example still validates. Tests use Testcontainers (Phase 3); the image is pinned by tag `4.3.6-management`, not by digest.* |
+| S8 ✅ | Low | `docker-compose.dev.yml` and the tests hardcode a RabbitMQ admin user and password. The compose file uses floating tags (`3-management`, `latest`), and RabbitMQ 3.x is EOL. | Move credentials to `.env` (git-ignored) with a committed `.env.example`. Tests read env vars or use Testcontainers. Pin `rabbitmq:4.x-management` by digest. *Phase 6: no credentials in `.env.example`, compose or docs; compose requires `RABBITMQ_USER`/`RABBITMQ_PASS` (`${VAR:?}`), and the example ships `change-me` placeholders, so a copied example still validates. Tests use Testcontainers (Phase 3); the image is pinned by tag `4.3.6-management`, not by digest.* *2026-10-22: every image (test broker, compose RabbitMQ, Service Bus emulator, SQL Server) pinned as `tag@sha256:` (index digest for multi-arch images); Testcontainers starts the pinned broker; Dependabot's docker and docker-compose ecosystems update both.* |
 | S9 ✅ | Low | No message-size limit before deserialization | Add `MaxMessageSizeBytes` (default 1 MB) and dead-letter anything larger without deserializing it *Phase 7: RabbitMQ.Client buffers at most `max(MaxMessageSizeBytes, 16 MiB)` per body (was 64 MiB); Service Bus is capped by the entity maximum message size (ADR 0018).* |
 | S10 ✅ | Low | Connection-failure exceptions wrap `ex.Message` from the client. Check that no client library echoes the URI with credentials. | Add a test asserting that the `MessageQueueException` message never contains the password from a URI like `amqp://u:SECRET@host`. | *Phase 5 (RabbitMQ): connection failures name only the exception type; specs assert the whole exception chain is free of the password, for direct use, DI and the health check. ASB not yet covered.* *ASB rework: connection strings are validated at startup with fixed messages; client-creation failures carry no inner exception; specs assert no SharedAccessKey in any exception or log line.*
 
@@ -149,7 +149,7 @@ The library's main purpose is event messaging **without the application knowing 
 
 Benchmark before and after each change using a new `MessageQueue.Benchmarks` project (BenchmarkDotNet, `[MemoryDiagnoser]`). Don't merge "optimizations" without numbers.
 
-1. ✅ Implemented in Phase 4, benchmarked in Phase 6 ([docs/benchmarks.md](docs/benchmarks.md): JSON serialize 335 ns / 616 B, deserialize 802 ns / 1.4 KB; MessagePack 233 ns / 240 B and 405 ns / 464 B for a ~400-byte order. No string round trip, no body copy on RabbitMQ.Client 7. The optional `JsonSerializerContext` overload is **deferred** (Phase 7: it needs a per-queue `JsonTypeInfo` hook that options binding cannot carry, so it is a design change, not a small overload); no 6.x comparison, see the doc) **Serializer allocations:**
+1. ✅ Implemented in Phase 4, benchmarked in Phase 6 ([docs/benchmarks.md](docs/benchmarks.md): JSON serialize 335 ns / 616 B, deserialize 802 ns / 1.4 KB; MessagePack 233 ns / 240 B and 405 ns / 464 B for a ~400-byte order. No string round trip, no body copy on RabbitMQ.Client 7. The optional `JsonSerializerContext` overload was deferred in Phase 7 and is done (2026-10-22, ADR 0019): `AddMessageQueueJsonMetadata<T>(context)` / `MessageQueueConfig.JsonTypeInfoResolver`, no reflection fallback; no 6.x comparison, see the doc) **Serializer allocations:**
    - Use `JsonSerializer.SerializeToUtf8Bytes` and `Deserialize<T>(ReadOnlySpan<byte>)` instead of the UTF-8 string round trip.
    - Accept `ReadOnlyMemory<byte>` so consumers skip `Body.ToArray()`. On RabbitMQ use `ea.Body` directly; on ASB use `Body.ToMemory()`.
    - Optionally offer a `JsonSerializerContext` overload for source-generated, AOT-friendly serialization.
@@ -172,7 +172,7 @@ Benchmark before and after each change using a new `MessageQueue.Benchmarks` pro
 - Add **Testcontainers** for RabbitMQ 4.x and the Azure Service Bus emulator, so integration tests need no manual Docker setup and can run in CI.
 - Add traits `[Trait("Category","Unit")]` and `[Trait("Category","Integration")]` so there's a fast loop: `dotnet test --filter Category=Unit`.
 - Split `TelemetryTests.cs` into one file per class under test. Remove the `[Fact]` from `RabbitMqMessageQueueTests.Dispose`, and implement `IAsyncLifetime` cleanup.
-- Add a coverage gate: coverlet line coverage on the library (since Phase 7 the three packages under `src/`, combined, plus a per-package floor), enforced in CI, with a ReportGenerator summary. The gate starts at the measured Phase 3 baseline (**59%**), is ratcheted up each phase and never lowered, and targets **80%**. Phase 4 core raised it to **73%** (measured 74.2%); Phase 5 (RabbitMQ.Client 7, after the adversarial review) to **79%** (measured 80.1%); the Azure Service Bus rework to **83%** (measured 84.6%) and its review fixes to **84%** (measured 85.9%); Phase 6 (telemetry, samples) to **87%** (measured 88.2%). Phase 7 keeps 87% on the three packages combined (measured 89.3%) and adds an 85% floor per package.
+- Add a coverage gate: coverlet line coverage on the library (since Phase 7 the three packages under `src/`, combined, plus a per-package floor), enforced in CI, with a ReportGenerator summary. The gate starts at the measured Phase 3 baseline (**59%**), is ratcheted up each phase and never lowered, and targets **80%**. Phase 4 core raised it to **73%** (measured 74.2%); Phase 5 (RabbitMQ.Client 7, after the adversarial review) to **79%** (measured 80.1%); the Azure Service Bus rework to **83%** (measured 84.6%) and its review fixes to **84%** (measured 85.9%); Phase 6 (telemetry, samples) to **87%** (measured 88.2%). Phase 7 keeps 87% on the three packages combined (measured 89.3%) and adds an 85% floor per package. The deferred-items close-out raises them to **88%** combined (measured 89.7%) and an **86%** floor (lowest package measured 87.6%).
 
 ### Missing tests to add
 | Area | Tests |
@@ -292,7 +292,7 @@ Phases 1–3 make every later phase safe to hand to an agent. Phases 4, 5 and 6 
 
 ---
 
-## 9. Status (2026-10-17, after Phase 7)
+## 9. Status (2026-10-22, after the deferred-items close-out)
 
 **Done:** Phases 2-7. Every §1 package action, §2 S1-S10, §3 B1-B16, §3a.1-5, §4.1-4.7 (except the items below), §5
 infrastructure and missing-test areas, §6.1-6.4. Phase 7: three packages with a public provider SPI (ADR 0015), the
@@ -303,25 +303,32 @@ workflow hardening (author gating, read-only agent job, SHA-pinned secret-handli
 specs for connection recovery, unreadable bodies, the size boundary, hosted-service cancellation and every startup
 rule.
 
+**Deferred items closed (2026-10-22):** source-generated JSON metadata per queue (§4.1, ADR 0019); capability-based
+startup failure through `RequireDelayedRedelivery` (§3a.5, ADR 0020); the S6 remainder, bounded values in brokers,
+telemetry and logs (ADR 0021); RabbitMQ client certificates for mutual TLS (ADR 0022); container images pinned by digest
+(S8 remainder); the nullable-oblivious `~` PublicAPI entries (hand-declared equality members); a Packaging spec that
+every CS1591-exempt file declares exactly one type; `ci.yml` timeout 30 minutes; `release.yml` checks the tag against
+the checkout's own `origin/main` (no unauthenticated fetch). After the adversarial review's fixes (store lookups
+specified on Linux, strict enum names for every provider's nested settings, JSON metadata refused for
+instance-registered queues, certificates loaded once per queue and zeroed, control characters refused in published
+correlation ids): full suite with Docker, no ASB connection string: 869 tests, 857 passed, 12 skipped (10 ASB, 2
+Linux-only store specs, which pass in a Linux SDK container); line coverage 89.9% (gate 88%, floor 86%); mutants:
+`deferred-items.json` 55/55 and the reviewer's `review-deferred-items.json` 36/37 killed plus one documented equivalent
+(R-P8), `review-deferred-items-2.json` 2/2; R-T17/R-T18 are killed on Linux only.
+
 **Deferred (decided, not forgotten):**
-- `JsonSerializerContext` overload for source-generated serialization (§4.1): needs a per-queue `JsonTypeInfo` hook
-  that options binding cannot carry; a design change for after 1.0.
 - RabbitMQ.Client 6.x vs 7.x benchmark (Phase 5 exit criterion): the 6.x provider no longer exists (ADR 0014,
   `docs/benchmarks.md`).
-- Capability-based `ValidateOnStart` failures (§3a.5): providers still only warn when the retry backoff cannot be
-  honored.
-- Truncation of long values other than header values and recorded exception text (S6 remainder).
 - Branch protection with required checks (§6.4, optional while the owner commits on `main`).
 - RabbitMQ attempt-header forgery (ADR 0006 note): a publisher can forge `x-death` and the attempt header for its own
   messages; RabbitMQ 4.3.6 delivers a client-supplied `x-death` unchanged, so only a signed header would close it.
   Accepted risk: the forger can only shorten its own messages' retries.
 - Release-grade benchmark runs (`docs/benchmarks.md` numbers come from `--job short`).
-- Minor follow-ups from the final re-check:
-  - nullable-oblivious (`~`) compiler-generated entries in `src/ESE.MessageQueue/PublicAPI.Shipped.txt`;
-  - the CS1591 exemption is per file, so "one settings class per file" is a convention, not an enforced rule;
-  - `ci.yml` `timeout-minutes: 20`: watch the first GitHub run (the full suite takes about 2.5 minutes locally);
-  - `release.yml` fetches `origin/main` without credentials, so it assumes a public repository;
-  - the format hook needs `python3` and does nothing without it (the Stop hook still gates).
+- Minor follow-up: the format hook needs `python3` and does nothing without it (the Stop hook still gates). Watch the
+  first GitHub run against the 30-minute `ci.yml` timeout.
+- The core package is not annotated as trimmable/AOT-compatible: source-generated JSON removes reflection from the
+  JSON path (ADR 0019), but MessagePack's contractless resolver and the reflection JSON path remain.
+- Standalone connection-string RabbitMQ health checks present no client certificate (ADR 0022).
 
 **Blocked on the owner:**
 - **Azure Service Bus live verification:** the integration specs have never run against a real namespace or the
@@ -330,8 +337,7 @@ rule.
   the pack step. `release.yml` needs the `release` environment and either the `NUGET_USER` variable (trusted
   publishing policy on nuget.org for `release.yml`) or the `NUGET_API_KEY` secret. `claude.yml` and
   `update-packages.yml` need `ANTHROPIC_API_KEY`, and an automation GitHub App for pull requests that start CI.
-- Container image digests: `rabbitmq:4.3.6-management` (tests, compose) and the emulator images are pinned by tag,
-  not digest (S8 remainder).
-- Client certificates (mutual TLS) for RabbitMQ: not supported; only server validation settings exist (ADR 0008).
+- Client certificates against a real mutual-TLS broker: the specs check validation and that the connection factory
+  carries the certificate; no broker with `ssl_options.verify = verify_peer` has been tested.
 - `PRODUCTION-READINESS-PLAN.md` backlog items are not yet GitHub issues (§6.1).
 

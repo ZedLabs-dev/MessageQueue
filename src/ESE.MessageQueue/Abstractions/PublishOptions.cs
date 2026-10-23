@@ -5,7 +5,7 @@ namespace ESE.MessageQueue.Abstractions;
 /// </summary>
 public sealed record PublishOptions
 {
-    /// <summary>Longest accepted <see cref="MessageId"/> (Azure Service Bus's limit).</summary>
+    /// <summary>Longest accepted <see cref="MessageId"/> and <see cref="CorrelationId"/> (Azure Service Bus's limit).</summary>
     public const int MaxMessageIdLength = 128;
 
     /// <summary>Most headers accepted on one message.</summary>

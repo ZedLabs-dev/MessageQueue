@@ -27,10 +27,17 @@ static class ConfigValidation
             throw new OptionsValidationException(Options.DefaultName, typeof(TConfig), failures);
     }
 
-    // Enum settings must be one of the enum's names. The binder would also accept numbers ("1", "+1") and
-    // flag combinations ("A,B"), which silently select some other member.
-    public static bool IsEnumName<TEnum>(string? raw) where TEnum : struct, Enum =>
-        raw is not null && Enum.GetNames<TEnum>().Any(n => string.Equals(n, raw.Trim(), StringComparison.OrdinalIgnoreCase));
+    // Enum settings must be one of the enum's names (for a [Flags] enum, a comma-separated list of names). The binder
+    // would also accept numbers ("1", "+1") and flag combinations of a non-flags enum ("A,B"), which silently select
+    // some other member.
+    public static bool IsEnumName(Type enumType, string? raw)
+    {
+        if (raw is null)
+            return false;
+        var names = Enum.GetNames(enumType);
+        var parts = enumType.IsDefined(typeof(FlagsAttribute), inherit: false) ? raw.Split(',') : [raw];
+        return parts.All(part => names.Any(n => string.Equals(n, part.Trim(), StringComparison.OrdinalIgnoreCase)));
+    }
 
     // Prints a config record like the compiler-generated ToString, with secrets redacted.
     public static bool PrintMembers(object config, StringBuilder builder, params string[] secrets)
@@ -56,9 +63,15 @@ static class ConfigValidation
     }
 }
 
-// Startup check for enum settings, which the binder parses too leniently (see ConfigValidation.IsEnumName).
+// Startup check for enum settings, which the binder parses too leniently (see ConfigValidation.IsEnumName). Every enum
+// property of the config type is checked, nested settings objects included (Retry:Strategy, a provider's
+// Tls:ClientCertificateStoreName), so a provider's own enum settings get the same rule without registering anything.
 sealed class EnumNameValidator<TConfig> : IValidateOptions<TConfig> where TConfig : MessageQueueConfig
 {
+    const int MaxDepth = 4;
+
+    static readonly IReadOnlyList<(string Key, Type EnumType)> Settings = [.. EnumSettings(typeof(TConfig), "", 0)];
+
     readonly string name;
     readonly IConfiguration section;
 
@@ -74,15 +87,34 @@ sealed class EnumNameValidator<TConfig> : IValidateOptions<TConfig> where TConfi
             return ValidateOptionsResult.Skip;
 
         var errors = new List<string>();
-        Check<Serialization.SerializationFormat>("SerializationFormat", errors);
-        Check<Retry.RetryStrategy>("Retry:Strategy", errors);
+        foreach (var (key, enumType) in Settings)
+        {
+            var raw = section[key];
+            if (raw is not null && !ConfigValidation.IsEnumName(enumType, raw))
+                errors.Add($"{key} '{raw}' is not supported. Supported values: {string.Join(", ", Enum.GetNames(enumType))}");
+        }
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 
-    void Check<TEnum>(string key, List<string> errors) where TEnum : struct, Enum
+    // The configuration keys of every bindable enum property, recursing into nested settings classes.
+    static IEnumerable<(string Key, Type EnumType)> EnumSettings(Type type, string prefix, int depth)
     {
-        var raw = section[key];
-        if (raw is not null && !ConfigValidation.IsEnumName<TEnum>(raw))
-            errors.Add($"{key} '{raw}' is not supported. Supported values: {string.Join(", ", Enum.GetNames<TEnum>())}");
+        foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (property.GetIndexParameters().Length > 0 || property.SetMethod is not { IsPublic: true })
+                continue;
+
+            var propertyType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+            if (propertyType.IsEnum)
+            {
+                yield return (prefix + property.Name, propertyType);
+            }
+            else if (depth < MaxDepth && propertyType.IsClass && !propertyType.IsAbstract && propertyType != typeof(string)
+                && !typeof(Delegate).IsAssignableFrom(propertyType))
+            {
+                foreach (var nested in EnumSettings(propertyType, $"{prefix}{property.Name}:", depth + 1))
+                    yield return nested;
+            }
+        }
     }
 }

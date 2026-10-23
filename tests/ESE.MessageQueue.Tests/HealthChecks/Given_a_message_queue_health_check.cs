@@ -86,4 +86,17 @@ public class Given_a_message_queue_health_check
 
         healthCheckService.Should().NotBeNull("it should register the health check service");
     }
+
+    [Fact]
+    public async Task When_Health_Check_Throws_An_Exception_With_A_Very_Long_Type_Name()
+    {
+        var logger = new RecordingLogger();
+        var healthCheck = new MessageQueueHealthCheck("test-queue", _ => throw LongNamedExceptions.Create(), logger);
+        var context = new HealthCheckContext { Registration = new HealthCheckRegistration("test", healthCheck, null, null) };
+
+        await healthCheck.CheckHealthAsync(context, TestContext.Current.CancellationToken);
+
+        logger.Entries.Should().ContainSingle().Which.Message.Length.Should().BeLessThan(ESE.MessageQueue.Abstractions.PublishOptions.MaxHeaderValueLength + 200,
+            "it should log a bounded exception type name");
+    }
 }

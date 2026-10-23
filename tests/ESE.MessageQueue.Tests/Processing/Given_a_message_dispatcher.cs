@@ -6,6 +6,7 @@ using ESE.MessageQueue.Processing;
 using ESE.MessageQueue.Providers;
 using ESE.MessageQueue.Retry;
 using ESE.MessageQueue.Serialization;
+using ESE.MessageQueue.Tests.Serialization;
 using ESE.MessageQueue.Tests.Telemetry;
 using Microsoft.Extensions.Logging;
 
@@ -297,5 +298,114 @@ public class Given_a_message_dispatcher
         var outcome = await Dispatch(Dispatcher(Throws(new OperationCanceledException("handler timeout"))));
 
         outcome.Should().Be(DispatchOutcome.Rescheduled, "it should treat a handler's own cancellation as a failure to retry");
+    }
+
+    [Fact]
+    public async Task When_A_Handler_Throws_An_Exception_With_A_Very_Long_Type_Name()
+    {
+        var limit = PublishOptions.MaxHeaderValueLength;
+        var error = LongNamedExceptions.Create();
+        error.GetType().FullName!.Length.Should().BeGreaterThan(limit * 2, "the spec needs a type name beyond the limit");
+
+        var outcome = await Dispatch(Dispatcher(Throws(error), config with { Retry = RetryPolicy.None }));
+
+        outcome.Should().Be(DispatchOutcome.DeadLettered, "it should dead-letter after the only attempt");
+        actions.DeadLetterReason!.Value.Detail.Should().HaveLength(limit, "it should cut the dead-letter detail to the shared limit");
+        telemetry.Consumed.Should().ContainSingle().Which.ErrorType.Should().HaveLength(limit,
+            "it should cut the error type it reports to telemetry");
+        logger.Entries.Should().OnlyContain(e => e.Message.Length < limit + 300,
+            "it should not write an unbounded exception type name into a log message");
+    }
+
+    [Fact]
+    public async Task When_The_Correlation_Id_Is_Long_Or_Has_Control_Characters()
+    {
+        MessageContext? received = null;
+        var dispatcher = Dispatcher((_, c, _) =>
+        {
+            received = c;
+            return Task.FromResult(MessageResult.Acknowledge);
+        });
+
+        await dispatcher.DispatchAsync(
+            MessageSerializer.Serialize(message, SerializationFormat.Json),
+            new MessageContext { MessageId = "m-1", CorrelationId = "line\r\nforged" + new string('c', 500) },
+            actions,
+            TestContext.Current.CancellationToken);
+
+        received!.CorrelationId.Should().StartWith("lineforged", "it should strip control characters from a correlation id")
+            .And.HaveLength(PublishOptions.MaxMessageIdLength, "it should cut a correlation id to the id limit");
+        telemetry.Consumes.Should().ContainSingle().Which.Context!.CorrelationId.Should().Be(received.CorrelationId,
+            "it should start the consume span with the bounded correlation id");
+    }
+
+    [Fact]
+    public async Task When_The_Correlation_Id_Is_Short_And_Clean()
+    {
+        MessageContext? received = null;
+        var dispatcher = Dispatcher((_, c, _) =>
+        {
+            received = c;
+            return Task.FromResult(MessageResult.Acknowledge);
+        });
+        var context = new MessageContext { MessageId = "m-1", CorrelationId = "c-1" };
+
+        await dispatcher.DispatchAsync(MessageSerializer.Serialize(message, SerializationFormat.Json), context, actions,
+            TestContext.Current.CancellationToken);
+
+        received.Should().BeSameAs(context, "it should pass a context with clean ids through unchanged");
+    }
+
+    [Fact]
+    public async Task When_The_Queue_Has_Json_Metadata()
+    {
+        var resolver = new RecordingJsonResolver();
+        TestMessage? received = null;
+        var dispatcher = Dispatcher((m, _, _) =>
+        {
+            received = m;
+            return Task.FromResult(MessageResult.Acknowledge);
+        }, config with { JsonTypeInfoResolver = resolver });
+
+        await Dispatch(dispatcher);
+
+        received.Should().Be(message, "it should deserialize the message");
+        resolver.Requested.Should().Contain(typeof(TestMessage), "it should deserialize with the queue's JSON metadata");
+    }
+
+    async Task<MessageContext> ReceivedContext(MessageContext context)
+    {
+        MessageContext? received = null;
+        var dispatcher = Dispatcher((_, c, _) =>
+        {
+            received = c;
+            return Task.FromResult(MessageResult.Acknowledge);
+        });
+        await dispatcher.DispatchAsync(MessageSerializer.Serialize(message, SerializationFormat.Json), context, actions,
+            TestContext.Current.CancellationToken);
+        return received!;
+    }
+
+    [Fact]
+    public async Task When_There_Is_No_Correlation_Id() =>
+        (await ReceivedContext(new MessageContext { MessageId = "m-1\n", CorrelationId = null })).CorrelationId
+            .Should().BeNull("it should keep an absent correlation id absent, not turn it into an empty one");
+
+    [Fact]
+    public async Task When_An_Id_Has_C1_Control_Characters() =>
+        (await ReceivedContext(new MessageContext { MessageId = "m\u0085-1", CorrelationId = "c\u009b-1" }))
+            .Should().Match<MessageContext>(c => c.MessageId == "m-1" && c.CorrelationId == "c-1",
+                "it should strip C1 control characters too, also from short ids");
+
+    [Fact]
+    public async Task When_The_Cut_Would_Split_A_Surrogate_Pair_In_An_Id()
+    {
+        var limit = PublishOptions.MaxMessageIdLength;
+        var id = new string('c', limit - 1) + "\U0001F600" + "tail";
+
+        var context = await ReceivedContext(new MessageContext { MessageId = id, CorrelationId = id });
+
+        context.CorrelationId.Should().Be(new string('c', limit - 1), "it should not leave half of a surrogate pair at the end");
+        context.MessageId.Should().Be(new string('c', limit - 1), "it should cut a message id the same way");
     }
 }

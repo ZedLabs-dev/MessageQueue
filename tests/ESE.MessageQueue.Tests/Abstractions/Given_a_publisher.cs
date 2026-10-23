@@ -79,6 +79,26 @@ public class Given_a_publisher
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task When_The_CorrelationId_Is_Too_Long(string provider)
+    {
+        var act = () => Publish(provider, new PublishOptions { CorrelationId = new string('c', PublishOptions.MaxMessageIdLength + 1) });
+
+        await act.Should().ThrowAsync<ArgumentException>("it should keep the correlation id within every broker's limit, not cut it")
+            .WithMessage("*CorrelationId*");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task When_The_CorrelationId_Has_Control_Characters(string provider)
+    {
+        var act = () => Publish(provider, new PublishOptions { CorrelationId = "order-1\r\nforged: yes" });
+
+        await act.Should().ThrowAsync<ArgumentException>("it should refuse a correlation id that could forge log lines")
+            .WithMessage("*CorrelationId*");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task When_A_Header_Uses_The_Delivery_Attempt_Name(string provider)
     {
         var act = () => Publish(provider, new PublishOptions { Headers = Header("x-delivery-attempt", "1") });
@@ -140,7 +160,7 @@ public class Given_a_publisher
         var act = () => Publish("InMemory", new PublishOptions
         {
             MessageId = new string('m', PublishOptions.MaxMessageIdLength),
-            CorrelationId = "c",
+            CorrelationId = new string('c', PublishOptions.MaxMessageIdLength),
             Headers = Header("tenant", "acme")
         });
 

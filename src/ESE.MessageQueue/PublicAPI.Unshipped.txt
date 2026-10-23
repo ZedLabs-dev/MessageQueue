@@ -1,1 +1,17 @@
 #nullable enable
+ESE.MessageQueue.Configuration.MessageQueueConfig.JsonTypeInfoResolver.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver?
+ESE.MessageQueue.Configuration.MessageQueueConfig.JsonTypeInfoResolver.set -> void
+static ESE.MessageQueue.Extensions.MessageQueueServiceCollectionExtensions.AddMessageQueueJsonMetadata<T>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver! jsonTypeInfoResolver) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static ESE.MessageQueue.Providers.MessageSerializer.Deserialize<T>(System.ReadOnlyMemory<byte> data, ESE.MessageQueue.Serialization.SerializationFormat format, System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? jsonTypeInfoResolver) -> T?
+static ESE.MessageQueue.Providers.MessageSerializer.Serialize<T>(T! message, ESE.MessageQueue.Serialization.SerializationFormat format, System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? jsonTypeInfoResolver) -> byte[]!
+ESE.MessageQueue.Configuration.MessageQueueConfig.RequireDelayedRedelivery.get -> bool
+ESE.MessageQueue.Configuration.MessageQueueConfig.RequireDelayedRedelivery.set -> void
+*REMOVED*~ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>.<Clone>$() -> ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>!
+*REMOVED*~ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>.Equals(ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>? other) -> bool
+*REMOVED*~static ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>.operator !=(ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>? left, ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>? right) -> bool
+*REMOVED*~static ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>.operator ==(ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>? left, ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>? right) -> bool
+ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>.Equals(ESE.MessageQueue.InMemory.InMemoryDeadLetter<T!>? other) -> bool
+override ESE.MessageQueue.Providers.DeadLetterReason.Equals(object? obj) -> bool
+override ESE.MessageQueue.Providers.DeadLetterReason.ToString() -> string!
+static ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>.operator !=(ESE.MessageQueue.InMemory.InMemoryDeadLetter<T!>? left, ESE.MessageQueue.InMemory.InMemoryDeadLetter<T!>? right) -> bool
+static ESE.MessageQueue.InMemory.InMemoryDeadLetter<T>.operator ==(ESE.MessageQueue.InMemory.InMemoryDeadLetter<T!>? left, ESE.MessageQueue.InMemory.InMemoryDeadLetter<T!>? right) -> bool

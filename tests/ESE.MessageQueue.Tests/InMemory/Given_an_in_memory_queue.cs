@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text.Json.Serialization.Metadata;
 using AwesomeAssertions;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Exceptions;
@@ -7,6 +8,7 @@ using ESE.MessageQueue.Extensions;
 using ESE.MessageQueue.InMemory;
 using ESE.MessageQueue.Processing;
 using ESE.MessageQueue.Retry;
+using ESE.MessageQueue.Tests.Serialization;
 using ESE.MessageQueue.Tests.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -452,5 +454,48 @@ public sealed class Given_an_in_memory_queue : IAsyncDisposable
                 return;
             current = observed;
         }
+    }
+
+    [Fact(Timeout = 10_000)]
+    public async Task When_A_Handler_Throws_An_Exception_With_A_Very_Long_Type_Name()
+    {
+        var queue = Create(new InMemoryConfig { QueueName = "orders", Retry = RetryPolicy.None });
+        await queue.SubscribeAsync((_, _, _) => throw LongNamedExceptions.Create(), TestContext.Current.CancellationToken);
+
+        await queue.PublishAsync(new Order("1", "throws"), TestContext.Current.CancellationToken);
+        await queue.WaitForIdleAsync(TestContext.Current.CancellationToken);
+
+        queue.DeadLetters.Should().ContainSingle("it should dead-letter the message").Which.Detail.Should()
+            .HaveLength(PublishOptions.MaxHeaderValueLength, "it should cut the recorded exception type to the shared limit");
+    }
+
+    [Fact]
+    public async Task When_The_Queue_Has_Json_Metadata()
+    {
+        var resolver = new RecordingJsonResolver();
+        var queue = Create<TestMessage>(new InMemoryConfig { QueueName = "orders", JsonTypeInfoResolver = resolver }, null);
+
+        await queue.PublishAsync(new TestMessage("1", "x"), TestContext.Current.CancellationToken);
+
+        resolver.Requested.Should().Contain(typeof(TestMessage), "it should serialize with the queue's JSON metadata");
+    }
+
+    [Fact(Timeout = 10_000)]
+    public async Task When_A_Message_With_Json_Metadata_Is_Dead_Lettered()
+    {
+        // The metadata names the "content" property "body": only a deserializer that uses it reads Content back.
+        var resolver = TestJsonContext.Default.WithAddedModifier(info =>
+        {
+            if (info.Type == typeof(TestMessage))
+                info.Properties.Single(p => p.Name == "content").Name = "body";
+        });
+        var queue = Create<TestMessage>(new InMemoryConfig { QueueName = "orders", JsonTypeInfoResolver = resolver }, null);
+        await queue.SubscribeAsync((_, _, _) => Task.FromResult(MessageResult.DeadLetter), TestContext.Current.CancellationToken);
+
+        await queue.PublishAsync(new TestMessage("1", "x"), TestContext.Current.CancellationToken);
+        await queue.WaitForIdleAsync(TestContext.Current.CancellationToken);
+
+        queue.DeadLetters.Should().ContainSingle().Which.Message.Should().Be(new TestMessage("1", "x"),
+            "it should deserialize the dead-lettered body with the queue's JSON metadata");
     }
 }

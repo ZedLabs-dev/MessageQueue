@@ -47,7 +47,7 @@ public sealed class LoopbackMessageQueue<T> : IMessageQueue<T>, IAsyncDisposable
         PublishValidation.Validate(message, options);
         var messageId = options.MessageId ?? Guid.CreateVersion7().ToString();
         using var trace = PublishTelemetry.Start(telemetry, target, 1, logger, messageId);
-        var body = MessageSerializer.Serialize(message, config.SerializationFormat);
+        var body = MessageSerializer.Serialize(message, config.SerializationFormat, config.JsonTypeInfoResolver);
         await channel.Writer.WriteAsync(
             new Envelope(body, messageId, options.CorrelationId, options.Headers ?? new Dictionary<string, string>(), trace.TraceHeaders, 1),
             cancellationToken);

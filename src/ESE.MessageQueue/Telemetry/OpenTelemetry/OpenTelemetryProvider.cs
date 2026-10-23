@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using ESE.MessageQueue.Abstractions;
+using ESE.MessageQueue.Processing;
 using ESE.MessageQueue.Providers;
 
 namespace ESE.MessageQueue.Telemetry.OpenTelemetry;
@@ -140,7 +141,7 @@ public sealed class OpenTelemetryProvider : ITelemetryProvider, IDisposable
             return;
 
         var tags = Tags(target, "process", null, consumer: true);
-        tags.Add(TelemetryNames.DeadLetterReason, reason);
+        tags.Add(TelemetryNames.DeadLetterReason, BoundedText.Truncate(reason));
         messagesDeadLettered.Add(1, tags);
     }
 
@@ -203,7 +204,7 @@ public sealed class OpenTelemetryProvider : ITelemetryProvider, IDisposable
         if (consumer && target.Subscription is not null)
             tags.Add(TelemetryNames.SubscriptionName, target.Subscription);
         if (errorType is not null)
-            tags.Add(TelemetryNames.ErrorType, errorType);
+            tags.Add(TelemetryNames.ErrorType, BoundedText.Truncate(errorType));
         return tags;
     }
 }
@@ -211,7 +212,7 @@ public sealed class OpenTelemetryProvider : ITelemetryProvider, IDisposable
 // The span handed out by OpenTelemetryProvider; callers see it as a TelemetryActivity.
 sealed class OpenTelemetryActivity : TelemetryActivity
 {
-    public const int MaxRecordedLength = 4096;
+    public const int MaxRecordedLength = BoundedText.MaxLength;
 
     readonly Activity activity;
     readonly bool recordExceptionDetails;
@@ -232,7 +233,7 @@ sealed class OpenTelemetryActivity : TelemetryActivity
     {
         base.SetError(exception);
 
-        var exceptionType = exception.GetType().FullName;
+        var exceptionType = BoundedText.TypeName(exception);
         var tags = new ActivityTagsCollection { { "exception.type", exceptionType } };
         if (recordExceptionDetails)
         {
@@ -241,7 +242,7 @@ sealed class OpenTelemetryActivity : TelemetryActivity
         }
 
         activity.SetTag(TelemetryNames.ErrorType, exceptionType);
-        activity.SetStatus(ActivityStatusCode.Error, Truncate(recordExceptionDetails ? exception.Message : exceptionType));
+        activity.SetStatus(ActivityStatusCode.Error, recordExceptionDetails ? Truncate(exception.Message) : exceptionType);
         activity.AddEvent(new ActivityEvent("exception", tags: tags));
     }
 
@@ -249,6 +250,7 @@ sealed class OpenTelemetryActivity : TelemetryActivity
     // already failed by SetError keeps its status description.
     public override void SetErrorType(string errorType)
     {
+        errorType = BoundedText.Truncate(errorType);
         base.SetErrorType(errorType);
         activity.SetTag(TelemetryNames.ErrorType, errorType);
         if (activity.Status != ActivityStatusCode.Error)
@@ -258,8 +260,7 @@ sealed class OpenTelemetryActivity : TelemetryActivity
     public override void SetTag(string name, object? value) => activity.SetTag(name, value);
 
     // Exporters and backends cap attribute sizes; long values are cut here so the span is still exported.
-    static string? Truncate(string? value) =>
-        value is { Length: > MaxRecordedLength } ? value[..MaxRecordedLength] : value;
+    static string Truncate(string value) => BoundedText.Truncate(value);
 
     protected override void Dispose(bool disposing)
     {

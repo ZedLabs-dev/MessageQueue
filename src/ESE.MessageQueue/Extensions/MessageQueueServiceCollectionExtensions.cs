@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization.Metadata;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Configuration;
 using ESE.MessageQueue.Exceptions;
@@ -43,6 +44,30 @@ public static class MessageQueueServiceCollectionExtensions
         provider.AddQueue(registration);
         if (!registration.Registered)
             throw new ConfigurationException($"Provider '{provider.Name}' registered no queue for {typeof(T).FullName}");
+        return services;
+    }
+
+    /// <summary>
+    /// Supplies System.Text.Json metadata for the queue of <typeparamref name="T"/>, typically a source-generated
+    /// <c>JsonSerializerContext</c> with <c>[JsonSerializable(typeof(T))]</c>, so that trimmed or native AOT applications
+    /// serialize without reflection (ADR 0019). It is set as the queue's <c>JsonTypeInfoResolver</c> whichever provider
+    /// the configuration selects, before or after <c>AddMessageQueue&lt;T&gt;</c>. The library's JSON rules still apply
+    /// (camelCase names, a depth limit of 64, strict UTF-8). Startup validation fails when the resolver has no metadata
+    /// for <typeparamref name="T"/> or the queue's <c>SerializationFormat</c> is not JSON.
+    /// </summary>
+    /// <exception cref="ConfigurationException">Metadata for <typeparamref name="T"/> is already registered, or the queue
+    /// for <typeparamref name="T"/> is a caller-created instance (set its config's <c>JsonTypeInfoResolver</c> instead).</exception>
+    public static IServiceCollection AddMessageQueueJsonMetadata<T>(this IServiceCollection services, IJsonTypeInfoResolver jsonTypeInfoResolver)
+        where T : class
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(jsonTypeInfoResolver);
+        if (services.Any(d => d.ServiceType == typeof(QueueJsonMetadata<T>)))
+            throw new ConfigurationException($"JSON metadata for {typeof(T).FullName} is already registered");
+        if (services.Any(d => d.ServiceType == typeof(IMessageQueue<T>) && d.ImplementationInstance is not null))
+            throw new ConfigurationException(InstanceWithMetadata<T>());
+
+        services.AddSingleton(new QueueJsonMetadata<T>(jsonTypeInfoResolver));
         return services;
     }
 
@@ -96,6 +121,8 @@ public static class MessageQueueServiceCollectionExtensions
     /// <summary>
     /// Registers a queue the caller created and owns: the container exposes it but does not dispose it.
     /// </summary>
+    /// <exception cref="ConfigurationException">A queue or JSON metadata (<c>AddMessageQueueJsonMetadata&lt;T&gt;</c>, which
+    /// cannot reach an instance) is already registered for <typeparamref name="T"/>.</exception>
     public static IServiceCollection AddInMemoryMessageQueue<T>(
         this IServiceCollection services,
         InMemoryMessageQueue<T> queue) where T : class
@@ -103,6 +130,8 @@ public static class MessageQueueServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(queue);
         QueueRegistration.ThrowIfRegistered<T>(services);
+        if (services.Any(d => d.ServiceType == typeof(QueueJsonMetadata<T>)))
+            throw new ConfigurationException(InstanceWithMetadata<T>());
 
         // Instance registrations: the caller created the queue, so the container must not dispose it.
         services.AddSingleton(queue);
@@ -148,6 +177,11 @@ public static class MessageQueueServiceCollectionExtensions
     }
 
     internal static string OptionsName<T>() => OptionsNames.For<T>();
+
+    // A caller-created queue already has its config, so registered metadata could not reach it.
+    static string InstanceWithMetadata<T>() =>
+        $"The queue for {typeof(T).FullName} is a registered instance, which AddMessageQueueJsonMetadata<T> cannot reach: " +
+        "set JsonTypeInfoResolver on the config the instance is created with instead";
 
     // The provider decides which config type and queue to register, so it is resolved here, at registration.
     // A missing or unregistered value fails: there is no default broker.

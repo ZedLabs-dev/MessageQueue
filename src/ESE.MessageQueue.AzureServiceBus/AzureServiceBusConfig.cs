@@ -42,4 +42,7 @@ public sealed record AzureServiceBusConfig : MessageQueueConfig
         ConfigValidation.PrintMembers(this, builder, nameof(ConnectionString));
 
     internal bool UsesSubscription => !string.IsNullOrWhiteSpace(TopicName);
+
+    // Queue mode delays a retry with a scheduled copy; a subscription can only abandon (ADR 0009).
+    internal bool SupportsDelayedRedelivery => !UsesSubscription;
 }

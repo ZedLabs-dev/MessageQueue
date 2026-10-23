@@ -2,6 +2,7 @@ using AwesomeAssertions;
 using Azure.Messaging.ServiceBus;
 using ESE.MessageQueue.Abstractions;
 using ESE.MessageQueue.Exceptions;
+using ESE.MessageQueue.Tests.Serialization;
 
 namespace ESE.MessageQueue.Tests.AzureServiceBus;
 
@@ -83,5 +84,18 @@ public class Given_an_azure_service_bus_publisher : IAsyncDisposable
         error.Message.Should().Contain(nameof(ServiceBusException), "it should name the failure type")
             .And.NotContain("secret-host", "it should not echo the client's text, which can name the namespace");
         error.InnerException.Should().BeOfType<ServiceBusException>("it should keep the original for logging");
+    }
+
+    [Fact]
+    public async Task When_The_Queue_Has_Json_Metadata()
+    {
+        var resolver = new RecordingJsonResolver();
+        await using var queue = bus.CreateQueue(AzureServiceBusTestConfigs.Queue() with { JsonTypeInfoResolver = resolver });
+
+        await queue.PublishAsync(new TestMessage("1", "x"), TestContext.Current.CancellationToken);
+
+        resolver.Requested.Should().Contain(typeof(TestMessage), "it should serialize with the queue's JSON metadata");
+        bus.Sender.Sent.Should().ContainSingle().Which.Body.ToString().Should().Be("""{"id":"1","content":"x"}""",
+            "it should write the same camelCase JSON");
     }
 }

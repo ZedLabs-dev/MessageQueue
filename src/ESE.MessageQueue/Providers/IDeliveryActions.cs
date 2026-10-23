@@ -24,19 +24,27 @@ public interface IDeliveryActions
 }
 
 /// <summary>Why a delivery is dead-lettered. <c>default</c> reads as <see cref="DeadLetterReasons.DeliveryFailed"/>.</summary>
-public readonly record struct DeadLetterReason
+/// <remarks>
+/// A value type with record-like equality and formatting, declared by hand so that every public member carries its
+/// nullable annotations (the compiler's synthesized record struct members are nullable-oblivious).
+/// </remarks>
+public readonly struct DeadLetterReason : IEquatable<DeadLetterReason>
 {
     readonly string? code;
 
     /// <summary>Creates a reason.</summary>
     /// <param name="code">One of <see cref="DeadLetterReasons"/>; bounded, safe to store on the message and tag metrics with.</param>
     /// <param name="detail">Diagnostic detail such as an exception type name; never exception text (S6).</param>
+    /// <remarks>
+    /// Both values are cut to <see cref="Abstractions.PublishOptions.MaxHeaderValueLength"/> characters (never inside a
+    /// surrogate pair), so providers can store them on the message as they are (S6).
+    /// </remarks>
     /// <exception cref="ArgumentException"><paramref name="code"/> is null or blank.</exception>
     public DeadLetterReason(string code, string? detail = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
-        this.code = code;
-        Detail = detail;
+        this.code = BoundedText.Truncate(code);
+        Detail = BoundedText.Truncate(detail);
     }
 
     /// <summary>One of <see cref="DeadLetterReasons"/>; never null.</summary>
@@ -44,6 +52,25 @@ public readonly record struct DeadLetterReason
 
     /// <summary>Diagnostic detail such as an exception type name; never exception text (S6).</summary>
     public string? Detail { get; }
+
+    /// <summary>True when both reasons were created with the same code and detail.</summary>
+    public bool Equals(DeadLetterReason other) =>
+        string.Equals(code, other.code, StringComparison.Ordinal) && string.Equals(Detail, other.Detail, StringComparison.Ordinal);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is DeadLetterReason other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => HashCode.Combine(code, Detail);
+
+    /// <summary>Formats the reason like a record: <c>DeadLetterReason { Code = ..., Detail = ... }</c>.</summary>
+    public override string ToString() => $"{nameof(DeadLetterReason)} {{ Code = {Code}, Detail = {Detail} }}";
+
+    /// <summary>True when the reasons are equal.</summary>
+    public static bool operator ==(DeadLetterReason left, DeadLetterReason right) => left.Equals(right);
+
+    /// <summary>True when the reasons differ.</summary>
+    public static bool operator !=(DeadLetterReason left, DeadLetterReason right) => !left.Equals(right);
 }
 
 /// <summary>What <see cref="MessageDispatcher{T}"/> did with a delivery.</summary>

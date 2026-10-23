@@ -131,6 +131,27 @@ public class Given_a_message_queue_configuration
         ShouldFailStartup(With(ValidRabbitMq, ("Retry:Strategy", strategy)), "*Strategy*",
             "it should accept only a strategy's name, not numbers or combinations");
 
+    [Theory]
+    [InlineData("Tls:ClientCertificateStoreName", "My,Root")]
+    [InlineData("Tls:ClientCertificateStoreName", "5")]
+    [InlineData("Tls:ClientCertificateStoreLocation", "2")]
+    [InlineData("Tls:AcceptablePolicyErrors", "4")]
+    public void When_A_Provider_Enum_Setting_Is_Not_A_Name(string key, string value) =>
+        ShouldFailStartup(With(ValidRabbitMq, (key, value)), $"*{key} '{value}' is not supported*",
+            "it should accept only names for a provider's enum settings too, not numbers or combinations");
+
+    [Fact]
+    public void When_A_Flags_Setting_Combines_Names()
+    {
+        using var provider = Register(With(ValidRabbitMq,
+            ("Tls:AcceptablePolicyErrors", "RemoteCertificateNameMismatch, RemoteCertificateChainErrors"),
+            ("Tls:AllowInsecureCertificates", "true"),
+            ("Tls:ClientCertificateStoreName", "my"),
+            ("Tls:ClientCertificateStoreLocation", " LocalMachine ")));
+
+        StartupValidation(provider).Should().NotThrow("it should accept names, in any case, and combinations of names for a flags setting");
+    }
+
     [Fact]
     public void When_Using_The_Legacy_RetryAttempts_Setting()
     {

@@ -32,5 +32,6 @@ shared across threads.
   dead-letter. The *delay* does not yet: only in-memory has `DelayedRedelivery`. Until the provider steps land
   broker-side delay, RabbitMQ waits out the backoff in process and Azure Service Bus redelivers immediately; both log
   a startup warning when the policy has a backoff. (RabbitMQ: superseded by ADR 0006, broker-side retry queues; Azure
-  Service Bus: superseded by ADR 0009, scheduled copies on queues.) An `IsRetryable` that throws counts as non-retryable.
+  Service Bus: superseded by ADR 0009, scheduled copies on queues; ADR 0020 lets an app turn the remaining warning,
+  for topic subscriptions, into a startup failure.) An `IsRetryable` that throws counts as non-retryable.
 - A 60 s default makes failure paths slow in tests: tests set a millisecond policy explicitly.

@@ -76,11 +76,12 @@ public sealed class MessageDispatcher<T> where T : class
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(actions);
-        // The id is logged and shown to the handler: no control characters, at most the publish-side length, whatever
-        // the provider passed in.
+        // The ids are logged, tagged on spans and shown to the handler: no control characters, at most the publish-side
+        // id length, whatever the provider passed in.
         var messageId = DeliveryText.MessageId(context.MessageId);
-        if (!ReferenceEquals(messageId, context.MessageId))
-            context = context with { MessageId = messageId };
+        var correlationId = DeliveryText.CorrelationId(context.CorrelationId);
+        if (!ReferenceEquals(messageId, context.MessageId) || !ReferenceEquals(correlationId, context.CorrelationId))
+            context = context with { MessageId = messageId, CorrelationId = correlationId };
 
         // A consume span continues the publisher's trace, never the span that happened to be current on the consumer
         // thread (the subscriber's, captured when the transport started its loop). This async method's change to
@@ -125,7 +126,7 @@ public sealed class MessageDispatcher<T> where T : class
         T? message;
         try
         {
-            message = MessageSerializer.Deserialize<T>(body, config.SerializationFormat);
+            message = MessageSerializer.Deserialize<T>(body, config.SerializationFormat, config.JsonTypeInfoResolver);
         }
         catch (Exception ex)
         {
@@ -304,7 +305,7 @@ public sealed class MessageDispatcher<T> where T : class
         }
     }
 
-    static string TypeName(Exception exception) => exception.GetType().FullName ?? exception.GetType().Name;
+    static string TypeName(Exception exception) => BoundedText.TypeName(exception);
 
     // The two trace headers as a read-only dictionary, without allocating a hash table per message.
     sealed class TraceHeaderCarrier : IReadOnlyDictionary<string, string>

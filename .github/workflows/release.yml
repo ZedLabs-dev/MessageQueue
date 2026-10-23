@@ -15,7 +15,8 @@ name: Release
 #   - Environment `release` with required reviewers, and the NuGet secret or variable scoped to it, so a pushed tag
 #     waits for a person before anything is published.
 #   - A tag ruleset protecting `v*` (only maintainers create or move release tags).
-#   - Only commits already on main are released: the tag must point at an ancestor of origin/main.
+#   - Only commits already on main are released: the tag must point at an ancestor of origin/main (fetched by the
+#     checkout itself, so private repositories work without a second fetch).
 # Third-party actions that see secrets or mint OIDC tokens are pinned to commit SHAs (version in the comment).
 
 on:
@@ -46,6 +47,8 @@ jobs:
       DOTNET_NOLOGO: true
       DOTNET_CLI_TELEMETRY_OPTOUT: true
     steps:
+      # fetch-depth 0 fetches every branch with the tag, so origin/main is local without a second (credentialed) fetch;
+      # persist-credentials false keeps the token out of .git/config for the steps that follow.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -57,8 +60,11 @@ jobs:
 
       - name: Check the tag is on main
         run: |
-          git fetch --no-tags origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+          if ! git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null; then
+            echo "::error::origin/main was not fetched by the checkout; cannot check that $GITHUB_REF_NAME is on main"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
             echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main; only commits on main are released"
             exit 1
           fi

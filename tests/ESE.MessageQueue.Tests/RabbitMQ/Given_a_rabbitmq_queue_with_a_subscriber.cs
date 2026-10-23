@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using AwesomeAssertions;
 using ESE.MessageQueue.Abstractions;
+using ESE.MessageQueue.Tests.Serialization;
 
 namespace ESE.MessageQueue.Tests.RabbitMQ;
 
@@ -405,5 +406,16 @@ public sealed class Given_a_rabbitmq_queue_with_a_subscriber : IAsyncLifetime
         contexts.Should().AllSatisfy(c => c.Headers.Keys.Should().NotContain(k => k.StartsWith("x-", StringComparison.OrdinalIgnoreCase),
             "it should keep broker and library headers out of the application headers"));
         contexts.Select(c => c.Headers["tenant"]).Should().BeEquivalentTo(["acme", "globex"], "it should keep application headers");
+    }
+
+    [Fact]
+    public async Task When_The_Queue_Has_Json_Metadata()
+    {
+        var resolver = new RecordingJsonResolver();
+        var queue = queues.Create(queues.NewConfig("json-metadata-test") with { JsonTypeInfoResolver = resolver });
+
+        await queue.PublishAsync(new TestMessage("1", "x"), TestContext.Current.CancellationToken);
+
+        resolver.Requested.Should().Contain(typeof(TestMessage), "it should serialize with the queue's JSON metadata");
     }
 }
