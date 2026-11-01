@@ -88,7 +88,7 @@ jobs:
           global-json-file: global.json
 
       # CLAUDE.md is the contract: spec first, the build and unit tests green, PublicAPI files updated.
-      - uses: anthropics/claude-code-action@f27be6b65a4652f08a2ba3cff79114829b588967 # v1.0.252
+      - uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6 # v1.0.264
         if: steps.fork.outputs.fork != 'true'
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -118,7 +118,7 @@ jobs:
           persist-credentials: false
 
       # The /code-review and /security-review passes of OPTIMIZATION-PLAN section 6.4, read-only (no build tools).
-      - uses: anthropics/claude-code-action@f27be6b65a4652f08a2ba3cff79114829b588967 # v1.0.252
+      - uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6 # v1.0.264
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           track_progress: true
