@@ -39,7 +39,7 @@ with_timeout() { perl -e 'alarm shift; exec @ARGV' "$@"; }
 log="$(mktemp -t mq-stop-hook.XXXXXX)"
 trap 'rm -f "$log"' EXIT
 
-with_timeout "$build_timeout" dotnet build ESE.MessageQueue.sln -warnaserror -nologo -v q -clp:NoSummary > "$log" 2>&1
+with_timeout "$build_timeout" dotnet build ZedLabs.MessageQueue.sln -warnaserror -nologo -v q -clp:NoSummary > "$log" 2>&1
 status=$?
 if [[ $status -ne 0 ]]; then
   {
@@ -50,7 +50,7 @@ if [[ $status -ne 0 ]]; then
   exit 2
 fi
 
-with_timeout "$test_timeout" dotnet test ESE.MessageQueue.sln --no-build --filter Category=Unit --blame-hang-timeout 2m -nologo > "$log" 2>&1
+with_timeout "$test_timeout" dotnet test ZedLabs.MessageQueue.sln --no-build --filter Category=Unit --blame-hang-timeout 2m -nologo > "$log" 2>&1
 status=$?
 if [[ $status -ne 0 ]]; then
   {

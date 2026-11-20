@@ -7,7 +7,7 @@ queued messages, pending retries and dead letters are lost when the process stop
 configuration and one registration line, not your publisher or processor code
 ([RabbitMQ guide](rabbitmq.md), [Azure Service Bus guide](azure-service-bus.md)).
 
-Every C# block on this page is compiled from `samples/ESE.MessageQueue.Samples/Docs/` and the guide is executed end to
+Every C# block on this page is compiled from `samples/ZedLabs.MessageQueue.Samples/Docs/` and the guide is executed end to
 end by `Packaging/Given_the_documentation_snippets`.
 
 ## 1. Install
@@ -15,13 +15,13 @@ end by `Packaging/Given_the_documentation_snippets`.
 The provider is in the core package. .NET 10 is required.
 
 ```bash
-dotnet add package ESE.MessageQueue --prerelease
+dotnet add package ZedLabs.MessageQueue --prerelease
 dotnet add package Microsoft.Extensions.Hosting
 dotnet add package OpenTelemetry.Extensions.Hosting    # only for the telemetry step: AddOpenTelemetry()
 ```
 
 The packages are versioned `1.0.0-rc.1` (pre-release). If your feed does not have them yet, build them with
-`dotnet pack ESE.MessageQueue.sln -c Release -o artifacts` and add `artifacts/` as a local package source.
+`dotnet pack ZedLabs.MessageQueue.sln -c Release -o artifacts` and add `artifacts/` as a local package source.
 
 ## 2. A message type
 
@@ -41,8 +41,8 @@ such as a `DbContext`.
 
 <!-- snippet: processor -->
 ```csharp
-using ESE.MessageQueue.Abstractions;
-using ESE.MessageQueue.Processing;
+using ZedLabs.MessageQueue.Abstractions;
+using ZedLabs.MessageQueue.Processing;
 
 public sealed class OrderPlacedProcessor : IMessageProcessor<OrderPlaced>
 {
@@ -75,11 +75,11 @@ public sealed class OrderPlacedProcessor : IMessageProcessor<OrderPlaced>
 
 <!-- snippet: inmemory-registration -->
 ```csharp
-using ESE.MessageQueue.Extensions;
-using ESE.MessageQueue.HealthChecks;
-using ESE.MessageQueue.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using ZedLabs.MessageQueue.Extensions;
+using ZedLabs.MessageQueue.HealthChecks;
+using ZedLabs.MessageQueue.Hosting;
 
 public static class OrderMessaging
 {
@@ -136,9 +136,9 @@ out-of-range values stop the host at startup.
 
 <!-- snippet: inmemory-program -->
 ```csharp
-using ESE.MessageQueue.Samples.Docs;
-using ESE.MessageQueue.Samples.Docs.InMemory;
 using Microsoft.Extensions.Hosting;
+using ZedLabs.MessageQueue.Samples.Docs;
+using ZedLabs.MessageQueue.Samples.Docs.InMemory;
 
 var builder = Host.CreateApplicationBuilder(args);   // appsettings.json, environment variables, command line
 builder.Services.AddOrderMessaging(builder.Configuration);
@@ -153,7 +153,7 @@ Inject `IMessagePublisher<T>` wherever you publish:
 
 <!-- snippet: publisher -->
 ```csharp
-using ESE.MessageQueue.Abstractions;
+using ZedLabs.MessageQueue.Abstractions;
 
 public sealed class OrderService
 {
@@ -198,10 +198,10 @@ example `app.MapHealthChecks("/health")` in ASP.NET Core.
 
 <!-- snippet: telemetry -->
 ```csharp
-using ESE.MessageQueue.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using ZedLabs.MessageQueue.Extensions;
 
 public static class OrderTelemetry
 {
@@ -230,8 +230,8 @@ are yours to choose). Spans, metrics and log events are listed in [monitoring](.
 
 <!-- snippet: dead-letters -->
 ```csharp
-using ESE.MessageQueue.Abstractions;
 using Microsoft.Extensions.Logging;
+using ZedLabs.MessageQueue.Abstractions;
 
 // Run from an operator tool, an admin endpoint or a one-off job, not from the message handler.
 public sealed partial class OrderDeadLetters

@@ -1,7 +1,7 @@
 ---
 name: mutation-test
-description: Run mutation testing on ESE.MessageQueue in a scratch copy with scripts/mutate.py - write or pick a mutant definition file, run it, and turn every surviving mutant into a missing spec.
-argument-hint: "[definition file or area, e.g. scripts/mutants/dispatcher.json | src/ESE.MessageQueue.RabbitMQ]"
+description: Run mutation testing on ZedLabs.MessageQueue in a scratch copy with scripts/mutate.py - write or pick a mutant definition file, run it, and turn every surviving mutant into a missing spec.
+argument-hint: "[definition file or area, e.g. scripts/mutants/dispatcher.json | src/ZedLabs.MessageQueue.RabbitMQ]"
 ---
 
 Mutation-test: $ARGUMENTS

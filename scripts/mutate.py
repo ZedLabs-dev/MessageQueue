@@ -9,10 +9,10 @@ A mutant definition file is JSON:
 
     {
       "description": "what this set probes",
-      "defaults": { "filter": "Category=Unit", "project": "tests/ESE.MessageQueue.Tests" },
+      "defaults": { "filter": "Category=Unit", "project": "tests/ZedLabs.MessageQueue.Tests" },
       "mutants": [
         { "id": "D01", "name": "retry counter not incremented",
-          "file": "src/ESE.MessageQueue/Providers/MessageDispatcher.cs",
+          "file": "src/ZedLabs.MessageQueue/Providers/MessageDispatcher.cs",
           "find": "exact text that must occur exactly once", "replace": "the mutated text",
           "filter": "optional dotnet test --filter, overrides the default",
           "equivalent": "optional: why no test can tell this mutant from the original" }
@@ -66,8 +66,8 @@ def build(work, project):
 def test(work, project, test_filter):
     env = dict(os.environ, MQ_REQUIRE_DOCKER="true")
     result = run(["dotnet", "test", project, "--no-build", "--blame-hang-timeout", "2m", "--filter", test_filter], work, env)
-    failed = [line.strip().split(" [")[0].removeprefix("Failed ESE.MessageQueue.Tests.")
-              for line in result.stdout.splitlines() if line.strip().startswith("Failed ESE")]
+    failed = [line.strip().split(" [")[0].removeprefix("Failed ZedLabs.MessageQueue.Tests.")
+              for line in result.stdout.splitlines() if line.strip().startswith("Failed ZedLabs")]
     ran = any("Total:" in line for line in result.stdout.splitlines())
     return result.returncode, failed, ran, result.stdout[-1500:]
 
@@ -83,7 +83,7 @@ def main():
 
     with open(args.definitions) as f:
         spec = json.load(f)
-    defaults = {"filter": "Category=Unit", "project": "tests/ESE.MessageQueue.Tests", **spec.get("defaults", {})}
+    defaults = {"filter": "Category=Unit", "project": "tests/ZedLabs.MessageQueue.Tests", **spec.get("defaults", {})}
     mutants = [m for m in spec["mutants"] if not args.ids or m["id"] in args.ids]
     if not mutants:
         print("No mutants selected", file=sys.stderr)

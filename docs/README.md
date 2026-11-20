@@ -1,4 +1,4 @@
-# ESE.MessageQueue documentation
+# ZedLabs.MessageQueue documentation
 
 ## Start here
 
@@ -32,7 +32,7 @@
   partly superseded (see the readiness status and `OPTIMIZATION-PLAN.md`)
 
 The guides, the configuration reference and the monitoring reference are checked against the code by specs in
-`tests/ESE.MessageQueue.Tests/Packaging/` (`Given_the_documentation_snippets`, `Given_the_configuration_reference`,
-`Given_the_monitoring_reference`): their C# is compiled from `samples/ESE.MessageQueue.Samples/Docs/`, their
+`tests/ZedLabs.MessageQueue.Tests/Packaging/` (`Given_the_documentation_snippets`, `Given_the_configuration_reference`,
+`Given_the_monitoring_reference`): their C# is compiled from `samples/ZedLabs.MessageQueue.Samples/Docs/`, their
 configuration examples are bound and validated, and their tables must match the settings, defaults, log events and
 metrics the library actually has.

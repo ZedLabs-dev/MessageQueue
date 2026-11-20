@@ -1,0 +1,58 @@
+#nullable enable
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.AzureServiceBusConfig() -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.ConnectionString.get -> string!
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.ConnectionString.set -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.EnableBatchedOperations.get -> bool
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.EnableBatchedOperations.set -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.Equals(ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig? other) -> bool
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.FullyQualifiedNamespace.get -> string!
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.FullyQualifiedNamespace.set -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.MaxAutoLockRenewalDuration.get -> System.TimeSpan
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.MaxAutoLockRenewalDuration.set -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.MaxBatchSize.get -> int
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.MaxBatchSize.set -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.MessageTimeToLive.get -> System.TimeSpan
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.MessageTimeToLive.set -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.PrefetchCount.get -> int
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.PrefetchCount.set -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.SendTimeout.get -> System.TimeSpan
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.SendTimeout.set -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.ShutdownTimeout.get -> System.TimeSpan
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.ShutdownTimeout.set -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.SubscriptionName.get -> string?
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.SubscriptionName.set -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.TopicName.get -> string?
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.TopicName.set -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.TransactionalRetries.get -> bool
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.TransactionalRetries.set -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.AzureServiceBusMessageQueue(ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig! config, Azure.Core.TokenCredential! credential, ZedLabs.MessageQueue.Telemetry.ITelemetryProvider? telemetry = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.AzureServiceBusMessageQueue(ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig! config, ZedLabs.MessageQueue.Telemetry.ITelemetryProvider? telemetry = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.Capabilities.get -> ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities!
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.Dispose() -> void
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.PublishAsync(System.Collections.Generic.IEnumerable<T!>! messages, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.PublishAsync(T! message, ZedLabs.MessageQueue.Abstractions.PublishOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.PublishAsync(T! message, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.SubscribeAsync(System.Func<T!, ZedLabs.MessageQueue.Abstractions.MessageContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task<ZedLabs.MessageQueue.Abstractions.MessageResult>!>! handler, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.SubscribeAsync(System.Func<T!, System.Threading.Tasks.Task<bool>!>! handler, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.UnsubscribeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.Extensions.AzureServiceBusServiceCollectionExtensions
+ZedLabs.MessageQueue.HealthChecks.AzureServiceBusHealthCheckExtensions
+const ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.ProviderName = "AzureServiceBus" -> string!
+override ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.<Clone>$() -> ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig!
+override ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.Equals(object? obj) -> bool
+override ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.GetHashCode() -> int
+override ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.Provider.get -> string!
+override ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.ToString() -> string!
+override sealed ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.Equals(ZedLabs.MessageQueue.Configuration.MessageQueueConfig? other) -> bool
+static ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.operator !=(ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig? left, ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig? right) -> bool
+static ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.operator ==(ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig? left, ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig? right) -> bool
+static ZedLabs.MessageQueue.Extensions.AzureServiceBusServiceCollectionExtensions.AddAzureServiceBusProvider(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static ZedLabs.MessageQueue.HealthChecks.AzureServiceBusHealthCheckExtensions.AddAzureServiceBusHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! connectionString, string! queueName, string! name = "azureservicebus", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null, string? subscriptionName = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZedLabs.MessageQueue.HealthChecks.AzureServiceBusHealthCheckExtensions.AddAzureServiceBusHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! fullyQualifiedNamespace, Azure.Core.TokenCredential! credential, string! queueName, string! name = "azureservicebus", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null, string? subscriptionName = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZedLabs.MessageQueue.HealthChecks.AzureServiceBusHealthCheckExtensions.AddAzureServiceBusHealthCheck<T>(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! name = "azureservicebus", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZedLabs.MessageQueue.HealthChecks.AzureServiceBusHealthCheckExtensions.AddAzureServiceBusMetricsHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! connectionString, string! queueName, string! name = "azureservicebus-metrics", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZedLabs.MessageQueue.HealthChecks.AzureServiceBusHealthCheckExtensions.AddAzureServiceBusMetricsHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! fullyQualifiedNamespace, Azure.Core.TokenCredential! credential, string! queueName, string! name = "azureservicebus-metrics", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static readonly ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig.DefaultShutdownTimeout -> System.TimeSpan

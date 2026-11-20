@@ -93,4 +93,4 @@ Deleting is permanent. Peek first; log what you delete if you need an audit trai
 - **In-memory:** the dead letters live in the process and are lost when it stops.
 
 The sample worker shows the calls:
-`dotnet run --project samples/ESE.MessageQueue.Samples -- --Sample:DeadLetters=Replay`.
+`dotnet run --project samples/ZedLabs.MessageQueue.Samples -- --Sample:DeadLetters=Replay`.

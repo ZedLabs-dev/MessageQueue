@@ -1,0 +1,36 @@
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization.Metadata;
+using ZedLabs.MessageQueue.Retry;
+using ZedLabs.MessageQueue.Serialization;
+
+namespace ZedLabs.MessageQueue.Configuration;
+
+public abstract record MessageQueueConfig
+{
+    public const string SectionName = "MessageQueue";
+    public const int DefaultMaxMessageSizeBytes = 1024 * 1024;
+    public const int DefaultMaxConcurrentCalls = 10;
+    public const int MaxConcurrentCallsLimit = 1000;
+
+    public abstract string Provider { get; }
+
+    [Required]
+    public string QueueName { get; set; } = string.Empty;
+
+    [Required]
+    public RetryPolicy Retry { get; set; } = new();
+
+    public SerializationFormat SerializationFormat { get; set; } = SerializationFormat.Json;
+
+    public bool EnableDeadLetterQueue { get; set; } = true;
+
+    public bool RequireDelayedRedelivery { get; set; }
+
+    [Range(1, int.MaxValue)]
+    public int MaxMessageSizeBytes { get; set; } = DefaultMaxMessageSizeBytes;
+
+    [Range(1, MaxConcurrentCallsLimit)]
+    public int MaxConcurrentCalls { get; set; } = DefaultMaxConcurrentCalls;
+
+    public IJsonTypeInfoResolver? JsonTypeInfoResolver { get; set; }
+}

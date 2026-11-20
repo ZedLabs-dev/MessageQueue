@@ -2,174 +2,174 @@
   "description": "Adversarial review of the OPTIMIZATION-PLAN section 9 change: rules beyond deferred-items.json Copied from the reviewer's set; finds adapted to the fixed code where it moved (R-B22, R-T10, R-T11, R-T15, R-T16, R-T19).",
   "defaults": {
     "filter": "Category=Unit",
-    "project": "tests/ESE.MessageQueue.Tests"
+    "project": "tests/ZedLabs.MessageQueue.Tests"
   },
   "mutants": [
     {
       "id": "R-B14",
       "name": "span status description unbounded with exception details",
-      "file": "src/ESE.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
+      "file": "src/ZedLabs.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
       "find": "recordExceptionDetails ? Truncate(exception.Message) : exceptionType",
       "replace": "recordExceptionDetails ? exception.Message : exceptionType"
     },
     {
       "id": "R-B15",
       "name": "exception.message event tag unbounded",
-      "file": "src/ESE.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
+      "file": "src/ZedLabs.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
       "find": "tags.Add(\"exception.message\", Truncate(exception.Message));",
       "replace": "tags.Add(\"exception.message\", exception.Message);"
     },
     {
       "id": "R-B16",
       "name": "ASB transport error counter type unbounded",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
       "find": "error is null ? \"unknown\" : BoundedText.TypeName(error)",
       "replace": "error is null ? \"unknown\" : error.GetType().FullName!"
     },
     {
       "id": "R-B17",
       "name": "ASB client creation log type unbounded",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
       "find": "AzureServiceBusLog.ClientCreationFailed(this.logger, config.QueueName, BoundedText.TypeName(ex));",
       "replace": "AzureServiceBusLog.ClientCreationFailed(this.logger, config.QueueName, ex.GetType().FullName!);"
     },
     {
       "id": "R-B18",
       "name": "health check log type unbounded",
-      "file": "src/ESE.MessageQueue/HealthChecks/HealthCheckLog.cs",
+      "file": "src/ZedLabs.MessageQueue/HealthChecks/HealthCheckLog.cs",
       "find": "Processing.BoundedText.TypeName(exception)",
       "replace": "exception.GetType().FullName!"
     },
     {
       "id": "R-B19",
       "name": "shared limit doubled",
-      "file": "src/ESE.MessageQueue/Processing/BoundedText.cs",
+      "file": "src/ZedLabs.MessageQueue/Processing/BoundedText.cs",
       "find": "public const int MaxLength = PublishOptions.MaxHeaderValueLength;",
       "replace": "public const int MaxLength = PublishOptions.MaxHeaderValueLength * 2;"
     },
     {
       "id": "R-B20",
       "name": "absent correlation id becomes empty",
-      "file": "src/ESE.MessageQueue/Processing/DeliveryText.cs",
+      "file": "src/ZedLabs.MessageQueue/Processing/DeliveryText.cs",
       "find": "=> raw is null ? null : MessageId(raw);",
       "replace": "=> MessageId(raw);"
     },
     {
       "id": "R-B21",
       "name": "context rewritten only when both ids change",
-      "file": "src/ESE.MessageQueue/Providers/MessageDispatcher.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageDispatcher.cs",
       "find": "if (!ReferenceEquals(messageId, context.MessageId) || !ReferenceEquals(correlationId, context.CorrelationId))",
       "replace": "if (!ReferenceEquals(messageId, context.MessageId) && !ReferenceEquals(correlationId, context.CorrelationId))"
     },
     {
       "id": "R-B22",
       "name": "publish refuses a correlation id exactly at the limit",
-      "file": "src/ESE.MessageQueue/Providers/PublishValidation.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/PublishValidation.cs",
       "find": "correlationId.Length > PublishOptions.MaxMessageIdLength",
       "replace": "correlationId.Length >= PublishOptions.MaxMessageIdLength"
     },
     {
       "id": "R-C6",
       "name": "zero initial delay counts as backoff",
-      "file": "src/ESE.MessageQueue/Processing/CapabilityChecks.cs",
+      "file": "src/ZedLabs.MessageQueue/Processing/CapabilityChecks.cs",
       "find": "(retry.InitialDelay > TimeSpan.Zero || retry.CustomDelayCalculator is not null)",
       "replace": "(retry.InitialDelay >= TimeSpan.Zero || retry.CustomDelayCalculator is not null)"
     },
     {
       "id": "R-C7",
       "name": "custom delay calculator not counted as backoff",
-      "file": "src/ESE.MessageQueue/Processing/CapabilityChecks.cs",
+      "file": "src/ZedLabs.MessageQueue/Processing/CapabilityChecks.cs",
       "find": "(retry.InitialDelay > TimeSpan.Zero || retry.CustomDelayCalculator is not null)",
       "replace": "(retry.InitialDelay > TimeSpan.Zero)"
     },
     {
       "id": "R-C8",
       "name": "queue not disposed when the resolution guard throws",
-      "file": "src/ESE.MessageQueue/Providers/MessageQueueRegistration.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageQueueRegistration.cs",
       "find": "                Dispose(queue);\n",
       "replace": ""
     },
     {
       "id": "R-C9",
       "name": "guard fails even when RequireDelayedRedelivery is false",
-      "file": "src/ESE.MessageQueue/Processing/CapabilityChecks.cs",
+      "file": "src/ZedLabs.MessageQueue/Processing/CapabilityChecks.cs",
       "find": "config.RequireDelayedRedelivery && !delayedRedelivery",
       "replace": "!delayedRedelivery"
     },
     {
       "id": "R-J14",
       "name": "startup check believes every resolver knows T",
-      "file": "src/ESE.MessageQueue/Providers/MessageSerializer.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageSerializer.cs",
       "find": "internal static bool HasJsonMetadata(IJsonTypeInfoResolver resolver, Type type) => OptionsFor(resolver).TryGetTypeInfo(type, out _);",
       "replace": "internal static bool HasJsonMetadata(IJsonTypeInfoResolver resolver, Type type) => true;"
     },
     {
       "id": "R-J15",
       "name": "post-configure clears a resolver set in code",
-      "file": "src/ESE.MessageQueue/Providers/MessageQueueRegistration.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageQueueRegistration.cs",
       "find": "            if (metadata.LastOrDefault() is { } json)\n                config.JsonTypeInfoResolver = json.Resolver;",
       "replace": "            config.JsonTypeInfoResolver = metadata.LastOrDefault()?.Resolver;"
     },
     {
       "id": "R-J20",
       "name": "in-memory dead letter deserializes without the resolver",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "return MessageSerializer.Deserialize<T>(body, config.SerializationFormat, config.JsonTypeInfoResolver);",
       "replace": "return MessageSerializer.Deserialize<T>(body, config.SerializationFormat);"
     },
     {
       "id": "R-T10",
       "name": "colons in a thumbprint not ignored",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "c is not (':' or '-' or '\\u200E' or '\\u200F')",
       "replace": "c is not ('-' or '\\u200E' or '\\u200F')"
     },
     {
       "id": "R-T11",
       "name": "thumbprint not upper-cased",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": ")))\n            .ToUpperInvariant();",
       "replace": ")));"
     },
     {
       "id": "R-T12",
       "name": "over-long thumbprint accepted",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "hex.Length == 40 &&",
       "replace": "hex.Length >= 40 &&"
     },
     {
       "id": "R-T13",
       "name": "orphan key path accepted",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "if (!HasFile(tls) && !string.IsNullOrWhiteSpace(tls.ClientCertificateKeyPath))",
       "replace": "if (false)"
     },
     {
       "id": "R-T14",
       "name": "undefined store name accepted",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "if (!Enum.IsDefined(tls.ClientCertificateStoreName))",
       "replace": "if (false)"
     },
     {
       "id": "R-T15",
       "name": "certificate loaded even after a rule failed",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "if (!load || errors.Count > count || !IsConfigured(tls))",
       "replace": "if (!load || !IsConfigured(tls))"
     },
     {
       "id": "R-T16",
       "name": "PEM key file not pre-read (raw IO exception escapes)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "keyContent = Read(tls.ClientCertificateKeyPath, KeyPathSetting);",
       "replace": "keyContent = File.ReadAllBytes(tls.ClientCertificateKeyPath);"
     },
     {
       "id": "R-T17",
       "name": "store lookup ignores the private key (Linux only: the store specs add to CurrentUser/My, which they skip elsewhere)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "found.FirstOrDefault(c => c.HasPrivateKey)",
       "replace": "found.FirstOrDefault()",
       "filter": "Category=Unit&FullyQualifiedName~client_certificate_in_the_store"
@@ -177,7 +177,7 @@
     {
       "id": "R-T18",
       "name": "store lookup never finds anything (Linux only: the store specs add to CurrentUser/My, which they skip elsewhere)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "var certificate = found.FirstOrDefault(c => c.HasPrivateKey);",
       "replace": "var certificate = found.FirstOrDefault(c => false);",
       "filter": "Category=Unit&FullyQualifiedName~client_certificate_in_the_store"
@@ -185,70 +185,70 @@
     {
       "id": "R-T19",
       "name": "UTF-8 BOM before a PEM not skipped",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "            content = content[Utf8Bom.Length..];\n",
       "replace": "            content = content[0..];\n"
     },
     {
       "id": "R-T20",
       "name": "PFX password not used",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "X509CertificateLoader.LoadPkcs12(content, Password(tls))",
       "replace": "X509CertificateLoader.LoadPkcs12(content, null)"
     },
     {
       "id": "R-T21",
       "name": "encrypted PEM password not used",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "using var pem = tls.ClientCertificatePassword.Length > 0",
       "replace": "using var pem = false"
     },
     {
       "id": "R-T25",
       "name": "load failure message echoes the password",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "check the file, {KeyPathSetting} and {PasswordSetting}",
       "replace": "check the file, {KeyPathSetting} and {tls.ClientCertificatePassword}"
     },
     {
       "id": "R-T26",
       "name": "store failure message echoes nothing useful (store open exception escapes)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "        catch (CryptographicException error)\n        {\n            throw new ConfigurationException($\"{ThumbprintSetting} {thumbprint}: the store",
       "replace": "        catch (CryptographicException error) when (error is null)\n        {\n            throw new ConfigurationException($\"{ThumbprintSetting} {thumbprint}: the store"
     },
     {
       "id": "R-P4",
       "name": "dead letter compares the message by reference",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryDeadLetter.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryDeadLetter.cs",
       "find": "EqualityComparer<T?>.Default.Equals(Message, other.Message)",
       "replace": "ReferenceEquals(Message, other.Message)"
     },
     {
       "id": "R-P5",
       "name": "dead letter compares the context by reference",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryDeadLetter.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryDeadLetter.cs",
       "find": "EqualityComparer<MessageContext>.Default.Equals(Context, other.Context)",
       "replace": "ReferenceEquals(Context, other.Context)"
     },
     {
       "id": "R-P6",
       "name": "dead letter reason compared ignoring case",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryDeadLetter.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryDeadLetter.cs",
       "find": "string.Equals(Reason, other.Reason, StringComparison.Ordinal)",
       "replace": "string.Equals(Reason, other.Reason, StringComparison.OrdinalIgnoreCase)"
     },
     {
       "id": "R-P7",
       "name": "dead letter ToString prints the body as the context",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryDeadLetter.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryDeadLetter.cs",
       "find": "Context = {Context}",
       "replace": "Context = {Body}"
     },
     {
       "id": "R-P8",
       "name": "DeadLetterReason hash ignores the detail",
-      "file": "src/ESE.MessageQueue/Providers/IDeliveryActions.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/IDeliveryActions.cs",
       "find": "HashCode.Combine(code, Detail)",
       "replace": "HashCode.Combine(code)",
       "equivalent": "GetHashCode may collide: hashing the code alone still gives equal values equal hashes, and no observable behavior (equality, dictionaries) changes; only distribution does."
@@ -256,14 +256,14 @@
     {
       "id": "R-P10",
       "name": "DeadLetterReason detail compared ignoring case",
-      "file": "src/ESE.MessageQueue/Providers/IDeliveryActions.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/IDeliveryActions.cs",
       "find": "string.Equals(Detail, other.Detail, StringComparison.Ordinal)",
       "replace": "string.Equals(Detail, other.Detail, StringComparison.OrdinalIgnoreCase)"
     },
     {
       "id": "R-P11",
       "name": "dead letter Equals(object) is reference equality",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryDeadLetter.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryDeadLetter.cs",
       "find": "public override bool Equals(object? obj) => Equals(obj as InMemoryDeadLetter<T>);",
       "replace": "public override bool Equals(object? obj) => ReferenceEquals(this, obj);"
     }

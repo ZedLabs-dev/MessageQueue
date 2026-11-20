@@ -1,0 +1,4 @@
+#nullable enable
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.PeekAsync(int maxCount, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T!>!>!>!
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.PurgeAsync(ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.ReplayAsync(ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult!>!

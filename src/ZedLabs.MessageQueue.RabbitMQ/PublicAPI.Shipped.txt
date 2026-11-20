@@ -1,0 +1,92 @@
+#nullable enable
+ZedLabs.MessageQueue.Extensions.RabbitMqServiceCollectionExtensions
+ZedLabs.MessageQueue.HealthChecks.RabbitMqHealthCheckExtensions
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.ConfirmTimeout.get -> System.TimeSpan
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.ConfirmTimeout.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.ConnectionString.get -> string!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.ConnectionString.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.DeadLetterQueueName.get -> string!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.DeadLetterQueueName.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.EnablePublisherConfirms.get -> bool
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.EnablePublisherConfirms.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.Equals(ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig? other) -> bool
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.ExchangeName.get -> string!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.ExchangeName.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.ExchangeType.get -> string!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.ExchangeType.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.HeartbeatInterval.get -> System.TimeSpan
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.HeartbeatInterval.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.HostName.get -> string!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.HostName.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.MaxOutstandingConfirms.get -> int
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.MaxOutstandingConfirms.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.NetworkRecoveryInterval.get -> System.TimeSpan
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.NetworkRecoveryInterval.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.Password.get -> string!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.Password.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.Port.get -> int
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.Port.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.PrefetchCount.get -> int
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.PrefetchCount.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.PublisherChannelPoolSize.get -> int
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.PublisherChannelPoolSize.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.QuorumInitialGroupSize.get -> int
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.QuorumInitialGroupSize.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.RabbitMqConfig() -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.RequireTls.get -> bool?
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.RequireTls.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.ShutdownTimeout.get -> System.TimeSpan
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.ShutdownTimeout.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.Tls.get -> ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.Tls.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.UseQuorumQueues.get -> bool
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.UseQuorumQueues.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.UserName.get -> string!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.UserName.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.VirtualHost.get -> string!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.VirtualHost.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.Capabilities.get -> ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.Dispose() -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.InitializeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.PublishAsync(System.Collections.Generic.IEnumerable<T!>! messages, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.PublishAsync(T! message, ZedLabs.MessageQueue.Abstractions.PublishOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.PublishAsync(T! message, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.RabbitMqMessageQueue(ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig! config, ZedLabs.MessageQueue.Telemetry.ITelemetryProvider? telemetry = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.SubscribeAsync(System.Func<T!, ZedLabs.MessageQueue.Abstractions.MessageContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task<ZedLabs.MessageQueue.Abstractions.MessageResult>!>! handler, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.SubscribeAsync(System.Func<T!, System.Threading.Tasks.Task<bool>!>! handler, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.UnsubscribeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.<Clone>$() -> ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.AcceptablePolicyErrors.get -> System.Net.Security.SslPolicyErrors
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.AcceptablePolicyErrors.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.AllowInsecureCertificates.get -> bool
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.AllowInsecureCertificates.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.Enabled.get -> bool
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.Enabled.set -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.Equals(ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig? other) -> bool
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.RabbitMqTlsConfig() -> void
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ServerName.get -> string!
+ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ServerName.set -> void
+const ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.ProviderName = "RabbitMq" -> string!
+override ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.<Clone>$() -> ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig!
+override ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.Equals(object? obj) -> bool
+override ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.GetHashCode() -> int
+override ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.Provider.get -> string!
+override ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.ToString() -> string!
+override ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.Equals(object? obj) -> bool
+override ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.GetHashCode() -> int
+override ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ToString() -> string!
+override sealed ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.Equals(ZedLabs.MessageQueue.Configuration.MessageQueueConfig? other) -> bool
+static ZedLabs.MessageQueue.Extensions.RabbitMqServiceCollectionExtensions.AddRabbitMqProvider(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static ZedLabs.MessageQueue.HealthChecks.RabbitMqHealthCheckExtensions.AddRabbitMqHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! connectionString, string! name = "rabbitmq", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null, bool? requireTls = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZedLabs.MessageQueue.HealthChecks.RabbitMqHealthCheckExtensions.AddRabbitMqHealthCheck<T>(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! name = "rabbitmq", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.operator !=(ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig? left, ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig? right) -> bool
+static ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.operator ==(ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig? left, ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig? right) -> bool
+static ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue.CreateAsync<T>(ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig! config, ZedLabs.MessageQueue.Telemetry.ITelemetryProvider? telemetry = null, Microsoft.Extensions.Logging.ILogger? logger = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T!>!>!
+static ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.operator !=(ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig? left, ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig? right) -> bool
+static ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.operator ==(ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig? left, ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig? right) -> bool
+static readonly ZedLabs.MessageQueue.RabbitMQ.RabbitMqConfig.DefaultShutdownTimeout -> System.TimeSpan

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- BenchmarkDotNet suite (OPTIMIZATION-PLAN section 4). Not a test project: `dotnet test` never runs it and CI
+         only builds it. How to run it: docs/benchmarks.md. -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>false</IsTestProject>
+        <AssemblyName>ZedLabs.MessageQueue.Benchmarks</AssemblyName>
+        <RootNamespace>ZedLabs.MessageQueue.Benchmarks</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="BenchmarkDotNet" />
+        <PackageReference Include="Testcontainers.RabbitMq" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\..\docker\test-broker\Dockerfile" Link="test-broker.Dockerfile" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\ZedLabs.MessageQueue\ZedLabs.MessageQueue.csproj" />
+        <ProjectReference Include="..\..\src\ZedLabs.MessageQueue.RabbitMQ\ZedLabs.MessageQueue.RabbitMQ.csproj" />
+    </ItemGroup>
+
+</Project>

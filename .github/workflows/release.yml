@@ -73,8 +73,8 @@ jobs:
         id: version
         shell: bash
         run: |
-          prefix="$(dotnet msbuild src/ESE.MessageQueue/ESE.MessageQueue.csproj -getProperty:VersionPrefix)"
-          suffix="$(dotnet msbuild src/ESE.MessageQueue/ESE.MessageQueue.csproj -getProperty:VersionSuffix)"
+          prefix="$(dotnet msbuild src/ZedLabs.MessageQueue/ZedLabs.MessageQueue.csproj -getProperty:VersionPrefix)"
+          suffix="$(dotnet msbuild src/ZedLabs.MessageQueue/ZedLabs.MessageQueue.csproj -getProperty:VersionSuffix)"
           version="$prefix${suffix:+-$suffix}"
           if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match the project version v$version (Directory.Build.props)"
@@ -132,5 +132,5 @@ jobs:
           flags=()
           [[ "${{ steps.version.outputs.prerelease }}" == "true" ]] && flags+=(--prerelease)
           gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg artifacts/*.snupkg \
-            --title "ESE.MessageQueue ${{ steps.version.outputs.version }}" \
+            --title "ZedLabs.MessageQueue ${{ steps.version.outputs.version }}" \
             --notes-file release-notes.md "${flags[@]}"

@@ -7,9 +7,9 @@ map. Public usage is in `docs/message-queue-api.md` and `docs/azure-service-bus-
 
 | Package | Contents | Depends on |
 |---|---|---|
-| `ESE.MessageQueue` | Abstractions, the shared consumer pipeline, retry, serialization, registration and validation, hosting, telemetry, the generic health check, the in-memory provider, and the public provider SPI (`ESE.MessageQueue.Providers`) | Microsoft.Extensions.*, MessagePack |
-| `ESE.MessageQueue.RabbitMQ` | RabbitMQ provider and health check | core (exact version), RabbitMQ.Client 7 |
-| `ESE.MessageQueue.AzureServiceBus` | Service Bus provider and health checks | core (exact version), Azure.Messaging.ServiceBus, Azure.Identity |
+| `ZedLabs.MessageQueue` | Abstractions, the shared consumer pipeline, retry, serialization, registration and validation, hosting, telemetry, the generic health check, the in-memory provider, and the public provider SPI (`ZedLabs.MessageQueue.Providers`) | Microsoft.Extensions.*, MessagePack |
+| `ZedLabs.MessageQueue.RabbitMQ` | RabbitMQ provider and health check | core (exact version), RabbitMQ.Client 7 |
+| `ZedLabs.MessageQueue.AzureServiceBus` | Service Bus provider and health checks | core (exact version), Azure.Messaging.ServiceBus, Azure.Identity |
 
 The provider packages use core internals (`HandlerScope`, `TransportBackoff`, `LogThrottle`, `BackgroundWork`,
 `Cancellation`, `SafeLogger`, `DeliveryText`, `RetryExecutor`) through `InternalsVisibleTo`, which is why they pin the
@@ -69,6 +69,6 @@ the message is handed back.
 
 ## Tests
 
-One test project, `tests/ESE.MessageQueue.Tests`, Unit and Integration traits (CLAUDE.md "Testing"). RabbitMQ
+One test project, `tests/ZedLabs.MessageQueue.Tests`, Unit and Integration traits (CLAUDE.md "Testing"). RabbitMQ
 integration specs use Testcontainers; Service Bus behavior is specified through the SDK seams with
 `Support/FakeServiceBus`, and the broker specs run only with `MQ_ASB_CONNECTION_STRING`.

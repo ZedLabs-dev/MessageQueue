@@ -2,7 +2,7 @@
 
 What the library reports, so you can build dashboards and [alerts](alerts.md) on it: metrics, spans, log events and
 health checks. Everything below is checked against the code by
-`tests/ESE.MessageQueue.Tests/Packaging/Given_the_monitoring_reference` (every log event id and level, every metric and
+`tests/ZedLabs.MessageQueue.Tests/Packaging/Given_the_monitoring_reference` (every log event id and level, every metric and
 unit, every attribute name). Design: [ADR 0013](../adr/0013-telemetry-trace-propagation-and-metrics.md) (telemetry),
 [ADR 0021](../adr/0021-bounded-values-in-brokers-and-telemetry.md) (bounded values).
 
@@ -27,11 +27,11 @@ or delivery proceeds. Nothing is formatted or tagged while nobody listens.
 | `messaging.client.operation.duration` | histogram | `s` | per publish call | Duration of a publish call (a batch is one call), including the broker confirm |
 | `messaging.client.consumed.messages` | counter | `{message}` | per delivery | Deliveries handed to the pipeline. Unless acknowledged, `error.type` is the outcome: a dead-letter reason code, `Retry` (the handler asked for one) or the type of the exception the handler threw |
 | `messaging.process.duration` | histogram | `s` | per delivery | Receipt to settlement: deserialization, your handler and the ack, retry copy or dead-letter |
-| `ese.messagequeue.messages.retried` | counter | `{message}` | per retry scheduled | Deliveries rescheduled for another attempt |
-| `ese.messagequeue.messages.dead_lettered` | counter | `{message}` | per dead letter | Deliveries dead-lettered, tagged `ese.messagequeue.dead_letter.reason`. Not counted when `EnableDeadLetterQueue = false` (the message is dropped: event 1004) |
-| `ese.messagequeue.transport.errors` | counter | `{error}` | per transport error | Broker trouble outside a delivery. **Azure Service Bus:** errors the SDK processor reported (authentication, entity not found, network, throttling); `error.type` = the `ServiceBusFailureReason` or the exception type. **RabbitMQ:** `error.type` = `ConnectionFailed` (connecting or declaring the topology failed, event 2003; calls refused during the reconnect backoff are not counted), `ConnectionShutdown` (the broker closed the connection or it was lost), `RecoveryFailed` (one automatic reconnect attempt failed), `ChannelShutdown` (the consumer channel was closed while the connection stayed open, for example by `consumer_timeout`), `ConsumerCancelled` (the broker cancelled the consumer: its queue was deleted). Closes the library makes itself are not counted. Not recorded by the in-memory provider |
-| `ese.messagequeue.dead_letters.replayed` | counter | `{message}` | per replay call | Dead letters moved back to their queue |
-| `ese.messagequeue.dead_letters.purged` | counter | `{message}` | per purge call | Dead letters deleted |
+| `zedlabs.messagequeue.messages.retried` | counter | `{message}` | per retry scheduled | Deliveries rescheduled for another attempt |
+| `zedlabs.messagequeue.messages.dead_lettered` | counter | `{message}` | per dead letter | Deliveries dead-lettered, tagged `zedlabs.messagequeue.dead_letter.reason`. Not counted when `EnableDeadLetterQueue = false` (the message is dropped: event 1004) |
+| `zedlabs.messagequeue.transport.errors` | counter | `{error}` | per transport error | Broker trouble outside a delivery. **Azure Service Bus:** errors the SDK processor reported (authentication, entity not found, network, throttling); `error.type` = the `ServiceBusFailureReason` or the exception type. **RabbitMQ:** `error.type` = `ConnectionFailed` (connecting or declaring the topology failed, event 2003; calls refused during the reconnect backoff are not counted), `ConnectionShutdown` (the broker closed the connection or it was lost), `RecoveryFailed` (one automatic reconnect attempt failed), `ChannelShutdown` (the consumer channel was closed while the connection stayed open, for example by `consumer_timeout`), `ConsumerCancelled` (the broker cancelled the consumer: its queue was deleted). Closes the library makes itself are not counted. Not recorded by the in-memory provider |
+| `zedlabs.messagequeue.dead_letters.replayed` | counter | `{message}` | per replay call | Dead letters moved back to their queue |
+| `zedlabs.messagequeue.dead_letters.purged` | counter | `{message}` | per purge call | Dead letters deleted |
 
 Duration histograms use the OpenTelemetry messaging buckets: 5 ms, 10, 25, 50, 75, 100, 250, 500, 750 ms, 1 s, 2.5,
 5, 7.5 and 10 s.
@@ -40,13 +40,13 @@ Duration histograms use the OpenTelemetry messaging buckets: 5 ms, 10, 25, 50, 7
 
 | Tag | Values |
 |---|---|
-| `messaging.system` | `rabbitmq`, `servicebus` or `ese.inmemory` |
+| `messaging.system` | `rabbitmq`, `servicebus` or `zedlabs.inmemory` |
 | `messaging.destination.name` | in-memory and Service Bus queue: the queue; Service Bus topic mode: the topic; RabbitMQ: `{exchange}:{queue}` (`order-placed:order-placed` by default) |
 | `messaging.operation.name` | publish: `publish` (`send` on Service Bus); consume metrics: `process`; dead-letter operations: `replay`, `purge` |
-| `ese.messagequeue.message_type` | the message type's name (`OrderPlaced`) |
+| `zedlabs.messagequeue.message_type` | the message type's name (`OrderPlaced`) |
 | `error.type` | when the operation did not succeed (above); cut to 4096 characters |
 | `messaging.destination.subscription.name` | consumer metrics of a Service Bus topic subscription |
-| `ese.messagequeue.dead_letter.reason` | `ese.messagequeue.messages.dead_lettered` only: `MessageTooLarge`, `DeserializationFailed`, `MaxRetriesExceeded`, `NonRetryableError`, `DeliveryFailed`, `Rejected` |
+| `zedlabs.messagequeue.dead_letter.reason` | `zedlabs.messagequeue.messages.dead_lettered` only: `MessageTooLarge`, `DeserializationFailed`, `MaxRetriesExceeded`, `NonRetryableError`, `DeliveryFailed`, `Rejected` |
 
 A delivery interrupted by shutdown is not counted (it is handed back and counted when it is delivered again).
 
@@ -70,16 +70,16 @@ headers starts a new trace; on Service Bus the SDK's `Diagnostic-Id` is used whe
 | `messaging.destination.name` | both | as on metrics |
 | `messaging.operation.name` | both | `publish` / `send` / `process` |
 | `messaging.operation.type` | both | `send` on publish, `process` on consume |
-| `ese.messagequeue.message_type` | both | the message type's name |
+| `zedlabs.messagequeue.message_type` | both | the message type's name |
 | `messaging.rabbitmq.destination.routing_key` | both, RabbitMQ | the queue name |
 | `messaging.message.id` | publish of one message; consume | the message id |
 | `messaging.batch.message_count` | publish of a batch | number of messages |
 | `messaging.message.conversation_id` | consume | the correlation id, when set |
 | `messaging.destination.subscription.name` | consume, Service Bus subscription | the subscription |
-| `ese.messagequeue.delivery_attempt` | consume | 1 for the first delivery, 2 for the first retry, ... |
-| `ese.messagequeue.retry.next_attempt` | consume, when retried | the next attempt number |
-| `ese.messagequeue.retry.delay_ms` | consume, when retried | the backoff before it, in milliseconds |
-| `ese.messagequeue.dead_letter.reason` | consume, when dead-lettered | the reason code |
+| `zedlabs.messagequeue.delivery_attempt` | consume | 1 for the first delivery, 2 for the first retry, ... |
+| `zedlabs.messagequeue.retry.next_attempt` | consume, when retried | the next attempt number |
+| `zedlabs.messagequeue.retry.delay_ms` | consume, when retried | the backoff before it, in milliseconds |
+| `zedlabs.messagequeue.dead_letter.reason` | consume, when dead-lettered | the reason code |
 | `error.type` | both, unless the outcome was a success | as on metrics; the span status is then Error |
 
 When the handler throws, the consume span also gets an `exception` event with `exception.type`. Exception messages and
@@ -89,16 +89,16 @@ characters): they can carry personal or secret data.
 ## Logs
 
 The library logs through `Microsoft.Extensions.Logging` with source-generated messages and fixed event ids. Logger
-categories start with `ESE.MessageQueue` (the queue classes, `ESE.MessageQueue.Hosting.MessageQueueHostedService` and
-`ESE.MessageQueue.HealthChecks`), so one filter covers them:
+categories start with `ZedLabs.MessageQueue` (the queue classes, `ZedLabs.MessageQueue.Hosting.MessageQueueHostedService` and
+`ZedLabs.MessageQueue.HealthChecks`), so one filter covers them:
 
 ```json
-{ "Logging": { "LogLevel": { "ESE.MessageQueue": "Information" } } }
+{ "Logging": { "LogLevel": { "ZedLabs.MessageQueue": "Information" } } }
 ```
 
 Publishing logs nothing at Information: a line per message would drown everything else, its outcome is in the publish
 metrics and spans, and a failure throws to the caller. To trace publishes, raise the queue's category to Debug for a
-while (events 1010 and 1011), for example `"ESE.MessageQueue.RabbitMQ": "Debug"`.
+while (events 1010 and 1011), for example `"ZedLabs.MessageQueue.RabbitMQ": "Debug"`.
 
 Messages never contain connection strings, passwords or exception messages from a broker client; exceptions are
 attached to the log entry (except event 3003, where even the exception could carry the connection string). Repeating
@@ -151,7 +151,7 @@ hosted service, 6000s health checks.
 | 3006 | Warning | StopFailed | Azure Service Bus queue {QueueName}: stopping the processor failed | Service Bus: stopping the processor failed |
 | 3007 | Debug | CloseFailed | Azure Service Bus queue {QueueName}: closing a client resource failed | Service Bus: closing a client resource failed. Debug level; harmless during shutdown |
 | 3008 | Warning | LockLost | Azure Service Bus queue {QueueName}: a message lock was lost ({SuppressedLogs} similar warning(s) not logged); the broker redelivers the message | Service Bus: a message lock was lost (the handler outlived the lock or `MaxAutoLockRenewalDuration`); the broker redelivers it, and `DeliveryCount` rises. Throttled |
-| 3009 | Error | ProcessorError | Azure Service Bus processor error on {EntityPath} from {ErrorSource} ({ExceptionType}; {SuppressedLogs} similar error(s) not logged) | Service Bus: the SDK processor reported an error (authentication, entity not found, network, throttling). The SDK keeps retrying; also counted in `ese.messagequeue.transport.errors`. Throttled per distinct error |
+| 3009 | Error | ProcessorError | Azure Service Bus processor error on {EntityPath} from {ErrorSource} ({ExceptionType}; {SuppressedLogs} similar error(s) not logged) | Service Bus: the SDK processor reported an error (authentication, entity not found, network, throttling). The SDK keeps retrying; also counted in `zedlabs.messagequeue.transport.errors`. Throttled per distinct error |
 | 3010 | Warning | ProcessorWarning | Azure Service Bus processor warning on {EntityPath} from {ErrorSource} ({ExceptionType}; {SuppressedLogs} similar warning(s) not logged): the message is redelivered | Service Bus: a processor error about a lost lock; the message is redelivered |
 | 3011 | Warning | DelayExceedsLock | Azure Service Bus queue {QueueName}: retry delay {Delay} exceeds the remaining lock budget {LockBudget} of a subscription message, so it is abandoned for immediate redelivery ({SuppressedLogs} similar warning(s) not logged) | Service Bus subscription: a retry delay exceeds the remaining lock budget, so the message is abandoned for immediate redelivery instead of waiting |
 | 3012 | Warning | RetriesExceedMaxDeliveryCount | Azure Service Bus queue {QueueName}: the retry policy allows {Deliveries} deliveries, more than Service Bus's default MaxDeliveryCount ({MaxDeliveryCount}); make sure the subscription's MaxDeliveryCount is higher, or the broker dead-letters first | Service Bus subscription, at startup: the retry policy allows more deliveries than the default `MaxDeliveryCount` (10). Raise the subscription's `MaxDeliveryCount` |

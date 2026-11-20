@@ -7,175 +7,175 @@
     {
       "id": "B1",
       "name": "bound accepts exactly-at-limit values as too long",
-      "file": "src/ESE.MessageQueue/Processing/BoundedText.cs",
+      "file": "src/ZedLabs.MessageQueue/Processing/BoundedText.cs",
       "find": "if (value is null || value.Length <= MaxLength)",
       "replace": "if (value is null || value.Length < MaxLength)"
     },
     {
       "id": "B2",
       "name": "cut may split a surrogate pair",
-      "file": "src/ESE.MessageQueue/Processing/BoundedText.cs",
+      "file": "src/ZedLabs.MessageQueue/Processing/BoundedText.cs",
       "find": "var length = char.IsHighSurrogate(value[MaxLength - 1]) ? MaxLength - 1 : MaxLength;",
       "replace": "var length = MaxLength;"
     },
     {
       "id": "B3",
       "name": "dead-letter detail unbounded",
-      "file": "src/ESE.MessageQueue/Providers/IDeliveryActions.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/IDeliveryActions.cs",
       "find": "Detail = BoundedText.Truncate(detail);",
       "replace": "Detail = detail;"
     },
     {
       "id": "B4",
       "name": "dead-letter code unbounded",
-      "file": "src/ESE.MessageQueue/Providers/IDeliveryActions.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/IDeliveryActions.cs",
       "find": "this.code = BoundedText.Truncate(code);",
       "replace": "this.code = code;"
     },
     {
       "id": "B5",
       "name": "consumed correlation id not sanitized",
-      "file": "src/ESE.MessageQueue/Providers/MessageDispatcher.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageDispatcher.cs",
       "find": "var correlationId = DeliveryText.CorrelationId(context.CorrelationId);",
       "replace": "var correlationId = context.CorrelationId;"
     },
     {
       "id": "B6",
       "name": "sanitized correlation id dropped when the message id is clean",
-      "file": "src/ESE.MessageQueue/Providers/MessageDispatcher.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageDispatcher.cs",
       "find": " || !ReferenceEquals(correlationId, context.CorrelationId))",
       "replace": ")"
     },
     {
       "id": "B7",
       "name": "dispatcher exception type name unbounded",
-      "file": "src/ESE.MessageQueue/Providers/MessageDispatcher.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageDispatcher.cs",
       "find": "static string TypeName(Exception exception) => BoundedText.TypeName(exception);",
       "replace": "static string TypeName(Exception exception) => exception.GetType().FullName ?? exception.GetType().Name;"
     },
     {
       "id": "B8",
       "name": "span exception type unbounded",
-      "file": "src/ESE.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
+      "file": "src/ZedLabs.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
       "find": "var exceptionType = BoundedText.TypeName(exception);",
       "replace": "var exceptionType = exception.GetType().FullName;"
     },
     {
       "id": "B9",
       "name": "span error type unbounded",
-      "file": "src/ESE.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
+      "file": "src/ZedLabs.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
       "find": "        errorType = BoundedText.Truncate(errorType);\n",
       "replace": ""
     },
     {
       "id": "B10",
       "name": "metric error.type unbounded",
-      "file": "src/ESE.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
+      "file": "src/ZedLabs.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
       "find": "tags.Add(TelemetryNames.ErrorType, BoundedText.Truncate(errorType));",
       "replace": "tags.Add(TelemetryNames.ErrorType, errorType);"
     },
     {
       "id": "B11",
       "name": "dead-letter reason metric tag unbounded",
-      "file": "src/ESE.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
+      "file": "src/ZedLabs.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
       "find": "tags.Add(TelemetryNames.DeadLetterReason, BoundedText.Truncate(reason));",
       "replace": "tags.Add(TelemetryNames.DeadLetterReason, reason);"
     },
     {
       "id": "B12",
       "name": "publish error type unbounded",
-      "file": "src/ESE.MessageQueue/Providers/PublishTelemetry.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/PublishTelemetry.cs",
       "find": "errorType = Processing.BoundedText.TypeName(exception);",
       "replace": "errorType = exception.GetType().FullName ?? exception.GetType().Name;"
     },
     {
       "id": "B13",
       "name": "publish accepts a correlation id one character too long",
-      "file": "src/ESE.MessageQueue/Providers/PublishValidation.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/PublishValidation.cs",
       "find": "correlationId.Length > PublishOptions.MaxMessageIdLength || correlationId.Any(char.IsControl)",
       "replace": "correlationId.Length > PublishOptions.MaxMessageIdLength + 1 || correlationId.Any(char.IsControl)"
     },
     {
       "id": "J1",
       "name": "serialize ignores the resolver",
-      "file": "src/ESE.MessageQueue/Providers/MessageSerializer.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageSerializer.cs",
       "find": "return JsonSerializer.SerializeToUtf8Bytes(message, TypeInfo<T>(jsonTypeInfoResolver));",
       "replace": "return JsonSerializer.SerializeToUtf8Bytes(message, JsonOptions);"
     },
     {
       "id": "J2",
       "name": "deserialize ignores the resolver",
-      "file": "src/ESE.MessageQueue/Providers/MessageSerializer.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageSerializer.cs",
       "find": "return JsonSerializer.Deserialize(data.Span, TypeInfo<T>(jsonTypeInfoResolver));",
       "replace": "return JsonSerializer.Deserialize<T>(data.Span, JsonOptions);"
     },
     {
       "id": "J3",
       "name": "reflection fallback behind the resolver",
-      "file": "src/ESE.MessageQueue/Providers/MessageSerializer.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageSerializer.cs",
       "find": "        TypeInfoResolver = resolver\n",
       "replace": "        TypeInfoResolver = resolver is null ? null : JsonTypeInfoResolver.Combine(resolver, new DefaultJsonTypeInfoResolver())\n"
     },
     {
       "id": "J4",
       "name": "resolver path loses camelCase",
-      "file": "src/ESE.MessageQueue/Providers/MessageSerializer.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageSerializer.cs",
       "find": "var options = CreateJsonOptions(r);",
       "replace": "var options = new JsonSerializerOptions { TypeInfoResolver = r, MaxDepth = 64 };"
     },
     {
       "id": "J5",
       "name": "resolver path loses the depth limit",
-      "file": "src/ESE.MessageQueue/Providers/MessageSerializer.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageSerializer.cs",
       "find": "var options = CreateJsonOptions(r);",
       "replace": "var options = new JsonSerializerOptions { TypeInfoResolver = r, PropertyNamingPolicy = JsonNamingPolicy.CamelCase, MaxDepth = 1000 };"
     },
     {
       "id": "J6",
       "name": "registered metadata never attached",
-      "file": "src/ESE.MessageQueue/Providers/MessageQueueRegistration.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageQueueRegistration.cs",
       "find": "config.JsonTypeInfoResolver = json.Resolver;",
       "replace": "_ = json;"
     },
     {
       "id": "J7",
       "name": "no startup check that the resolver knows T",
-      "file": "src/ESE.MessageQueue/Providers/MessageQueueRegistration.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageQueueRegistration.cs",
       "find": "|| MessageSerializer.HasJsonMetadata(config.JsonTypeInfoResolver, typeof(T)),",
       "replace": "|| true,"
     },
     {
       "id": "J8",
       "name": "resolver with MessagePack accepted",
-      "file": "src/ESE.MessageQueue/Configuration/MessageQueueConfigValidators.cs",
+      "file": "src/ZedLabs.MessageQueue/Configuration/MessageQueueConfigValidators.cs",
       "find": "if (config.JsonTypeInfoResolver is not null && config.SerializationFormat != SerializationFormat.Json)",
       "replace": "if (false)"
     },
     {
       "id": "J9",
       "name": "dispatcher deserializes without the resolver",
-      "file": "src/ESE.MessageQueue/Providers/MessageDispatcher.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageDispatcher.cs",
       "find": "MessageSerializer.Deserialize<T>(body, config.SerializationFormat, config.JsonTypeInfoResolver)",
       "replace": "MessageSerializer.Deserialize<T>(body, config.SerializationFormat)"
     },
     {
       "id": "J10",
       "name": "in-memory publish serializes without the resolver",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "MessageSerializer.Serialize(message, config.SerializationFormat, config.JsonTypeInfoResolver)",
       "replace": "MessageSerializer.Serialize(message, config.SerializationFormat)"
     },
     {
       "id": "J11",
       "name": "Service Bus publish serializes without the resolver",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
       "find": "MessageSerializer.Serialize(message, config.SerializationFormat, config.JsonTypeInfoResolver)",
       "replace": "MessageSerializer.Serialize(message, config.SerializationFormat)"
     },
     {
       "id": "J12",
       "name": "RabbitMQ publish serializes without the resolver",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "MessageSerializer.Serialize(message, config.SerializationFormat, config.JsonTypeInfoResolver)",
       "replace": "MessageSerializer.Serialize(message, config.SerializationFormat)",
       "filter": "Category=Integration&FullyQualifiedName~When_The_Queue_Has_Json_Metadata"
@@ -183,210 +183,210 @@
     {
       "id": "J13",
       "name": "second metadata registration replaces the first",
-      "file": "src/ESE.MessageQueue/Extensions/MessageQueueServiceCollectionExtensions.cs",
+      "file": "src/ZedLabs.MessageQueue/Extensions/MessageQueueServiceCollectionExtensions.cs",
       "find": "        if (services.Any(d => d.ServiceType == typeof(QueueJsonMetadata<T>)))\n            throw new ConfigurationException($\"JSON metadata for {typeof(T).FullName} is already registered\");",
       "replace": "        if (false)\n            throw new ConfigurationException($\"JSON metadata for {typeof(T).FullName} is already registered\");"
     },
     {
       "id": "T1",
       "name": "client certificate not handed to the factory",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqConnections.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConnections.cs",
       "find": "factory.Ssl.Certs = new X509CertificateCollection { clientCertificate?.Invoke() ?? RabbitMqClientCertificates.Load(TlsOf(config)) };",
       "replace": "factory.Ssl.Certs = factory.Ssl.Certs;"
     },
     {
       "id": "T2",
       "name": "certificate password printed by ToString",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTlsConfig.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTlsConfig.cs",
       "find": "ConfigValidation.PrintMembers(this, builder, nameof(ClientCertificatePassword));",
       "replace": "ConfigValidation.PrintMembers(this, builder);"
     },
     {
       "id": "T3",
       "name": "client certificate accepted without TLS",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "if (IsConfigured(tls) && !usesTls)",
       "replace": "if (false)"
     },
     {
       "id": "T4",
       "name": "certificate without private key accepted",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "        if (certificate.HasPrivateKey)\n            return certificate;\n        certificate.Dispose();",
       "replace": "        return certificate;\n        certificate.Dispose();"
     },
     {
       "id": "T5",
       "name": "startup validation does not load the certificate",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "using var certificate = Load(tls);",
       "replace": "_ = tls;"
     },
     {
       "id": "T6",
       "name": "file and thumbprint both accepted",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "if (HasFile(tls) && HasThumbprint(tls))",
       "replace": "if (false)"
     },
     {
       "id": "T7",
       "name": "short thumbprint accepted",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "return hex.Length == 40 && hex.All(char.IsAsciiHexDigit) ? hex : null;",
       "replace": "return hex.Length >= 4 && hex.All(char.IsAsciiHexDigit) ? hex : null;"
     },
     {
       "id": "T8",
       "name": "orphan password accepted",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "if (!HasFile(tls) && tls.ClientCertificatePassword.Length > 0)",
       "replace": "if (false)"
     },
     {
       "id": "T9",
       "name": "undefined store location accepted",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "if (!Enum.IsDefined(tls.ClientCertificateStoreLocation))",
       "replace": "if (false)"
     },
     {
       "id": "C1",
       "name": "RequireDelayedRedelivery ignores the capability",
-      "file": "src/ESE.MessageQueue/Processing/CapabilityChecks.cs",
+      "file": "src/ZedLabs.MessageQueue/Processing/CapabilityChecks.cs",
       "find": "config.RequireDelayedRedelivery && !delayedRedelivery && config.Retry is { } retry && HasBackoff(retry)",
       "replace": "config.RequireDelayedRedelivery && config.Retry is { } retry && HasBackoff(retry)"
     },
     {
       "id": "C2",
       "name": "a policy without retries counts as a backoff",
-      "file": "src/ESE.MessageQueue/Processing/CapabilityChecks.cs",
+      "file": "src/ZedLabs.MessageQueue/Processing/CapabilityChecks.cs",
       "find": "retry.MaxRetries > 0 && (retry.InitialDelay > TimeSpan.Zero",
       "replace": "(retry.InitialDelay > TimeSpan.Zero"
     },
     {
       "id": "C3",
       "name": "Service Bus subscriptions claim delayed redelivery",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusConfig.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/AzureServiceBusConfig.cs",
       "find": "internal bool SupportsDelayedRedelivery => !UsesSubscription;",
       "replace": "internal bool SupportsDelayedRedelivery => true;"
     },
     {
       "id": "C4",
       "name": "resolution-time guard ignores the queue's capabilities",
-      "file": "src/ESE.MessageQueue/Providers/MessageQueueRegistration.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageQueueRegistration.cs",
       "find": "UnsupportedRequiredBackoff(queue.Capabilities.DelayedRedelivery, config)",
       "replace": "UnsupportedRequiredBackoff(true, config)"
     },
     {
       "id": "C5",
       "name": "Service Bus validator ignores RequireDelayedRedelivery",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusConfigValidator.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/AzureServiceBusConfigValidator.cs",
       "find": "errors.Add(unsupported);",
       "replace": "_ = unsupported;"
     },
     {
       "id": "P1",
       "name": "dead-letter reason equality ignores the code",
-      "file": "src/ESE.MessageQueue/Providers/IDeliveryActions.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/IDeliveryActions.cs",
       "find": "string.Equals(code, other.code, StringComparison.Ordinal) && ",
       "replace": ""
     },
     {
       "id": "P2",
       "name": "in-memory dead letter equality ignores the body",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryDeadLetter.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryDeadLetter.cs",
       "find": "            && EqualityComparer<ReadOnlyMemory<byte>>.Default.Equals(Body, other.Body)\n",
       "replace": ""
     },
     {
       "id": "P3",
       "name": "in-memory dead letter == treats two nulls as different",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryDeadLetter.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryDeadLetter.cs",
       "find": "left is null ? right is null : left.Equals(right);",
       "replace": "left?.Equals(right) ?? false;"
     },
     {
       "id": "X1",
       "name": "control characters accepted in a published correlation id",
-      "file": "src/ESE.MessageQueue/Providers/PublishValidation.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/PublishValidation.cs",
       "find": " || correlationId.Any(char.IsControl)",
       "replace": ""
     },
     {
       "id": "X2",
       "name": "short ids keep C1 control characters",
-      "file": "src/ESE.MessageQueue/Processing/DeliveryText.cs",
+      "file": "src/ZedLabs.MessageQueue/Processing/DeliveryText.cs",
       "find": "!raw.AsSpan().ContainsAnyInRange('\\u007f', '\\u009f')",
       "replace": "!raw.AsSpan().ContainsAnyInRange('\\u007f', '\\u007f')"
     },
     {
       "id": "X3",
       "name": "id cut may split a surrogate pair",
-      "file": "src/ESE.MessageQueue/Processing/DeliveryText.cs",
+      "file": "src/ZedLabs.MessageQueue/Processing/DeliveryText.cs",
       "find": "return clean.Length == PublishOptions.MaxMessageIdLength && char.IsHighSurrogate(clean[^1]) ? clean[..^1] : clean;",
       "replace": "return clean;"
     },
     {
       "id": "X4",
       "name": "metadata accepted for an instance-registered queue",
-      "file": "src/ESE.MessageQueue/Extensions/MessageQueueServiceCollectionExtensions.cs",
+      "file": "src/ZedLabs.MessageQueue/Extensions/MessageQueueServiceCollectionExtensions.cs",
       "find": "if (services.Any(d => d.ServiceType == typeof(IMessageQueue<T>) && d.ImplementationInstance is not null))",
       "replace": "if (false)"
     },
     {
       "id": "X5",
       "name": "instance accepted after metadata",
-      "file": "src/ESE.MessageQueue/Extensions/MessageQueueServiceCollectionExtensions.cs",
+      "file": "src/ZedLabs.MessageQueue/Extensions/MessageQueueServiceCollectionExtensions.cs",
       "find": "        QueueRegistration.ThrowIfRegistered<T>(services);\n        if (services.Any(d => d.ServiceType == typeof(QueueJsonMetadata<T>)))",
       "replace": "        QueueRegistration.ThrowIfRegistered<T>(services);\n        if (false)"
     },
     {
       "id": "X6",
       "name": "enum validator does not recurse into nested settings",
-      "file": "src/ESE.MessageQueue/Configuration/ConfigValidation.cs",
+      "file": "src/ZedLabs.MessageQueue/Configuration/ConfigValidation.cs",
       "find": "else if (depth < MaxDepth && propertyType.IsClass",
       "replace": "else if (false && propertyType.IsClass"
     },
     {
       "id": "X7",
       "name": "flags enums lose comma-separated names",
-      "file": "src/ESE.MessageQueue/Configuration/ConfigValidation.cs",
+      "file": "src/ZedLabs.MessageQueue/Configuration/ConfigValidation.cs",
       "find": "var parts = enumType.IsDefined(typeof(FlagsAttribute), inherit: false) ? raw.Split(',') : [raw];",
       "replace": "string[] parts = [raw];"
     },
     {
       "id": "X8",
       "name": "each connection loads a new client certificate",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "() => clientCertificate ??= RabbitMqClientCertificates.Load(config.Tls)",
       "replace": "() => clientCertificate = RabbitMqClientCertificates.Load(config.Tls)"
     },
     {
       "id": "X9",
       "name": "queue does not dispose its client certificate",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "            clientCertificate?.Dispose();\n",
       "replace": ""
     },
     {
       "id": "X10",
       "name": "dashes in a thumbprint not ignored",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "c is not (':' or '-' or '\\u200E' or '\\u200F')",
       "replace": "c is not (':' or '\\u200E' or '\\u200F')"
     },
     {
       "id": "X11",
       "name": "whitespace other than spaces kept in a thumbprint",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "Where(c => !char.IsWhiteSpace(c) && c is not",
       "replace": "Where(c => c != ' ' && c is not"
     },
     {
       "id": "X12",
       "name": "direction marks kept in a thumbprint",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqClientCertificates.cs",
       "find": "c is not (':' or '-' or '\\u200E' or '\\u200F')",
       "replace": "c is not (':' or '-')"
     }

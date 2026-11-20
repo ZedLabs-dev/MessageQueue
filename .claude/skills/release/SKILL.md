@@ -1,6 +1,6 @@
 ---
 name: release
-description: Prepare and tag an ESE.MessageQueue release - version bump, CHANGELOG section, PublicAPI Unshipped-to-Shipped move, full gate, pack check, then the tag that triggers .github/workflows/release.yml.
+description: Prepare and tag an ZedLabs.MessageQueue release - version bump, CHANGELOG section, PublicAPI Unshipped-to-Shipped move, full gate, pack check, then the tag that triggers .github/workflows/release.yml.
 argument-hint: "<version, e.g. 1.0.0-rc.2 or 1.0.0>"
 disable-model-invocation: true
 ---
@@ -22,15 +22,15 @@ Prepare release $ARGUMENTS. Stop and ask before tagging or pushing; the owner pu
    `## [Unreleased]` above it. The release notes on GitHub are that section, verbatim.
 5. **Gate.**
    ```bash
-   dotnet restore ESE.MessageQueue.sln --locked-mode
-   dotnet build ESE.MessageQueue.sln -warnaserror && dotnet build ESE.MessageQueue.sln -warnaserror -c Release
-   dotnet format ESE.MessageQueue.sln --verify-no-changes
+   dotnet restore ZedLabs.MessageQueue.sln --locked-mode
+   dotnet build ZedLabs.MessageQueue.sln -warnaserror && dotnet build ZedLabs.MessageQueue.sln -warnaserror -c Release
+   dotnet format ZedLabs.MessageQueue.sln --verify-no-changes
    MQ_REQUIRE_DOCKER=true scripts/coverage.sh
-   dotnet list ESE.MessageQueue.sln package --vulnerable --include-transitive
-   dotnet pack ESE.MessageQueue.sln -c Release -o artifacts
+   dotnet list ZedLabs.MessageQueue.sln package --vulnerable --include-transitive
+   dotnet pack ZedLabs.MessageQueue.sln -c Release -o artifacts
    ```
    Check `artifacts/`: three `.nupkg` and three `.snupkg` with the new version; the provider packages depend on
-   exactly that core version (`unzip -p artifacts/ESE.MessageQueue.RabbitMQ.*.nupkg '*.nuspec'`).
+   exactly that core version (`unzip -p artifacts/ZedLabs.MessageQueue.RabbitMQ.*.nupkg '*.nuspec'`).
 6. **Commit and tag** (owner's go-ahead): commit on `main`, then `git tag v<version>` and `git push origin main v<version>`.
    `release.yml` reruns the CI gates, pushes to nuget.org (trusted publishing when the `NUGET_USER` variable is set,
    else the `NUGET_API_KEY` secret) and creates the GitHub release with the changelog section.

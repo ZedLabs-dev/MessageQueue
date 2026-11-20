@@ -1,4 +1,4 @@
-# ESE.MessageQueue house style.
+# ZedLabs.MessageQueue house style.
 # Enforced in build via EnforceCodeStyleInBuild (Directory.Build.props) and in CI via
 # `dotnet format --verify-no-changes`. Rules at `warning` fail the build (TreatWarningsAsErrors).
 
@@ -159,5 +159,5 @@ dotnet_diagnostic.CA1816.severity = none
 # Settings/options classes carry no XML comments (CLAUDE.md "Code conventions"): their names, DataAnnotations and
 # validators are the documentation, and docs/message-queue-api.md lists every setting. Only these files, each holding
 # nothing but one settings class, are exempt from CS1591; every other public type and member in src/ is documented.
-[{src/ESE.MessageQueue/Configuration/MessageQueueConfig.cs,src/ESE.MessageQueue/InMemory/InMemoryConfig.cs,src/ESE.MessageQueue.RabbitMQ/RabbitMqConfig.cs,src/ESE.MessageQueue.RabbitMQ/RabbitMqTlsConfig.cs,src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusConfig.cs}]
+[{src/ZedLabs.MessageQueue/Configuration/MessageQueueConfig.cs,src/ZedLabs.MessageQueue/InMemory/InMemoryConfig.cs,src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConfig.cs,src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTlsConfig.cs,src/ZedLabs.MessageQueue.AzureServiceBus/AzureServiceBusConfig.cs}]
 dotnet_diagnostic.CS1591.severity = none

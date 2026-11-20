@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Reviews ESE.MessageQueue changes against the security checklist (OPTIMIZATION-PLAN section 2), runs the vulnerable-package scan and greps for secrets. Read-only; reports findings with file and line. Use before committing anything that touches publishing, consuming, configuration, health checks, telemetry or packages.
+description: Reviews ZedLabs.MessageQueue changes against the security checklist (OPTIMIZATION-PLAN section 2), runs the vulnerable-package scan and greps for secrets. Read-only; reports findings with file and line. Use before committing anything that touches publishing, consuming, configuration, health checks, telemetry or packages.
 tools: Read, Grep, Glob, Bash
 model: opus
 ---
@@ -27,7 +27,7 @@ You review; you do not edit files. Scope: `git diff` (and `git diff --cached`) u
 ## Commands
 
 ```bash
-dotnet list ESE.MessageQueue.sln package --vulnerable --include-transitive     # must report none
+dotnet list ZedLabs.MessageQueue.sln package --vulnerable --include-transitive # must report none
 git diff | grep -nEi 'password|secret|sharedaccesskey|connectionstring\s*=|amqps?://[^ ]*:[^ ]*@|BEGIN (RSA|EC|OPENSSH) PRIVATE KEY' || true
 git grep -nEi 'SharedAccessKey=[A-Za-z0-9+/=]{20,}|amqps?://[^/ :]+:[^@ ]+@' -- ':!*.md' || true
 ```

@@ -1,6 +1,9 @@
 # 0013. Telemetry: trace propagation, span parenting and metrics
 
 - Status: Accepted (2026-10-17). Context: OPTIMIZATION-PLAN B10, S6; ADRs 0004 (dispatcher), 0006 / 0009 (retries)
+- Renamed 2026-11-20 (ADR 0016 amendment): the ActivitySource/Meter and the metric and tag names were
+  `ESE.MessageQueue` / `ese.messagequeue.*` and the in-memory `messaging.system` `ese.inmemory` when this was decided;
+  they are now `ZedLabs.MessageQueue` / `zedlabs.messagequeue.*` and `zedlabs.inmemory`.
 
 ## Context
 
@@ -28,7 +31,7 @@ thread; `ExtractTraceContext` accepted any `a-b-c`; metrics had ad-hoc names, no
   is accidental (the subscriber's, captured when the transport started its loop), so the dispatcher clears it and
   parents on the publisher. Retry copies keep the original headers, so every attempt is a child of the publish span.
 - **Metrics:** `messaging.client.sent.messages`, `messaging.client.operation.duration` (s), `messaging.client.consumed
-  .messages`, `messaging.process.duration` (s), `ese.messagequeue.messages.retried` / `.dead_lettered`; low-cardinality
+  .messages`, `messaging.process.duration` (s), `zedlabs.messagequeue.messages.retried` / `.dead_lettered`; low-cardinality
   tags only (system, destination, operation, message type, subscription, error type, dead-letter reason).
 - **Cost and safety:** nothing is parsed, formatted or tagged without a listener; without a provider publishes share
   one no-op. Every call is guarded and logged (events 1005, 1009); telemetry never changes a publish or delivery.

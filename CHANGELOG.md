@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to ESE.MessageQueue are documented here.
+All notable changes to ZedLabs.MessageQueue are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -13,6 +13,43 @@ resolved.
 - **The Azure Service Bus integration specs have never run against a real broker** (no namespace, and the emulator's
   EULA is the owner's to accept). They skip without `MQ_ASB_CONNECTION_STRING`; the provider is verified only through
   its unit specs over the SDK seams. Run `Category=Integration` with a namespace or the emulator, then remove this item.
+
+### ZedLabs rebrand and Apache-2.0 relicensing (ADR 0016 amended)
+
+The repository moved to https://github.com/ZedLabs/MessageQueue. Nothing had been published, so the old names were
+never on NuGet; this section is the map for anyone who built from source.
+
+#### Breaking: ZedLabs rebrand
+- Package IDs and assemblies: `ESE.MessageQueue` → `ZedLabs.MessageQueue`, `ESE.MessageQueue.RabbitMQ` →
+  `ZedLabs.MessageQueue.RabbitMQ`, `ESE.MessageQueue.AzureServiceBus` → `ZedLabs.MessageQueue.AzureServiceBus`.
+- Namespaces `ESE.MessageQueue.*` → `ZedLabs.MessageQueue.*` (so logger categories, which are the type names, follow).
+- Project folders, project files and the solution (`ESE.MessageQueue.sln` → `ZedLabs.MessageQueue.sln`), including the
+  test, sample and benchmark projects; `InternalsVisibleTo` grants name the new assemblies.
+- Default ActivitySource and Meter name (`AddMessageQueueTelemetry(sourceName)`): `ESE.MessageQueue` →
+  `ZedLabs.MessageQueue`. Update `AddSource`/`AddMeter` in the host's OpenTelemetry setup.
+- Metric and tag names `ese.messagequeue.*` → `zedlabs.messagequeue.*`: the counters `messages.retried`,
+  `messages.dead_lettered`, `transport.errors`, `dead_letters.replayed`, `dead_letters.purged`, and the tags
+  `message_type`, `delivery_attempt`, `dead_letter.reason`, `retry.next_attempt`, `retry.delay_ms`. Prometheus names
+  follow (`ese_messagequeue_*` → `zedlabs_messagequeue_*`); update dashboards and alert rules.
+- `messaging.system` of the in-memory provider: `ese.inmemory` → `zedlabs.inmemory` (the loopback sample's
+  `ese.loopback` → `zedlabs.loopback`).
+- Library-owned message headers and application properties `x-ese-*` → `x-zedlabs-*`: `x-zedlabs-delivery-attempt`,
+  `x-zedlabs-delivery-count`, `x-zedlabs-message-id`, `x-zedlabs-dead-letter-reason`, `x-zedlabs-dead-letter-detail`,
+  `x-zedlabs-dead-letter-attempt`, `x-zedlabs-dead-lettered-at`. Messages written with the old headers (retry copies,
+  dead letters) are read without them: drain queues and dead-letter queues built from source before switching.
+- License: Apache-2.0 replaces MIT; authors, company and copyright holder are ZedLabs (`Copyright 2026 ZedLabs`).
+
+#### Changed
+- `LICENSE` holds the full Apache License 2.0 text; a new `NOTICE` file; both are packed into every package. Package
+  metadata: `PackageLicenseExpression` Apache-2.0, Authors and Company ZedLabs, `RepositoryUrl` and
+  `PackageProjectUrl` https://github.com/ZedLabs/MessageQueue.
+- **One-time exception to the API lock rule:** `PublicAPI.Shipped.txt` of each package was rewritten with the renamed
+  entries (and `PublicAPI.Unshipped.txt` to match) outside `/release`, because every Shipped entry named the old
+  namespaces and nothing had shipped (ADR 0016 amendment).
+
+#### Added
+- `Packaging/Given_the_packed_packages`: packs each package and checks its nuspec (license expression Apache-2.0,
+  authors ZedLabs, copyright, ZedLabs project and repository URL) and that `LICENSE` and `NOTICE` are packed.
 
 ### Mutual TLS against a real broker (ADR 0022 amended)
 
@@ -60,7 +97,7 @@ resolved.
 #### Added
 - `PublishValidation.ValidateBodySize(bodyLength, maxMessageSizeBytes, destination, batchIndex)`: the publish-side size
   check for providers, third-party ones included.
-- RabbitMQ records `ese.messagequeue.transport.errors` with `error.type` `ConnectionFailed`, `ConnectionShutdown`,
+- RabbitMQ records `zedlabs.messagequeue.transport.errors` with `error.type` `ConnectionFailed`, `ConnectionShutdown`,
   `RecoveryFailed`, `ChannelShutdown` or `ConsumerCancelled`; closes the library makes itself are not counted
   (ADR 0027). Log event 2008 (Warning) when telemetry throws while counting one.
 - Debug log events 1010 (`Published message {MessageId} to {Destination}`, the id without control characters) and
@@ -100,7 +137,7 @@ resolved.
 - `docs/release-checklist.md` (the regression suite and release record) and `docs/production-readiness-status.md`
   (every readiness item with status and evidence); `docs/README.md` index.
 - Specs that keep the docs honest (`Packaging/`): `Given_the_documentation_snippets` (guide code is compiled from
-  `samples/ESE.MessageQueue.Samples/Docs/` and must match verbatim; the in-memory guide is executed; every JSON and
+  `samples/ZedLabs.MessageQueue.Samples/Docs/` and must match verbatim; the in-memory guide is executed; every JSON and
   environment-variable example binds strictly and validates), `Given_the_configuration_reference` (every setting and
   default; every quoted startup error is reproduced), `Given_the_monitoring_reference` (every log event id and level,
   metric and unit, attribute name).
@@ -108,7 +145,7 @@ resolved.
 #### Changed
 - `docs/benchmarks.md`: release-grade numbers from BenchmarkDotNet's default job (the ShortRun table is kept for
   comparison). No regression; the in-memory path measures 1.3-2.0 µs per message instead of 3.0 µs.
-- `docs/azure-service-bus-api.md`: the package is `ESE.MessageQueue.AzureServiceBus`, and health results carry no
+- `docs/azure-service-bus-api.md`: the package is `ZedLabs.MessageQueue.AzureServiceBus`, and health results carry no
   exception (it is logged as event 6001); `docs/message-queue-api.md` lists the transport-error and dead-letter
   operation metrics.
 
@@ -129,7 +166,7 @@ resolved.
   (the shared selection, limits, counting, telemetry and logging); the loopback sample provider opts in with them.
 - `DeadLetterLimits` (peek 1000, 10,000 examined per call, 100 listed failures).
 - Telemetry: `ITelemetryProvider.RecordDeadLettersReplayed`/`RecordDeadLettersPurged` (default no-op) and the metrics
-  `ese.messagequeue.dead_letters.replayed` / `.purged`. Log events 1201-1205, 2012, 3018, 3019.
+  `zedlabs.messagequeue.dead_letters.replayed` / `.purged`. Log events 1201-1205, 2012, 3018, 3019.
 - The sample worker's `Sample:DeadLetters` (`None`, `Peek`, `Replay`); operator how-to `docs/dead-letter-operations.md`.
 
 #### Changed (tooling)
@@ -139,8 +176,8 @@ resolved.
 #### Changed
 - `MessageQueueCapabilities` equality and `ToString()` include `DeadLetterOperations`: a first-party queue's
   `Capabilities` no longer equals `new(Durable, DeadLetter, DelayedRedelivery)` built without it.
-- Dead letters record when they were dead-lettered (`x-ese-dead-lettered-at`, RabbitMQ and Service Bus) and, on Service
-  Bus, the attempt (`x-ese-dead-letter-attempt`).
+- Dead letters record when they were dead-lettered (`x-zedlabs-dead-lettered-at`, RabbitMQ and Service Bus) and, on Service
+  Bus, the attempt (`x-zedlabs-dead-letter-attempt`).
 - **RabbitMQ:** a new quorum dead-letter queue is declared with `x-delivery-limit = -1`, so a dead letter returned by
   lost connections is never dropped by the default delivery limit (20). An existing one cannot be redeclared: the
   queue starts with warning 2013; apply a `delivery-limit: -1` policy (`docs/dead-letter-operations.md`).
@@ -200,19 +237,19 @@ Design records: `docs/adr/0019` (source-generated JSON metadata), `0020` (`Requi
 Design records: `docs/adr/0015` (provider SPI and package split), `0016` (API lock and packaging), `0017` (tooling).
 
 #### Breaking
-- Three packages (ADR 0005): `ESE.MessageQueue` (core, in-memory provider; no broker SDK), `ESE.MessageQueue.RabbitMQ`
-  and `ESE.MessageQueue.AzureServiceBus`. Broker providers must be registered before `AddMessageQueue<T>`:
+- Three packages (ADR 0005): `ZedLabs.MessageQueue` (core, in-memory provider; no broker SDK), `ZedLabs.MessageQueue.RabbitMQ`
+  and `ZedLabs.MessageQueue.AzureServiceBus`. Broker providers must be registered before `AddMessageQueue<T>`:
   `services.AddRabbitMqProvider()` / `services.AddAzureServiceBusProvider()`. An unregistered `Provider` now fails with
   "`<section>:Provider '<name>' is not registered. Registered providers: InMemory, ...`" (was "is not supported.
   Supported providers: ..."). A provider registered as a type or factory instead of `AddMessageQueueProvider(instance)`
   fails registration with a message saying so.
 - The core package no longer depends on RabbitMQ.Client, Azure.Messaging.ServiceBus or Azure.Identity. An app that
-  used those SDKs' types directly while getting them through `ESE.MessageQueue` must reference them itself (or the
+  used those SDKs' types directly while getting them through `ZedLabs.MessageQueue` must reference them itself (or the
   provider package that brings them).
-- **Lockstep versions:** `ESE.MessageQueue.RabbitMQ` and `ESE.MessageQueue.AzureServiceBus` depend on the exact
-  `ESE.MessageQueue` version they were built with (`[1.0.0-rc.1]`), because they share its internals (ADR 0015).
-  Upgrade all `ESE.MessageQueue*` packages together.
-- `ESE.MessageQueue.Testing.TestingExtensions` (removed in Phase 4, listed here for completeness): use
+- **Lockstep versions:** `ZedLabs.MessageQueue.RabbitMQ` and `ZedLabs.MessageQueue.AzureServiceBus` depend on the exact
+  `ZedLabs.MessageQueue` version they were built with (`[1.0.0-rc.1]`), because they share its internals (ADR 0015).
+  Upgrade all `ZedLabs.MessageQueue*` packages together.
+- `ZedLabs.MessageQueue.Testing.TestingExtensions` (removed in Phase 4, listed here for completeness): use
   `AddInMemoryMessageQueue<T>()` from `MessageQueueServiceCollectionExtensions`.
 - **Health checks attach no exception any more** (S5): `HealthCheckResult.Exception` is null and `Data` is empty on
   failure (the generic check no longer puts the queue name in `Data`); the exception is logged with event id 6001
@@ -237,20 +274,20 @@ Design records: `docs/adr/0015` (provider SPI and package split), `0016` (API lo
   records `RabbitMqConfig`, `RabbitMqTlsConfig`, `AzureServiceBusConfig`, `InMemoryConfig`, `RetryPolicy`.
 - `TelemetryActivity.Dispose()` is no longer virtual: override `protected virtual Dispose(bool disposing)` instead
   (standard dispose pattern; CA1816 is enforced again).
-- Moved to namespace `ESE.MessageQueue.Providers` and made public as the provider SPI: `MessageDispatcher<T>`,
+- Moved to namespace `ZedLabs.MessageQueue.Providers` and made public as the provider SPI: `MessageDispatcher<T>`,
   `IDeliveryActions`, `DeadLetterReason`, `DispatchOutcome`, `PublishTelemetry`, `PublishValidation`,
-  `MessageSerializer` (was `ESE.MessageQueue.Serialization`, internal).
+  `MessageSerializer` (was `ZedLabs.MessageQueue.Serialization`, internal).
 
 #### Added
 - Provider SPI for third-party providers (ADR 0015): `IMessageQueueProvider`, `MessageQueueRegistration<T>` (strict
   binding, shared validation and `ValidateOnStart` done by core), `QueueFactoryContext<TConfig>`,
   `MessageQueueConfigValidator<TConfig>`, `MessageContextExtensions.WithTraceHeaders`, public `TraceHeaders`, and
-  `services.AddMessageQueueProvider(provider)`. `samples/ESE.MessageQueue.Samples.LoopbackProvider` is a provider
+  `services.AddMessageQueueProvider(provider)`. `samples/ZedLabs.MessageQueue.Samples.LoopbackProvider` is a provider
   built on that SPI alone.
 - Public API lock: PublicApiAnalyzers with `PublicAPI.Shipped.txt` baselines; XML documentation on every public type
   and member (options classes excepted, per the house rules).
-- NuGet packaging: MIT license (new `LICENSE`), README per package, SourceLink, deterministic builds, `.snupkg` symbols,
-  package validation; provider packages depend on the exact core version. `release.yml` publishes on `v*` tags (NuGet
+- NuGet packaging: MIT license (new `LICENSE`; Apache-2.0 since the ZedLabs rebrand above), README per package,
+  SourceLink, deterministic builds, `.snupkg` symbols, package validation; provider packages depend on the exact core version. `release.yml` publishes on `v*` tags (NuGet
   trusted publishing or `NUGET_API_KEY`) and creates the GitHub release from this file.
 - Claude Code tooling: format-on-edit and build/unit-test Stop hooks, `test-writer`, `security-reviewer`,
   `package-updater` and `adversarial-reviewer` agents, `update-packages`, `add-tests`, `release` and `mutation-test`
@@ -267,15 +304,15 @@ Design records: `docs/adr/0015` (provider SPI and package split), `0016` (API lo
   attempt header counts only when the broker's `x-death` history says the message expired out of this queue's retry
   queue (ADR 0006 note: a publisher can still forge both, for its own messages).
 - Service Bus processor errors are counted: `ITelemetryProvider.RecordTransportError` (default interface method, so
-  custom providers keep compiling) and the metric `ese.messagequeue.transport.errors` with `error.type` (B6).
+  custom providers keep compiling) and the metric `zedlabs.messagequeue.transport.errors` with `error.type` (B6).
 - `MessageDispatcher<T>` validates its arguments and snapshots the config it is given; JSON deserialization states
   `MaxDepth = 64` explicitly (ADR 0018).
 - Packed assemblies grant `InternalsVisibleTo` only to the first-party provider packages; tests and benchmarks see
   internals in development builds only.
-- Samples: settings are read from the output folder (`dotnet run --project samples/ESE.MessageQueue.Samples` works
+- Samples: settings are read from the output folder (`dotnet run --project samples/ZedLabs.MessageQueue.Samples` works
   from the repository root), and the broker is chosen with `-- --environment RabbitMq`.
 - The RabbitMQ test and benchmark image tag lives in `docker/test-broker/Dockerfile`, watched by Dependabot.
-- Repository layout: `MessageQueue/` → `src/ESE.MessageQueue*/`, `MessageQueue.Tests/` → `tests/ESE.MessageQueue.Tests/`,
+- Repository layout: `MessageQueue/` → `src/ZedLabs.MessageQueue*/`, `MessageQueue.Tests/` → `tests/ZedLabs.MessageQueue.Tests/`,
   the compose file, `.env.example` and emulator config → `docker/`, the API docs → `docs/`. The local `.env` now lives in
   `docker/.env`.
 - Coverage is gated on the three packages together (87%) plus a per-assembly floor (`scripts/coverage.sh`).
@@ -303,13 +340,13 @@ Design records: `docs/adr/0013` (telemetry), `docs/adr/0014` (samples and benchm
 - `OpenTelemetryProvider` metric names follow the OpenTelemetry messaging semantic conventions:
   - `messaging.client.sent.messages` (was `messagequeue.messages.published`)
   - `messaging.client.consumed.messages` (was `messagequeue.messages.consumed`; `error.type` replaces `success`)
-  - `ese.messagequeue.messages.retried` and `ese.messagequeue.messages.dead_lettered` (with
-    `ese.messagequeue.dead_letter.reason`)
+  - `zedlabs.messagequeue.messages.retried` and `zedlabs.messagequeue.messages.dead_lettered` (with
+    `zedlabs.messagequeue.dead_letter.reason`)
   
   Attributes are now `messaging.system`, `messaging.destination.name`, `messaging.operation.name`,
-  `ese.messagequeue.message_type`, `error.type` (and `messaging.destination.subscription.name` on Service Bus
+  `zedlabs.messagequeue.message_type`, `error.type` (and `messaging.destination.subscription.name` on Service Bus
   subscriptions), replacing `queue`, `message_type` and `success`. Span names are `{operation} {destination}`
-  (`send` on Service Bus), and `messaging.system` is the broker (`rabbitmq`, `servicebus`, `ese.inmemory`) instead of
+  (`send` on Service Bus), and `messaging.system` is the broker (`rabbitmq`, `servicebus`, `zedlabs.inmemory`) instead of
   `messagequeue`. The RabbitMQ destination is `{exchange}:{queue}` (exchange and routing key), and Service Bus
   subscription consumers report the topic, so publish and consume telemetry join.
 - `OpenTelemetryProvider` implements `IDisposable` (disposes its `ActivitySource` and `Meter`);
@@ -318,8 +355,8 @@ Design records: `docs/adr/0013` (telemetry), `docs/adr/0014` (samples and benchm
   all-zero ids) are now ignored.
 - In-memory `PublishAsync(IEnumerable<T>)` validates and serializes every message before queueing any (as RabbitMQ
   and Service Bus do) and traces the batch as one span.
-- The sample classes in `ESE.MessageQueue.Examples` (`OrderCreated`, `OrderCreatedProcessor`, `OrderService`, ...) are
-  removed from the library; see `samples/ESE.MessageQueue.Samples` (§4.7).
+- The sample classes in `ZedLabs.MessageQueue.Examples` (`OrderCreated`, `OrderCreatedProcessor`, `OrderService`, ...) are
+  removed from the library; see `samples/ZedLabs.MessageQueue.Samples` (§4.7).
 - `MessageQueue/.env.example` and `docker-compose.dev.yml` no longer have default RabbitMQ credentials or a working
   SQL Server password (S8). Compose refuses to start until `RABBITMQ_USER` / `RABBITMQ_PASS` / `MSSQL_SA_PASSWORD`
   are set in `MessageQueue/.env`; the example ships placeholders to replace. Ports bind to `127.0.0.1` only.
@@ -333,8 +370,8 @@ Design records: `docs/adr/0013` (telemetry), `docs/adr/0014` (samples and benchm
     acknowledged get Error status and the metrics' `error.type`.
   - Trace headers match case-insensitively and may be strings or UTF-8 bytes; on Service Bus the SDK's `Diagnostic-Id`
     is the fallback for `traceparent`.
-  - Retries and dead letters are tagged on the span (`ese.messagequeue.retry.next_attempt`,
-    `ese.messagequeue.dead_letter.reason`).
+  - Retries and dead letters are tagged on the span (`zedlabs.messagequeue.retry.next_attempt`,
+    `zedlabs.messagequeue.dead_letter.reason`).
   - The consume span is `Activity.Current` inside the handler.
   - A message without valid trace headers starts a new trace instead of joining the subscriber's ambient span.
 - Duration histograms `messaging.client.operation.duration` (publish) and `messaging.process.duration` (receipt to
@@ -345,11 +382,11 @@ Design records: `docs/adr/0013` (telemetry), `docs/adr/0014` (samples and benchm
 - Publish telemetry is guarded like the consumer pipeline: a throwing provider is logged (event 1009) and never fails
   or changes a publish. Without a telemetry provider, publishing allocates nothing for telemetry; with one, nothing is
   parsed, formatted or tagged while no listener is attached.
-- `samples/ESE.MessageQueue.Samples`: a worker on the in-memory provider by default (RabbitMQ / Azure Service Bus via
+- `samples/ZedLabs.MessageQueue.Samples`: a worker on the in-memory provider by default (RabbitMQ / Azure Service Bus via
   `--environment`), a processor showing Acknowledge / Retry / DeadLetter, and OpenTelemetry console-exporter wiring.
   The sample only references `OpenTelemetry.Extensions.Hosting` / `OpenTelemetry.Exporter.Console` 1.20.0 and
   `Microsoft.Extensions.Hosting` 10.0.13. A Unit smoke test boots it.
-- `benchmarks/ESE.MessageQueue.Benchmarks` (BenchmarkDotNet 0.15.8): serializer, dispatcher overhead, in-memory
+- `benchmarks/ZedLabs.MessageQueue.Benchmarks` (BenchmarkDotNet 0.15.8): serializer, dispatcher overhead, in-memory
   throughput, RabbitMQ confirms. CI builds it, and `dotnet test` does not run it.
 
 #### Changed
@@ -368,7 +405,7 @@ Design records: `docs/adr/0009`–`0012`.
   `FullyQualifiedNamespace` must be set. A malformed connection string now fails validation at startup and in the
   constructor (`OptionsValidationException`) instead of `MessageQueueException` from the constructor.
 - Queue retries are scheduled copies (`ScheduledEnqueueTime` = now + backoff) sent with a new `MessageId` and the
-  original id in `x-ese-message-id`, then the original is completed, in one transaction by default (B5).
+  original id in `x-zedlabs-message-id`, then the original is completed, in one transaction by default (B5).
   `Capabilities.DelayedRedelivery` is `true` for queues; the backoff startup warning no longer applies to them.
   Partitioned entities, the Basic tier and the emulator refuse the transaction: on the first refusal the queue switches
   to send-then-complete for good (one warning; the backoff still applies). `TransactionalRetries = false` skips the
@@ -378,13 +415,13 @@ Design records: `docs/adr/0009`–`0012`.
   `DelayedRedelivery` stays `false` there. A startup warning appears when `Retry.MaxRetries + 1` exceeds Service Bus's
   default `MaxDeliveryCount` (10), and another when a subscription uses `PrefetchCount > 0` (prefetched locks run down
   while retries hold handler slots).
-- `MessageContext.DeliveryAttempt` comes from library properties (`x-ese-delivery-attempt`, `x-ese-delivery-count`)
+- `MessageContext.DeliveryAttempt` comes from library properties (`x-zedlabs-delivery-attempt`, `x-zedlabs-delivery-count`)
   when they agree with the broker's `DeliveryCount`, else from `DeliveryCount`; values saturate (always 1 to
   `int.MaxValue`). Dead letters set the marker out of reach, so a message resubmitted from the DLQ starts at attempt 1. `MessageContext.MessageId` is the
   original id across retries, and empty (never null) for messages without a `MessageId`. `MessageContext.Headers` no longer contains `x-*`, `traceparent`, `tracestate` or
   the SDK's `Diagnostic-Id`.
 - Dead letters carry the reason code and exception type in the reason, description and the application properties
-  `x-ese-dead-letter-reason` / `x-ese-dead-letter-detail`; never exception text. `OriginalException` is gone (S6).
+  `x-zedlabs-dead-letter-reason` / `x-zedlabs-dead-letter-detail`; never exception text. `OriginalException` is gone (S6).
 - A second `SubscribeAsync` throws `InvalidOperationException` (it used to fail inside the SDK, wrapped).
   `UnsubscribeAsync` and `DisposeAsync` are bounded by the new `ShutdownTimeout` (default 30 s); cancelled handlers'
   messages are abandoned for redelivery without using an attempt. `Dispose()` runs `DisposeAsync` on the thread
@@ -453,8 +490,8 @@ Design records: `docs/adr/0006`–`0008`.
   `{QueueName}.retry.{ms}` (declared on first use, same queue type as the main queue) and come back to the main
   queue when their TTL expires. `Capabilities.DelayedRedelivery` is now `true`. Delete the retry queues together
   with the main queue.
-- Dead letters are published by the library to the dead-letter queue, with headers `x-ese-dead-letter-reason`
-  (a `DeadLetterReasons` code) and `x-ese-dead-letter-detail` (exception type), then the original is acked. Before,
+- Dead letters are published by the library to the dead-letter queue, with headers `x-zedlabs-dead-letter-reason`
+  (a `DeadLetterReasons` code) and `x-zedlabs-dead-letter-detail` (exception type), then the original is acked. Before,
   the original was nacked into the broker DLX without a reason. The main queue's DLX arguments are unchanged.
 - `MessageContext.DeliveryAttempt` now also counts broker redeliveries (`x-delivery-count` on quorum queues, the
   redelivered flag on classic queues). A delivery interrupted by a crash or by `UnsubscribeAsync` uses up an attempt.
@@ -562,8 +599,8 @@ Design records: `docs/adr/0001`–`0004`. Pre-v1, so these breaking changes ship
   a blank or over-128-character `MessageId`, more than 64 headers, blank or long header names, values over 4096
   characters, and reserved header names (`x-*`, `traceparent`, `tracestate`) throw `ArgumentException`.
 - `MessageContext.Headers` is immutable: the given dictionary is copied into a frozen dictionary.
-- The in-memory queue moved from `ESE.MessageQueue.Testing` to `ESE.MessageQueue.InMemory` and is now a provider
-  (`Provider = InMemory`). `AddInMemoryMessageQueue<T>()` moved to `ESE.MessageQueue.Extensions.ServiceCollectionExtensions`
+- The in-memory queue moved from `ZedLabs.MessageQueue.Testing` to `ZedLabs.MessageQueue.InMemory` and is now a provider
+  (`Provider = InMemory`). `AddInMemoryMessageQueue<T>()` moved to `ZedLabs.MessageQueue.Extensions.ServiceCollectionExtensions`
   and takes an optional `Action<InMemoryConfig>`. Removed `ProcessAllAsync`, `ProcessOneAsync`, `Count` and
   `PendingMessages`: delivery is now automatic on a background loop; use `WaitForIdleAsync`, `PendingCount`,
   `ProcessedMessages` and the new `DeadLetters`. `Clear()` now clears only the recorded lists.
@@ -578,8 +615,8 @@ Design records: `docs/adr/0001`–`0004`. Pre-v1, so these breaking changes ship
 - `TelemetryActivity.SetError` is now `virtual` (`OpenTelemetryActivity` overrides it). `OpenTelemetryActivity`'s
   constructor gains an optional `recordExceptionDetails` parameter.
 - `InMemoryMessageQueue<T>` is `sealed`.
-- Design decision recorded for Phase 7: split into ESE.MessageQueue (core), ESE.MessageQueue.RabbitMQ and
-  ESE.MessageQueue.AzureServiceBus with a public provider-registration extension point (ADR 0005). Not implemented yet.
+- Design decision recorded for Phase 7: split into ZedLabs.MessageQueue (core), ZedLabs.MessageQueue.RabbitMQ and
+  ZedLabs.MessageQueue.AzureServiceBus with a public provider-registration extension point (ADR 0005). Not implemented yet.
 
 #### Fixed
 - B9: `SetError` called through a `TelemetryActivity` reference now sets the span's error status.
@@ -678,4 +715,4 @@ Test infrastructure only; no change to the library or its public API.
   `TelemetryTests.cs` split by class under test. The cleanup method that ran as a `[Fact]` is now `IAsyncLifetime`
   cleanup. Hardcoded broker credentials removed from the tests.
 - Coverage gate: `scripts/coverage.sh` (coverlet + ReportGenerator local tool) fails CI below 59% line coverage of
-  `ESE.MessageQueue`. CI now runs unit and integration tests as separate steps.
+  `ZedLabs.MessageQueue`. CI now runs unit and integration tests as separate steps.

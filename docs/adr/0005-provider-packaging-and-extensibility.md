@@ -2,10 +2,12 @@
 
 - Status: Accepted (2026-10-16); implemented in Phase 7 (see ADR 0015)
 - Context: OPTIMIZATION-PLAN §3a (AWS SNS/SQS and MQTT may follow), §6.2 PublicApiAnalyzers, Phase 7
+- Renamed 2026-11-20 (ADR 0016 amendment): the packages were `ESE.MessageQueue*` when this was decided; they are
+  now `ZedLabs.MessageQueue*`.
 
 ## Context
 
-`ESE.MessageQueue` ships one assembly that references RabbitMQ.Client and Azure.Messaging.ServiceBus. Every consumer
+`ZedLabs.MessageQueue` ships one assembly that references RabbitMQ.Client and Azure.Messaging.ServiceBus. Every consumer
 pulls both SDKs (and their vulnerability surface) even when it uses one broker or only the in-memory provider, and a
 new provider can only be added by changing `AddMessageQueue<T>`'s `switch` and the `MessageQueueProvider` enum.
 
@@ -13,9 +15,9 @@ new provider can only be added by changing `AddMessageQueue<T>`'s `switch` and t
 
 Before the v1 API is locked, split into packages:
 
-- **ESE.MessageQueue**: abstractions, `MessageDispatcher<T>` and the `IDeliveryActions` seam, configuration base and
+- **ZedLabs.MessageQueue**: abstractions, `MessageDispatcher<T>` and the `IDeliveryActions` seam, configuration base and
   validation, retry, serialization, the in-memory provider, hosting and telemetry. No broker SDK.
-- **ESE.MessageQueue.RabbitMQ** and **ESE.MessageQueue.AzureServiceBus**: one provider each, with its config,
+- **ZedLabs.MessageQueue.RabbitMQ** and **ZedLabs.MessageQueue.AzureServiceBus**: one provider each, with its config,
   validator, health check and registration extension.
 - A **public provider-registration extension point** in the core: a provider registers itself under a name
   (`Provider` stays a string in configuration) together with its config type, validator and queue factory. The

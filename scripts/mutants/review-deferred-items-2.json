@@ -1,14 +1,14 @@
 {
   "description": "Packaging specs added by the section 9 change",
-  "defaults": { "filter": "Category=Unit&FullyQualifiedName~Packaging", "project": "tests/ESE.MessageQueue.Tests" },
+  "defaults": { "filter": "Category=Unit&FullyQualifiedName~Packaging", "project": "tests/ZedLabs.MessageQueue.Tests" },
   "mutants": [
     { "id": "R-K1", "name": "second type in a CS1591-exempt settings file",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTlsConfig.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTlsConfig.cs",
       "find": "public sealed record RabbitMqTlsConfig\n",
       "replace": "public sealed class UndocumentedExtra { public int X { get; set; } }\n\npublic sealed record RabbitMqTlsConfig\n" },
     { "id": "R-K2", "name": "nullable-oblivious entry in a PublicAPI file",
-      "file": "src/ESE.MessageQueue.RabbitMQ/PublicAPI.Unshipped.txt",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/PublicAPI.Unshipped.txt",
       "find": "#nullable enable\n",
-      "replace": "#nullable enable\n~ESE.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificatePath.get -> string\n" }
+      "replace": "#nullable enable\n~ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificatePath.get -> string\n" }
   ]
 }

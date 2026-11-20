@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <AssemblyName>ZedLabs.MessageQueue.RabbitMQ</AssemblyName>
+        <RootNamespace>ZedLabs.MessageQueue.RabbitMQ</RootNamespace>
+        <Description>RabbitMQ provider for ZedLabs.MessageQueue (RabbitMQ.Client 7): publisher confirms, quorum queues, broker-side retry backoff, dead-letter queues, TLS enforcement and a health check that reuses the queue's connection.</Description>
+        <PackageTags>$(PackageTags);rabbitmq;amqp</PackageTags>
+    </PropertyGroup>
+
+    <!-- Tests and benchmarks see internals in development builds only; `dotnet pack` (which sets _IsPacking) builds the
+         shipped assembly without them (ADR 0016). -->
+    <ItemGroup Condition="'$(_IsPacking)' != 'true'">
+        <InternalsVisibleTo Include="ZedLabs.MessageQueue.Tests" />
+        <InternalsVisibleTo Include="ZedLabs.MessageQueue.Benchmarks" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="RabbitMQ.Client" />
+        <PackageReference Include="System.Threading.RateLimiting" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\ZedLabs.MessageQueue\ZedLabs.MessageQueue.csproj" />
+    </ItemGroup>
+
+</Project>

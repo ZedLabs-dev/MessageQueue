@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <IsPackable>false</IsPackable>
+        <!-- xunit.v3 test projects are executables. -->
+        <OutputType>Exe</OutputType>
+        <!--
+          Run through VSTest (Microsoft.NET.Test.Sdk + xunit.runner.visualstudio), not Microsoft Testing Platform:
+          keeps the VSTest `filter Category=Unit` syntax and the coverlet.collector data collector working on the .NET 10 SDK.
+        -->
+        <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+        <AssemblyName>ZedLabs.MessageQueue.Tests</AssemblyName>
+        <RootNamespace>ZedLabs.MessageQueue.Tests</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="AwesomeAssertions" />
+        <PackageReference Include="coverlet.collector" />
+        <PackageReference Include="Microsoft.Extensions.Configuration" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+        <PackageReference Include="Microsoft.Extensions.Logging" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="NSubstitute" />
+        <PackageReference Include="Testcontainers.RabbitMq" />
+        <PackageReference Include="xunit.runner.visualstudio" />
+        <PackageReference Include="xunit.v3" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Using Include="Xunit" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\..\docker\test-broker\Dockerfile" Link="test-broker.Dockerfile" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\src\ZedLabs.MessageQueue\ZedLabs.MessageQueue.csproj" />
+      <ProjectReference Include="..\..\src\ZedLabs.MessageQueue.RabbitMQ\ZedLabs.MessageQueue.RabbitMQ.csproj" />
+      <ProjectReference Include="..\..\src\ZedLabs.MessageQueue.AzureServiceBus\ZedLabs.MessageQueue.AzureServiceBus.csproj" />
+      <!-- Smoke-tested in Samples/: the sample host boots on the in-memory provider and processes a message. -->
+      <ProjectReference Include="..\..\samples\ZedLabs.MessageQueue.Samples\ZedLabs.MessageQueue.Samples.csproj" />
+      <!-- A third-party-style provider built on the public SPI only (no InternalsVisibleTo), ADR 0015. -->
+      <ProjectReference Include="..\..\samples\ZedLabs.MessageQueue.Samples.LoopbackProvider\ZedLabs.MessageQueue.Samples.LoopbackProvider.csproj" />
+    </ItemGroup>
+
+</Project>

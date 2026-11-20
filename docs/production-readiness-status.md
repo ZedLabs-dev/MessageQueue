@@ -87,9 +87,9 @@ Open and blocked items, at a glance:
 
 | Item | Status | Evidence |
 |---|---|---|
-| Getting started per provider | Done | [in-memory](getting-started/in-memory.md), [RabbitMQ](getting-started/rabbitmq.md), [Azure Service Bus](getting-started/azure-service-bus.md); their code is compiled from `samples/ESE.MessageQueue.Samples/Docs/` and the in-memory guide is executed (`Packaging/Given_the_documentation_snippets`) |
+| Getting started per provider | Done | [in-memory](getting-started/in-memory.md), [RabbitMQ](getting-started/rabbitmq.md), [Azure Service Bus](getting-started/azure-service-bus.md); their code is compiled from `samples/ZedLabs.MessageQueue.Samples/Docs/` and the in-memory guide is executed (`Packaging/Given_the_documentation_snippets`) |
 | Configuration examples for appsettings.json and environment variables | Done | Every guide and [configuration.md](configuration.md); every example is bound and validated by the same spec |
-| Usage samples: publisher, consumer, processor | Done | Guides; runnable worker `samples/ESE.MessageQueue.Samples`; provider sample `samples/ESE.MessageQueue.Samples.LoopbackProvider` |
+| Usage samples: publisher, consumer, processor | Done | Guides; runnable worker `samples/ZedLabs.MessageQueue.Samples`; provider sample `samples/ZedLabs.MessageQueue.Samples.LoopbackProvider` |
 | Failure modes and how to monitor and operate | Done | [failure-modes.md](operations/failure-modes.md), [monitoring.md](operations/monitoring.md) |
 | Telemetry integration (OpenTelemetry setup, custom providers) | Done | [monitoring.md](operations/monitoring.md#wiring), guides' telemetry step (compiled) |
 

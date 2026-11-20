@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- A runnable worker that shows the library end to end. Not packed; the library itself references no exporter. -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <AssemblyName>ZedLabs.MessageQueue.Samples</AssemblyName>
+        <RootNamespace>ZedLabs.MessageQueue.Samples</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Hosting" />
+        <PackageReference Include="OpenTelemetry.Exporter.Console" />
+        <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\ZedLabs.MessageQueue\ZedLabs.MessageQueue.csproj" />
+        <ProjectReference Include="..\..\src\ZedLabs.MessageQueue.RabbitMQ\ZedLabs.MessageQueue.RabbitMQ.csproj" />
+        <ProjectReference Include="..\..\src\ZedLabs.MessageQueue.AzureServiceBus\ZedLabs.MessageQueue.AzureServiceBus.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="appsettings*.json" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+</Project>

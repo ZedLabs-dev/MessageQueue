@@ -1,4 +1,4 @@
-# ESE.MessageQueue
+# ZedLabs.MessageQueue
 
 Provider-agnostic event messaging for .NET 10. Applications code against `IMessageQueue<T>`
 (`IMessagePublisher<T>` + `IMessageSubscriber<T>`); RabbitMQ, Azure Service Bus and an in-memory queue are
@@ -12,17 +12,17 @@ deserialization, your handler, then retry with real backoff and dead-lettering.
 
 | Package | Use it for |
 |---|---|
-| `ESE.MessageQueue` | Abstractions, pipeline, hosting, telemetry, the in-memory provider, and the provider SPI |
-| `ESE.MessageQueue.RabbitMQ` | RabbitMQ (RabbitMQ.Client 7) |
-| `ESE.MessageQueue.AzureServiceBus` | Azure Service Bus (Entra ID or connection string) |
+| `ZedLabs.MessageQueue` | Abstractions, pipeline, hosting, telemetry, the in-memory provider, and the provider SPI |
+| `ZedLabs.MessageQueue.RabbitMQ` | RabbitMQ (RabbitMQ.Client 7) |
+| `ZedLabs.MessageQueue.AzureServiceBus` | Azure Service Bus (Entra ID or connection string) |
 
 All three share one version; upgrade them together.
 
 ## Quick start
 
 ```csharp
-using ESE.MessageQueue.Extensions;
-using ESE.MessageQueue.Hosting;
+using ZedLabs.MessageQueue.Extensions;
+using ZedLabs.MessageQueue.Hosting;
 
 builder.Services.AddRabbitMqProvider();                                   // before AddMessageQueue<T>; InMemory is built in
 builder.Services.AddMessageQueue<OrderCreated>(builder.Configuration);    // section "MessageQueue"
@@ -43,7 +43,7 @@ builder.Services.AddMessageQueueTelemetry("MyApp.Messaging");             // opt
 ```
 
 Publish with `IMessagePublisher<OrderCreated>.PublishAsync(order)`; the processor returns `Acknowledge`, `Retry` or
-`DeadLetter`. A runnable worker is in [samples/ESE.MessageQueue.Samples](samples/ESE.MessageQueue.Samples); the
+`DeadLetter`. A runnable worker is in [samples/ZedLabs.MessageQueue.Samples](samples/ZedLabs.MessageQueue.Samples); the
 [getting-started guides](docs/getting-started/in-memory.md) walk through it per provider.
 
 ## Documentation
@@ -66,9 +66,9 @@ Everything is indexed in [docs/](docs/README.md).
 ## Building
 
 ```bash
-dotnet build ESE.MessageQueue.sln -warnaserror
-dotnet test ESE.MessageQueue.sln --filter Category=Unit     # no Docker needed
+dotnet build ZedLabs.MessageQueue.sln -warnaserror
+dotnet test ZedLabs.MessageQueue.sln --filter Category=Unit # no Docker needed
 scripts/coverage.sh                                         # full suite; RabbitMQ via Testcontainers (Docker)
 ```
 
-MIT licensed; see [LICENSE](LICENSE).
+Licensed under the Apache License 2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 ZedLabs.

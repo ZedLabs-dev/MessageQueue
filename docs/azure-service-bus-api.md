@@ -4,7 +4,7 @@
 subscription. It runs every delivery through the shared consumer pipeline (`MessageDispatcher<T>`, ADR 0004), so
 retry counting, backoff decisions and dead-lettering behave as on every other provider.
 
-**Namespace:** `ESE.MessageQueue.AzureServiceBus` (package `ESE.MessageQueue.AzureServiceBus`, .NET 10)
+**Namespace:** `ZedLabs.MessageQueue.AzureServiceBus` (package `ZedLabs.MessageQueue.AzureServiceBus`, .NET 10)
 **SDK:** Azure.Messaging.ServiceBus 7.21, Azure.Identity 1.21
 **Design records:** ADR 0009 (backoff and attempts), 0010 (lifecycle and settlement), 0011 (identity, health,
 secrets), 0012 (one sender, batching)
@@ -18,11 +18,11 @@ Step-by-step setup: [getting started with Azure Service Bus](getting-started/azu
 ### Registration
 
 ```csharp
-using ESE.MessageQueue.Extensions;
-using ESE.MessageQueue.Hosting;
-using ESE.MessageQueue.HealthChecks;
+using ZedLabs.MessageQueue.Extensions;
+using ZedLabs.MessageQueue.Hosting;
+using ZedLabs.MessageQueue.HealthChecks;
 
-services.AddAzureServiceBusProvider();                                     // package ESE.MessageQueue.AzureServiceBus
+services.AddAzureServiceBusProvider();                                     // package ZedLabs.MessageQueue.AzureServiceBus
 services.AddMessageQueue<OrderCreated>(configuration);                     // binds the "MessageQueue" section
 services.AddMessageProcessor<OrderCreated, OrderCreatedProcessor>();       // scoped: one instance per message
 services.AddHostedService<MessageQueueHostedService<OrderCreated>>();      // consumes for the host's lifetime
@@ -125,7 +125,7 @@ redelivery, without using up an attempt.
 | Subscription | The message is held under its lock for the delay (if it fits the lock-renewal budget), then abandoned | false |
 
 - **Queue mode**: the copy has a new `MessageId` (so duplicate detection cannot drop it) and carries the original id in
-  `x-ese-message-id`; handlers still see the original `MessageContext.MessageId`. With `TransactionalRetries`
+  `x-zedlabs-message-id`; handlers still see the original `MessageContext.MessageId`. With `TransactionalRetries`
   (default true) the send and the complete are atomic. Partitioned entities, the Basic tier and the emulator refuse
   the transaction: on the first refusal the queue switches to sending the copy first, then completing (the worst case
   is a duplicate, never a loss), and logs one warning. `TransactionalRetries = false` skips the attempt. Each commit
@@ -138,24 +138,24 @@ redelivery, without using up an attempt.
   `MaxRetries + 1`, or the broker dead-letters first (reason `MaxDeliveryCountExceeded`). With `PrefetchCount > 0`
   a startup warning notes that prefetched messages' locks run down while retries hold handler slots; consider
   `PrefetchCount = 0` on subscriptions with long backoffs.
-- **Attempts**: `MessageContext.DeliveryAttempt` comes from the library's `x-ese-delivery-attempt` and
-  `x-ese-delivery-count` properties when they agree with the broker's `DeliveryCount`, else from `DeliveryCount`.
+- **Attempts**: `MessageContext.DeliveryAttempt` comes from the library's `x-zedlabs-delivery-attempt` and
+  `x-zedlabs-delivery-count` properties when they agree with the broker's `DeliveryCount`, else from `DeliveryCount`.
   Publishers cannot set `x-` properties through this library. Dead letters set the marker out of reach, so a message
   resubmitted from the dead-letter queue starts again at attempt 1.
 - **Dead letters** go to the entity's `$deadletterqueue` with `DeadLetterReason` = a `DeadLetterReasons` code,
   `DeadLetterErrorDescription` = the exception type (or empty), and the same in the application properties
-  `x-ese-dead-letter-reason` / `x-ese-dead-letter-detail`. Exception messages are never stored.
+  `x-zedlabs-dead-letter-reason` / `x-zedlabs-dead-letter-detail`. Exception messages are never stored.
 - **Poison messages**: a message whose body or metadata cannot be read is dead-lettered as `DeliveryFailed`. A
   settlement that fails is retried after a per-message backoff (100 ms, doubling, at most 30 s) by abandoning the
   message; abandons count towards `MaxDeliveryCount`, which ends a persistent failure in the dead-letter queue.
 
 - **Dead-letter operations** (`IDeadLetterQueue<T>`, ADR 0023): `PeekAsync` browses the dead-letter subqueue without
   locking (Listen); `PurgeAsync` completes selected dead letters (Listen); `ReplayAsync` (queues only, Send and Listen)
-  sends each as a copy with a new broker id and the original id in `x-ese-message-id` (so `MessageContext.MessageId` is
+  sends each as a copy with a new broker id and the original id in `x-zedlabs-message-id` (so `MessageContext.MessageId` is
   unchanged and duplicate detection cannot drop it), attempt 1, then completes the dead letter, in one transaction while
   `TransactionalRetries` is on and the entity accepts it. On a topic subscription replay throws
   `NotSupportedException`: a resend to the topic would reach every subscription. Dead letters also record
-  `x-ese-dead-lettered-at` and `x-ese-dead-letter-attempt`. See [dead-letter-operations.md](dead-letter-operations.md).
+  `x-zedlabs-dead-lettered-at` and `x-zedlabs-dead-letter-attempt`. See [dead-letter-operations.md](dead-letter-operations.md).
 
 ## Configuration (`AzureServiceBusConfig`)
 
@@ -210,7 +210,7 @@ Base settings (`QueueName`, `Retry`, `SerializationFormat`, `EnableDeadLetterQue
 | `AddAzureServiceBusMetricsHealthCheck(connectionString, queueName)` or `(fullyQualifiedNamespace, credential, queueName)` | **Manage** | Opt-in: adds active, dead-letter and scheduled counts to the result data |
 
 Results have fixed descriptions and carry no exception, exception text, host or namespace; a failed probe's exception
-goes to the application's log instead (event 6001, category `ESE.MessageQueue.HealthChecks`).
+goes to the application's log instead (event 6001, category `ZedLabs.MessageQueue.HealthChecks`).
 
 ## Troubleshooting
 

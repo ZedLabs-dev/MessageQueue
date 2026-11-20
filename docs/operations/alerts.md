@@ -9,7 +9,7 @@ thresholds are defaults to tune against your traffic and SLOs, not measured limi
 The queries assume metrics reach Prometheus through the OpenTelemetry Prometheus exporter or the OpenTelemetry
 Collector's `prometheus` / `prometheusremotewrite` exporter with the default name translation:
 
-- dots become underscores (`ese.messagequeue.messages.retried` → `ese_messagequeue_messages_retried`), in metric and
+- dots become underscores (`zedlabs.messagequeue.messages.retried` → `zedlabs_messagequeue_messages_retried`), in metric and
   label names alike (`messaging.destination.name` → `messaging_destination_name`);
 - counters get `_total`;
 - the unit is appended when it is a real unit (`s` → `_seconds`); annotation units in braces (`{message}`, `{error}`)
@@ -22,14 +22,14 @@ Collector's `prometheus` / `prometheusremotewrite` exporter with the default nam
 | `messaging.client.operation.duration` | `messaging_client_operation_duration_seconds_bucket` / `_sum` / `_count` |
 | `messaging.client.consumed.messages` | `messaging_client_consumed_messages_total` |
 | `messaging.process.duration` | `messaging_process_duration_seconds_bucket` / `_sum` / `_count` |
-| `ese.messagequeue.messages.retried` | `ese_messagequeue_messages_retried_total` |
-| `ese.messagequeue.messages.dead_lettered` | `ese_messagequeue_messages_dead_lettered_total` |
-| `ese.messagequeue.transport.errors` | `ese_messagequeue_transport_errors_total` |
-| `ese.messagequeue.dead_letters.replayed` | `ese_messagequeue_dead_letters_replayed_total` |
-| `ese.messagequeue.dead_letters.purged` | `ese_messagequeue_dead_letters_purged_total` |
+| `zedlabs.messagequeue.messages.retried` | `zedlabs_messagequeue_messages_retried_total` |
+| `zedlabs.messagequeue.messages.dead_lettered` | `zedlabs_messagequeue_messages_dead_lettered_total` |
+| `zedlabs.messagequeue.transport.errors` | `zedlabs_messagequeue_transport_errors_total` |
+| `zedlabs.messagequeue.dead_letters.replayed` | `zedlabs_messagequeue_dead_letters_replayed_total` |
+| `zedlabs.messagequeue.dead_letters.purged` | `zedlabs_messagequeue_dead_letters_purged_total` |
 
 If your pipeline keeps the original dotted names (Prometheus 3 with UTF-8 names and no translation), quote them
-instead: `{"ese.messagequeue.messages.retried"}`. Label values differ by provider: the destination is the queue on
+instead: `{"zedlabs.messagequeue.messages.retried"}`. Label values differ by provider: the destination is the queue on
 in-memory and Service Bus (the topic in subscription mode) and `{exchange}:{queue}` on RabbitMQ, and the publish
 operation is `publish`, or `send` on Service Bus; the rules below group by those labels rather than hard-coding them.
 
@@ -37,24 +37,24 @@ operation is `publish`, or `send` on Service Bus; the rules below group by those
 
 ```yaml
 groups:
-  - name: ese-messagequeue
+  - name: zedlabs-messagequeue
     rules:
       # Dead letters that will never succeed by themselves: a contract or size problem, not a transient one.
       - alert: MessageQueueUnprocessableMessages
         expr: |
-          sum by (messaging_destination_name, ese_messagequeue_dead_letter_reason) (
-            increase(ese_messagequeue_messages_dead_lettered_total{
-              ese_messagequeue_dead_letter_reason=~"DeserializationFailed|MessageTooLarge|DeliveryFailed"}[15m])
+          sum by (messaging_destination_name, zedlabs_messagequeue_dead_letter_reason) (
+            increase(zedlabs_messagequeue_messages_dead_lettered_total{
+              zedlabs_messagequeue_dead_letter_reason=~"DeserializationFailed|MessageTooLarge|DeliveryFailed"}[15m])
           ) > 0
         labels: { severity: warning }
         annotations:
-          summary: "{{ $labels.messaging_destination_name }}: {{ $value }} message(s) dead-lettered as {{ $labels.ese_messagequeue_dead_letter_reason }}"
+          summary: "{{ $labels.messaging_destination_name }}: {{ $value }} message(s) dead-lettered as {{ $labels.zedlabs_messagequeue_dead_letter_reason }}"
           runbook: docs/operations/runbooks.md#dead-letter-backlog
 
       # Dead-letter rate: more than 1% of deliveries end in the dead-letter queue.
       - alert: MessageQueueDeadLetterRateHigh
         expr: |
-          sum by (messaging_destination_name) (rate(ese_messagequeue_messages_dead_lettered_total[10m]))
+          sum by (messaging_destination_name) (rate(zedlabs_messagequeue_messages_dead_lettered_total[10m]))
             /
           sum by (messaging_destination_name) (rate(messaging_client_consumed_messages_total[10m]))
             > 0.01
@@ -67,7 +67,7 @@ groups:
       # Retry spike: more than 10% of deliveries are rescheduled (a failing dependency or a bad release).
       - alert: MessageQueueRetryRateHigh
         expr: |
-          sum by (messaging_destination_name) (rate(ese_messagequeue_messages_retried_total[5m]))
+          sum by (messaging_destination_name) (rate(zedlabs_messagequeue_messages_retried_total[5m]))
             /
           sum by (messaging_destination_name) (rate(messaging_client_consumed_messages_total[5m]))
             > 0.10
@@ -106,7 +106,7 @@ groups:
       - alert: MessageQueueTransportErrors
         expr: |
           sum by (messaging_destination_name, error_type) (
-            increase(ese_messagequeue_transport_errors_total[10m])
+            increase(zedlabs_messagequeue_transport_errors_total[10m])
           ) > 5
         for: 10m
         labels: { severity: critical }
@@ -145,7 +145,7 @@ groups:
 
       # Informational: dead letters were deleted (purge is permanent).
       - alert: MessageQueueDeadLettersPurged
-        expr: sum by (messaging_destination_name) (increase(ese_messagequeue_dead_letters_purged_total[1h])) > 0
+        expr: sum by (messaging_destination_name) (increase(zedlabs_messagequeue_dead_letters_purged_total[1h])) > 0
         labels: { severity: info }
         annotations:
           summary: "{{ $value }} dead letter(s) purged from {{ $labels.messaging_destination_name }}"
@@ -224,5 +224,5 @@ exporter; keep the same conditions. Without Azure Monitor access, the opt-in
 - **Logs:** where log-based alerting is available, alert on event 2003 (RabbitMQ connect failure) and 3003 (Service Bus
   client creation) at any count, on 2001/3001 (settlement failures) when they repeat for 10 minutes, and review the
   startup warnings 1101, 2010, 2013, 3012, 3015, 3016 and 5005 after each deployment. RabbitMQ connection problems also
-  show in `ese.messagequeue.transport.errors` (`MessageQueueTransportErrors`), the publish-failure rule and the health
+  show in `zedlabs.messagequeue.transport.errors` (`MessageQueueTransportErrors`), the publish-failure rule and the health
   check.

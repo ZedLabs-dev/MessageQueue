@@ -11,7 +11,7 @@ D3 makes in-memory a first-class provider for local development and simple deplo
 
 ## Decision
 
-`ESE.MessageQueue.InMemory.InMemoryMessageQueue<T>`, selectable with `Provider = InMemory`:
+`ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>`, selectable with `Provider = InMemory`:
 
 - **Broker-like:** messages are serialized with the configured format on publish (serialization errors surface as
   `MessageQueueException`), and handlers receive a deserialized copy.

@@ -7,7 +7,7 @@
     {
       "id": "A01",
       "name": "consumer channel ignores whether its connection is open",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "OnConsumerChannelShutdownAsync(reason, amqp.IsOpen)",
       "replace": "OnConsumerChannelShutdownAsync(reason, true)",
       "filter": "FullyQualifiedName~It_Counts_A_Transport_Error|FullyQualifiedName~Given_rabbitmq_transport_errors"
@@ -15,28 +15,28 @@
     {
       "id": "A02",
       "name": "connection shutdown recorded as RecoveryFailed",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "CountTransportError(RabbitMqTransportErrors.ConnectionShutdown);",
       "replace": "CountTransportError(RabbitMqTransportErrors.RecoveryFailed);"
     },
     {
       "id": "A03",
       "name": "consumer cancel recorded as ChannelShutdown",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "CountTransportError(RabbitMqTransportErrors.ConsumerCancelled);",
       "replace": "CountTransportError(RabbitMqTransportErrors.ChannelShutdown);"
     },
     {
       "id": "A04",
       "name": "heartbeat/socket loss (Library initiator) not counted",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "        if (reason.Initiator != ShutdownInitiator.Application)\n            CountTransportError(RabbitMqTransportErrors.ConnectionShutdown);",
       "replace": "        if (reason.Initiator == ShutdownInitiator.Peer)\n            CountTransportError(RabbitMqTransportErrors.ConnectionShutdown);"
     },
     {
       "id": "A05",
       "name": "base HandleBasicCancelAsync not called (consumer not marked cancelled)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "            await base.HandleBasicCancelAsync(consumerTag, cancellationToken);\n",
       "replace": "",
       "filter": "Category=Integration&FullyQualifiedName~RabbitMQ.Given_a_rabbitmq_queue"
@@ -44,21 +44,21 @@
     {
       "id": "A06",
       "name": "ConnectionFailed counted also when the caller cancelled",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "            await new Connection(amqp, publishers, confirmed).DisposeAsync();\n            if (ex is OperationCanceledException",
       "replace": "            await new Connection(amqp, publishers, confirmed).DisposeAsync();\n            CountTransportError(RabbitMqTransportErrors.ConnectionFailed);\n            if (ex is OperationCanceledException"
     },
     {
       "id": "A07",
       "name": "telemetry failure not logged",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "            RabbitMqLog.TelemetryFailed(logger, queueName, ex);\n",
       "replace": ""
     },
     {
       "id": "B01",
       "name": "in-memory dead-letter settles twice",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "owner.DeadLetter(envelope, reason, settle: false);",
       "replace": "owner.DeadLetter(envelope, reason, settle: true);",
       "filter": "Category=Unit&FullyQualifiedName~InMemory"
@@ -66,7 +66,7 @@
     {
       "id": "B02",
       "name": "in-memory delivery settles even when nothing settled it (cancelled or failed pipeline)",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "            if (actions.Handled)\n                Settle();",
       "replace": "            Settle();",
       "filter": "Category=Unit&FullyQualifiedName~InMemory"
@@ -74,7 +74,7 @@
     {
       "id": "B03",
       "name": "in-memory dead-letter not marked handled (never settled)",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "            Handled = true;\n            owner.DeadLetter(envelope, reason, settle: false);",
       "replace": "            owner.DeadLetter(envelope, reason, settle: false);",
       "filter": "Category=Unit&FullyQualifiedName~InMemory"
@@ -82,7 +82,7 @@
     {
       "id": "B04",
       "name": "in-memory completion not marked handled (never settled)",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "            Handled = true;\n            return Task.CompletedTask;\n        }\n\n        // Real backoff",
       "replace": "            return Task.CompletedTask;\n        }\n\n        // Real backoff",
       "filter": "Category=Unit&FullyQualifiedName~InMemory"
@@ -90,7 +90,7 @@
     {
       "id": "B05",
       "name": "in-memory delivery never settles in finally",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "            if (actions.Handled)\n                Settle();\n",
       "replace": "",
       "filter": "Category=Unit&FullyQualifiedName~InMemory"
@@ -98,21 +98,21 @@
     {
       "id": "C01",
       "name": "in-memory batch validated while enqueuing",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "            var body = Serialize(message);\n            PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, config.QueueName, index);\n            return (Message: message, Body: body);\n        }).ToList();\n        if (batch.Count == 0)\n            return Task.CompletedTask;\n\n        using var trace = PublishTelemetry.Start(telemetry, publishTarget, batch.Count, logger);\n        foreach (var (message, body) in batch)\n            Enqueue(message, body, Guid.CreateVersion7().ToString(), options, trace);",
       "replace": "            var body = Serialize(message);\n            return (Message: message, Body: body);\n        }).ToList();\n        if (batch.Count == 0)\n            return Task.CompletedTask;\n\n        using var trace = PublishTelemetry.Start(telemetry, publishTarget, batch.Count, logger);\n        var i = 0;\n        foreach (var (message, body) in batch)\n        {\n            PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, config.QueueName, i++);\n            Enqueue(message, body, Guid.CreateVersion7().ToString(), options, trace);\n        }"
     },
     {
       "id": "C02",
       "name": "in-memory batch index reported as 0",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "config.QueueName, index);",
       "replace": "config.QueueName, 0);"
     },
     {
       "id": "C03",
       "name": "RabbitMQ batch index reported as 0",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "config.MaxMessageSizeBytes, queueName, index);",
       "replace": "config.MaxMessageSizeBytes, queueName, 0);",
       "filter": "FullyQualifiedName~Oversized|FullyQualifiedName~MaxMessageSizeBytes|FullyQualifiedName~Size_Limit"
@@ -120,7 +120,7 @@
     {
       "id": "C04",
       "name": "RabbitMQ batch validated while sending",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "            var body = Serialize(message);\n            PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, queueName, index);\n            return body;\n        }).ToList();\n        if (bodies.Count == 0)\n            return;\n\n        // One producer span for the whole call; every message carries it as the parent of its consume span.\n        using var trace = PublishTelemetry.Start(telemetry, publishTarget, bodies.Count, logger);\n        try\n        {\n            var current = await ConnectAsync(cancellationToken);\n            var window = (int)Math.Min(int.MaxValue, (long)config.MaxOutstandingConfirms * config.PublisherChannelPoolSize);\n            await BatchPublisher.PublishAllAsync(bodies, window,\n                (body, ct) => PublishCoreAsync(current, body, options, trace.TraceHeaders, ct), cancellationToken);",
       "replace": "            var body = Serialize(message);\n            return body;\n        }).ToList();\n        if (bodies.Count == 0)\n            return;\n\n        // One producer span for the whole call; every message carries it as the parent of its consume span.\n        using var trace = PublishTelemetry.Start(telemetry, publishTarget, bodies.Count, logger);\n        try\n        {\n            var current = await ConnectAsync(cancellationToken);\n            var window = (int)Math.Min(int.MaxValue, (long)config.MaxOutstandingConfirms * config.PublisherChannelPoolSize);\n            var seq = 0;\n            await BatchPublisher.PublishAllAsync(bodies, window,\n                (body, ct) => { PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, queueName, Interlocked.Increment(ref seq) - 1); return PublishCoreAsync(current, body, options, trace.TraceHeaders, ct); }, cancellationToken);",
       "filter": "FullyQualifiedName~Oversized|FullyQualifiedName~MaxMessageSizeBytes|FullyQualifiedName~Size_Limit"
@@ -128,7 +128,7 @@
     {
       "id": "C05",
       "name": "ASB batch index reported as 0",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
       "find": "publishEntity, index);",
       "replace": "publishEntity, 0);",
       "filter": "FullyQualifiedName~AzureServiceBus"
@@ -136,28 +136,28 @@
     {
       "id": "C06",
       "name": "in-memory size checked after telemetry start (refused publish gets a span/metric)",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "        PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, config.QueueName);\n        var messageId = options.MessageId ?? Guid.CreateVersion7().ToString();\n        using var trace = PublishTelemetry.Start(telemetry, publishTarget, 1, logger, messageId);",
       "replace": "        var messageId = options.MessageId ?? Guid.CreateVersion7().ToString();\n        using var trace = PublishTelemetry.Start(telemetry, publishTarget, 1, logger, messageId);\n        PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, config.QueueName);"
     },
     {
       "id": "C07",
       "name": "size error omits destination",
-      "file": "src/ESE.MessageQueue/Providers/PublishValidation.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/PublishValidation.cs",
       "find": "for '{destination}'; {outcome}",
       "replace": "; {outcome}"
     },
     {
       "id": "C08",
       "name": "size error omits batch outcome",
-      "file": "src/ESE.MessageQueue/Providers/PublishValidation.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/PublishValidation.cs",
       "find": "var outcome = batchIndex is null ? \"it was not published\" : \"no message of the batch was published\";",
       "replace": "var outcome = \"it was not published\";"
     },
     {
       "id": "C09",
       "name": "ASB single publish uses limit+1",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
       "find": "PublishValidation.ValidateBodySize(serviceBusMessage.Body.ToMemory().Length, config.MaxMessageSizeBytes, publishEntity);",
       "replace": "PublishValidation.ValidateBodySize(serviceBusMessage.Body.ToMemory().Length - 1, config.MaxMessageSizeBytes, publishEntity);",
       "filter": "FullyQualifiedName~AzureServiceBus"
@@ -165,7 +165,7 @@
     {
       "id": "C10",
       "name": "RabbitMQ single publish off by one",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "PublishValidation.ValidateBodySize(body.Length, config.MaxMessageSizeBytes, queueName);",
       "replace": "PublishValidation.ValidateBodySize(body.Length - 1, config.MaxMessageSizeBytes, queueName);",
       "filter": "FullyQualifiedName~Oversized|FullyQualifiedName~MaxMessageSizeBytes|FullyQualifiedName~Size_Limit"
@@ -173,7 +173,7 @@
     {
       "id": "D01",
       "name": "HostOptions type name wrong (check silently disabled)",
-      "file": "src/ESE.MessageQueue/Hosting/MessageQueueHostedService.cs",
+      "file": "src/ZedLabs.MessageQueue/Hosting/MessageQueueHostedService.cs",
       "find": "\"Microsoft.Extensions.Hosting.HostOptions, Microsoft.Extensions.Hosting\"",
       "replace": "\"Microsoft.Extensions.Hosting.HostOptionz, Microsoft.Extensions.Hosting\"",
       "filter": "FullyQualifiedName~Hosting"
@@ -181,7 +181,7 @@
     {
       "id": "D02",
       "name": "HostOptions property read is wrong (StartupTimeout)",
-      "file": "src/ESE.MessageQueue/Hosting/MessageQueueHostedService.cs",
+      "file": "src/ZedLabs.MessageQueue/Hosting/MessageQueueHostedService.cs",
       "find": "GetProperty(\"ShutdownTimeout\")",
       "replace": "GetProperty(\"StartupTimeout\")",
       "filter": "FullyQualifiedName~Hosting"
@@ -189,7 +189,7 @@
     {
       "id": "D03",
       "name": "warning logged at Information",
-      "file": "src/ESE.MessageQueue/Hosting/MessageQueueHostedService.cs",
+      "file": "src/ZedLabs.MessageQueue/Hosting/MessageQueueHostedService.cs",
       "find": "[LoggerMessage(EventId = 5005, Level = LogLevel.Warning,",
       "replace": "[LoggerMessage(EventId = 5005, Level = LogLevel.Information,",
       "filter": "FullyQualifiedName~Hosting"
@@ -197,7 +197,7 @@
     {
       "id": "D04",
       "name": "warning EventId changed",
-      "file": "src/ESE.MessageQueue/Hosting/MessageQueueHostedService.cs",
+      "file": "src/ZedLabs.MessageQueue/Hosting/MessageQueueHostedService.cs",
       "find": "EventId = 5005,",
       "replace": "EventId = 5015,",
       "filter": "FullyQualifiedName~Hosting|FullyQualifiedName~Given_the_monitoring_reference"
@@ -205,7 +205,7 @@
     {
       "id": "D05",
       "name": "budget checked after subscribe",
-      "file": "src/ESE.MessageQueue/Hosting/MessageQueueHostedService.cs",
+      "file": "src/ZedLabs.MessageQueue/Hosting/MessageQueueHostedService.cs",
       "find": "        WarnIfTheHostStopsWaitingFirst();\n        await subscriber.SubscribeAsync(ProcessAsync, cancellationToken);",
       "replace": "        await subscriber.SubscribeAsync(ProcessAsync, cancellationToken);\n        WarnIfTheHostStopsWaitingFirst();",
       "filter": "FullyQualifiedName~Hosting"
@@ -213,42 +213,42 @@
     {
       "id": "D06",
       "name": "RabbitMQ does not expose its budget",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "TimeSpan IShutdownBudget.ShutdownTimeout => config.ShutdownTimeout;",
       "replace": "TimeSpan IShutdownBudget.ShutdownTimeout => TimeSpan.Zero;"
     },
     {
       "id": "D07",
       "name": "ASB does not expose its budget",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
       "find": "TimeSpan IShutdownBudget.ShutdownTimeout => config.ShutdownTimeout;",
       "replace": "TimeSpan IShutdownBudget.ShutdownTimeout => TimeSpan.Zero;"
     },
     {
       "id": "E01",
       "name": "publish log at Information",
-      "file": "src/ESE.MessageQueue/Providers/PublishLog.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/PublishLog.cs",
       "find": "EventId = 1010, Level = LogLevel.Debug",
       "replace": "EventId = 1010, Level = LogLevel.Information"
     },
     {
       "id": "E02",
       "name": "publish log EventId changed",
-      "file": "src/ESE.MessageQueue/Providers/PublishLog.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/PublishLog.cs",
       "find": "EventId = 1010,",
       "replace": "EventId = 1012,"
     },
     {
       "id": "E03",
       "name": "batch log EventId changed",
-      "file": "src/ESE.MessageQueue/Providers/PublishLog.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/PublishLog.cs",
       "find": "EventId = 1011,",
       "replace": "EventId = 1010,"
     },
     {
       "id": "E04",
       "name": "in-memory single publish logged before enqueue",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "        Enqueue(message, body, messageId, options, trace);\n        PublishLog.Published(logger, messageId, publishTarget.Destination);",
       "replace": "        PublishLog.Published(logger, messageId, publishTarget.Destination);\n        Enqueue(message, body, messageId, options, trace);",
       "equivalent": "Enqueue cannot fail once the publish passed its checks (disposal is checked before), and the logger is a SafeLogger, so logging before or after the enqueue is indistinguishable"
@@ -256,28 +256,28 @@
     {
       "id": "F01",
       "name": "headers not a built-in exchange type",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqExchangeTypes.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqExchangeTypes.cs",
       "find": "[\"direct\", \"fanout\", \"topic\", \"headers\"]",
       "replace": "[\"direct\", \"fanout\", \"topic\"]"
     },
     {
       "id": "F02",
       "name": "exchange type error drops the offending value",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqExchangeTypes.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqExchangeTypes.cs",
       "find": "errors.Add($\"ExchangeType '{exchangeType}' is not supported",
       "replace": "errors.Add($\"ExchangeType is not supported"
     },
     {
       "id": "R01",
       "name": "in-memory logger not wrapped in SafeLogger",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "this.logger = new SafeLogger(logger ?? NullLogger.Instance);",
       "replace": "this.logger = logger ?? NullLogger.Instance;"
     },
     {
       "id": "R02",
       "name": "RabbitMQ logger not wrapped in SafeLogger",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
       "find": "this.logger = new SafeLogger(logger ?? NullLogger.Instance);",
       "replace": "this.logger = logger ?? NullLogger.Instance;",
       "filter": "FullyQualifiedName~Given_rabbitmq_transport_errors|FullyQualifiedName~Given_a_rabbitmq_queue.When_The_Logger_Throws"
@@ -285,35 +285,35 @@
     {
       "id": "R03",
       "name": "reschedule does not hold the queue busy",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "            owner.Hold();\n",
       "replace": ""
     },
     {
       "id": "R04",
       "name": "infinite host timeout warned",
-      "file": "src/ESE.MessageQueue/Hosting/MessageQueueHostedService.cs",
+      "file": "src/ZedLabs.MessageQueue/Hosting/MessageQueueHostedService.cs",
       "find": "host > TimeSpan.Zero && ",
       "replace": ""
     },
     {
       "id": "R05",
       "name": "warning names a hardcoded key",
-      "file": "src/ESE.MessageQueue/Hosting/MessageQueueHostedService.cs",
+      "file": "src/ZedLabs.MessageQueue/Hosting/MessageQueueHostedService.cs",
       "find": "is { } section ? $\"{section.Path}:ShutdownTimeout\" :",
       "replace": "is { } section ? \"MessageQueue:ShutdownTimeout\" :"
     },
     {
       "id": "R06",
       "name": "queue section not registered",
-      "file": "src/ESE.MessageQueue/Providers/MessageQueueRegistration.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageQueueRegistration.cs",
       "find": "        Services.AddSingleton(new QueueSection<T>(Section.Path));\n",
       "replace": ""
     },
     {
       "id": "R07",
       "name": "publish log id not sanitized",
-      "file": "src/ESE.MessageQueue/Providers/PublishLog.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/PublishLog.cs",
       "find": "var loggable = Processing.DeliveryText.MessageId(messageId);",
       "replace": "var loggable = messageId;"
     }

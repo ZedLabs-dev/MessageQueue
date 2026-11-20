@@ -15,20 +15,20 @@ Run from the repository root, on `main`, with a clean working tree.
 
 | # | Step | Command | Pass when |
 |---|---|---|---|
-| 1 | Locked restore | `dotnet restore ESE.MessageQueue.sln --locked-mode` | no lock file drift |
-| 2 | Build, both configurations | `dotnet build ESE.MessageQueue.sln -warnaserror` and `dotnet build ESE.MessageQueue.sln -warnaserror -c Release` | 0 warnings, 0 errors |
-| 3 | Format | `dotnet format ESE.MessageQueue.sln --verify-no-changes` | no changes |
-| 4 | Unit specs | `dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Unit` | 0 failed. Includes the documentation specs (`Packaging/Given_the_documentation_snippets`, `Given_the_configuration_reference`, `Given_the_monitoring_reference`) and the public API and package-split specs |
-| 5 | Integration specs, RabbitMQ | `MQ_REQUIRE_DOCKER=true dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Integration` | 0 failed; the RabbitMQ specs ran (Docker is required: missing Docker fails instead of skipping) |
+| 1 | Locked restore | `dotnet restore ZedLabs.MessageQueue.sln --locked-mode` | no lock file drift |
+| 2 | Build, both configurations | `dotnet build ZedLabs.MessageQueue.sln -warnaserror` and `dotnet build ZedLabs.MessageQueue.sln -warnaserror -c Release` | 0 warnings, 0 errors |
+| 3 | Format | `dotnet format ZedLabs.MessageQueue.sln --verify-no-changes` | no changes |
+| 4 | Unit specs | `dotnet test ZedLabs.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Unit` | 0 failed. Includes the documentation specs (`Packaging/Given_the_documentation_snippets`, `Given_the_configuration_reference`, `Given_the_monitoring_reference`) and the public API and package-split specs |
+| 5 | Integration specs, RabbitMQ | `MQ_REQUIRE_DOCKER=true dotnet test ZedLabs.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Integration` | 0 failed; the RabbitMQ specs ran (Docker is required: missing Docker fails instead of skipping) |
 | 6 | Integration specs, Azure Service Bus | step 5 with `MQ_ASB_CONNECTION_STRING` set, see [below](#azure-service-bus-suite) | the 11 specs of `Given_a_running_azure_service_bus` **passed**, not skipped. **Mandatory for a final release** |
 | 7 | Coverage gate | `MQ_REQUIRE_DOCKER=true scripts/coverage.sh` | combined line coverage of the three packages ≥ 89% and each package ≥ 87% (`COVERAGE_THRESHOLD`, `COVERAGE_ASSEMBLY_FLOOR` in the script; never lower them) |
 | 8 | Mutation sets | `for set in scripts/mutants/*.json; do scripts/mutate.py "$set" || break; done` | exit 0 for every set: every valid mutant killed or documented equivalent (355 mutants in 12 sets today, see [below](#mutation-sets)) |
 | 9 | Linux | CI (`ci.yml`, `ubuntu-latest`) green on the release commit, or the [Linux container run](#linux) | the Linux-only specs passed |
-| 10 | Vulnerable packages | `dotnet list ESE.MessageQueue.sln package --vulnerable --include-transitive` | "no vulnerable packages" for every project |
-| 11 | Pack | `dotnet pack ESE.MessageQueue.sln -c Release -o artifacts` | three `.nupkg` and three `.snupkg` with the release version; the provider packages depend on exactly that core version (`unzip -p artifacts/ESE.MessageQueue.RabbitMQ.*.nupkg '*.nuspec'`) |
+| 10 | Vulnerable packages | `dotnet list ZedLabs.MessageQueue.sln package --vulnerable --include-transitive` | "no vulnerable packages" for every project |
+| 11 | Pack | `dotnet pack ZedLabs.MessageQueue.sln -c Release -o artifacts` | three `.nupkg` and three `.snupkg` with the release version; the provider packages depend on exactly that core version (`unzip -p artifacts/ZedLabs.MessageQueue.RabbitMQ.*.nupkg '*.nuspec'`) |
 
 Optional for performance-sensitive changes: the benchmarks with the default job
-(`dotnet run -c Release --project benchmarks/ESE.MessageQueue.Benchmarks -- --filter '*'`), compared with
+(`dotnet run -c Release --project benchmarks/ZedLabs.MessageQueue.Benchmarks -- --filter '*'`), compared with
 [benchmarks.md](benchmarks.md).
 
 ### Azure Service Bus suite
@@ -51,7 +51,7 @@ release (the emulator does not support transactions, so it cannot exercise `Tran
 
 ```bash
 export MQ_ASB_CONNECTION_STRING='Endpoint=sb://<namespace>.servicebus.windows.net/;SharedAccessKeyName=<rule>;SharedAccessKey=<key>'
-MQ_REQUIRE_DOCKER=true dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Integration
+MQ_REQUIRE_DOCKER=true dotnet test ZedLabs.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Integration
 ```
 
 In CI, set the repository secret `MQ_ASB_CONNECTION_STRING`; `ci.yml` passes it to the integration step. The emulator
@@ -92,7 +92,7 @@ mutants R-T17 and R-T18 of `review-deferred-items.json` are killed only there. W
 docker run --rm -v "$PWD":/src:ro mcr.microsoft.com/dotnet/sdk:10.0 bash -c '
   mkdir /work &&
   tar -C /src --exclude=bin --exclude=obj --exclude=TestResults --exclude=artifacts --exclude=.git -cf - . | tar -C /work -xf - &&
-  cd /work && dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Unit'
+  cd /work && dotnet test ZedLabs.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Unit'
 ```
 
 It reports 0 skipped when the Linux-only specs ran (verified 2026-10-23: 907 passed, 0 skipped).

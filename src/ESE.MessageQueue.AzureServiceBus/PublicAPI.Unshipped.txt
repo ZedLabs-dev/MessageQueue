@@ -1,4 +1,0 @@
-#nullable enable
-ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.PeekAsync(int maxCount, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<ESE.MessageQueue.Abstractions.DeadLetterMessage<T!>!>!>!
-ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.PurgeAsync(ESE.MessageQueue.Abstractions.DeadLetterPurgeOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-ESE.MessageQueue.AzureServiceBus.AzureServiceBusMessageQueue<T>.ReplayAsync(ESE.MessageQueue.Abstractions.DeadLetterReplayOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ESE.MessageQueue.Abstractions.DeadLetterReplayResult!>!

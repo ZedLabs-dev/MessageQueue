@@ -1,34 +1,34 @@
 {
   "description": "Reviewer's adversarial set for the mutual-TLS change: chain rules (basic constraints, path length, name constraints, anchors never taken from what the broker sends, no reuse of the TLS stack's chain, no AIA downloads), the connect-time insecure-acceptance gate, per-name health check instances and concurrent first loads. U01 (P06b, P07) and U11 are killed on Linux only for some specs: U01 is also killed on macOS by the path-length spec; U11 only on Linux, where X509Chain downloads AIA issuers (run it in the Linux SDK container).",
   "defaults": {
-    "filter": "Category=Unit&(FullyQualifiedName~ESE.MessageQueue.Tests.RabbitMQ|FullyQualifiedName~ESE.MessageQueue.Tests.HealthChecks)"
+    "filter": "Category=Unit&(FullyQualifiedName~ZedLabs.MessageQueue.Tests.RabbitMQ|FullyQualifiedName~ZedLabs.MessageQueue.Tests.HealthChecks)"
   },
   "mutants": [
     {
       "id": "U01",
       "name": "chain ignores invalid basic constraints (a CA-issued client or server leaf can sign a broker certificate)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);",
       "replace": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);\n        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.IgnoreInvalidBasicConstraints;"
     },
     {
       "id": "U02",
       "name": "chain allows an unknown certificate authority",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);",
       "replace": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);\n        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;"
     },
     {
       "id": "U03",
       "name": "chain ignores validity periods",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);",
       "replace": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);\n        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.IgnoreNotTimeValid;"
     },
     {
       "id": "U04",
       "name": "chain ignores wrong key usage",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);",
       "replace": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);\n        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.IgnoreWrongUsage;"
     },
@@ -36,112 +36,112 @@
       "id": "U05",
       "name": "chain ignores revocation-unknown and CTL time (revocation is NoCheck)",
       "equivalent": "RevocationMode is NoCheck, so no revocation status is ever produced",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);",
       "replace": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);\n        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.IgnoreEndRevocationUnknown | X509VerificationFlags.IgnoreCtlNotTimeValid;"
     },
     {
       "id": "U06",
       "name": "chain ignores invalid name constraints / policy",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);",
       "replace": "chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);\n        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.IgnoreInvalidPolicy | X509VerificationFlags.IgnoreInvalidName;"
     },
     {
       "id": "U07",
       "name": "self-signed certificates the broker sends are trusted as anchors",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "            chain.ChainPolicy.ExtraStore.AddRange(presented.ChainPolicy.ExtraStore);",
       "replace": "        {\n            chain.ChainPolicy.ExtraStore.AddRange(presented.ChainPolicy.ExtraStore);\n            foreach (var sent in presented.ChainPolicy.ExtraStore)\n                if (sent.SubjectName.RawData.AsSpan().SequenceEqual(sent.IssuerName.RawData))\n                    chain.ChainPolicy.CustomTrustStore.Add(sent);\n        }"
     },
     {
       "id": "U08",
       "name": "every certificate the broker sends is trusted as an anchor",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "            chain.ChainPolicy.ExtraStore.AddRange(presented.ChainPolicy.ExtraStore);",
       "replace": "        {\n            chain.ChainPolicy.ExtraStore.AddRange(presented.ChainPolicy.ExtraStore);\n            chain.ChainPolicy.CustomTrustStore.AddRange(presented.ChainPolicy.ExtraStore);\n        }"
     },
     {
       "id": "U09",
       "name": "system trust plus anchors as extra store",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;\n        chain.ChainPolicy.CustomTrustStore.AddRange(anchors);",
       "replace": "chain.ChainPolicy.ExtraStore.AddRange(anchors);"
     },
     {
       "id": "U10",
       "name": "a certificate the OS already trusts skips the anchor check",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "        if (certificate is null)\n            return errors;",
       "replace": "        if (certificate is null || errors == SslPolicyErrors.None)\n            return errors;"
     },
     {
       "id": "U11",
       "name": "AIA downloads re-enabled in the callback chain (Linux fetches the issuer the certificate names)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "        chain.ChainPolicy.DisableCertificateDownloads = true;\n",
       "replace": ""
     },
     {
       "id": "U12",
       "name": "trust anchors loaded without the holder's lock",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTlsCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTlsCertificates.cs",
       "find": "        lock (gate)\n        {\n            ObjectDisposedException.ThrowIf(disposed, this);\n            return trustAnchors ??= RabbitMqTrustAnchors.Load(tls);\n        }",
       "replace": "        ObjectDisposedException.ThrowIf(disposed, this);\n        return trustAnchors ??= RabbitMqTrustAnchors.Load(tls);"
     },
     {
       "id": "U13",
       "name": "client certificate loaded without the holder's lock",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTlsCertificates.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTlsCertificates.cs",
       "find": "        lock (gate)\n        {\n            ObjectDisposedException.ThrowIf(disposed, this);\n            return clientCertificate ??= RabbitMqClientCertificates.Load(tls);\n        }",
       "replace": "        ObjectDisposedException.ThrowIf(disposed, this);\n        return clientCertificate ??= RabbitMqClientCertificates.Load(tls);"
     },
     {
       "id": "U14",
       "name": "health-check singleton keyed by a constant instead of the registration name",
-      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheckExtensions.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheckExtensions.cs",
       "find": "        builder.Services.AddKeyedSingleton(name, (sp, _) =>",
       "replace": "        builder.Services.AddKeyedSingleton(\"rabbitmq\", (sp, _) =>"
     },
     {
       "id": "U15",
       "name": "health-check registration resolves a constant key",
-      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheckExtensions.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheckExtensions.cs",
       "find": "            sp => sp.GetRequiredKeyedService<RabbitMqHealthCheck>(name),",
       "replace": "            sp => sp.GetRequiredKeyedService<RabbitMqHealthCheck>(\"rabbitmq\"),"
     },
     {
       "id": "U16",
       "name": "AcceptablePolicyErrors no longer needs AllowInsecureCertificates",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqConnections.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConnections.cs",
       "find": "if (TlsOf(config).AcceptablePolicyErrors != SslPolicyErrors.None && !TlsOf(config).AllowInsecureCertificates)",
       "replace": "if (TlsOf(config).AcceptablePolicyErrors != SslPolicyErrors.None && false)"
     },
     {
       "id": "U17",
       "name": "callback built with AcceptablePolicyErrors ignoring AllowInsecureCertificates gate at connect time (validator skipped)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqConnections.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConnections.cs",
       "find": "        var errors = Validate(config, loadClientCertificate: false);\n        if (errors.Count > 0)",
       "replace": "        var errors = Validate(config, loadClientCertificate: false);\n        errors.RemoveAll(e => e.StartsWith(\"Tls:AcceptablePolicyErrors accepts\"));\n        if (errors.Count > 0)"
     },
     {
       "id": "U18",
       "name": "registration copy removed and the check keeps the caller's object (both copies dropped)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheck.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/HealthChecks/RabbitMqHealthCheck.cs",
       "find": "            this.tls = tls with { };",
       "replace": "            this.tls = tls;"
     },
     {
       "id": "U19",
       "name": "validation chain uses the leaf's own chain from SslStream when it has elements",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "        if (!chain.Build(leaf ?? copy!))",
       "replace": "        if (presented is not null && presented.ChainElements.Count > 0 && presented.ChainStatus.All(s => s.Status == X509ChainStatusFlags.NoError))\n            return errors;\n        if (!chain.Build(leaf ?? copy!))"
     },
     {
       "id": "U20",
       "name": "CA file read as DER only when the PEM import found nothing (lenient)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqTrustAnchors.cs",
       "find": "            if (RabbitMqClientCertificates.IsPem(content))\n                anchors.ImportFromPem(Encoding.UTF8.GetString(content));\n            else\n                anchors.Add(X509CertificateLoader.LoadCertificate(content));",
       "replace": "            anchors.Import(content);"
     }

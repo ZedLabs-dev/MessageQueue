@@ -36,20 +36,20 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
 
       - name: Restore (locked)
-        run: dotnet restore ESE.MessageQueue.sln --locked-mode
+        run: dotnet restore ZedLabs.MessageQueue.sln --locked-mode
 
       - name: Build
-        run: dotnet build ESE.MessageQueue.sln --no-restore --configuration Release -warnaserror
+        run: dotnet build ZedLabs.MessageQueue.sln --no-restore --configuration Release -warnaserror
 
       - name: Verify formatting
-        run: dotnet format ESE.MessageQueue.sln --no-restore --verify-no-changes --verbosity diagnostic
+        run: dotnet format ZedLabs.MessageQueue.sln --no-restore --verify-no-changes --verbosity diagnostic
 
       - name: Restore local tools
         run: dotnet tool restore
 
       - name: Unit tests
         run: >
-          dotnet test ESE.MessageQueue.sln --no-build --configuration Release
+          dotnet test ZedLabs.MessageQueue.sln --no-build --configuration Release
           --filter Category=Unit
           --collect:"XPlat Code Coverage"
           --blame-hang-timeout 2m
@@ -64,7 +64,7 @@ jobs:
           MQ_REQUIRE_DOCKER: 'true'
           MQ_ASB_CONNECTION_STRING: ${{ secrets.MQ_ASB_CONNECTION_STRING }}
         run: >
-          dotnet test ESE.MessageQueue.sln --no-build --configuration Release
+          dotnet test ZedLabs.MessageQueue.sln --no-build --configuration Release
           --filter Category=Integration
           --collect:"XPlat Code Coverage"
           --blame-hang-timeout 2m
@@ -80,7 +80,7 @@ jobs:
         if: always()
         shell: bash  # bash -eo pipefail: a failing `dotnet list` fails the step despite the pipe to tee
         run: |
-          dotnet list ESE.MessageQueue.sln package --vulnerable --include-transitive 2>&1 | tee vulnerable.txt
+          dotnet list ZedLabs.MessageQueue.sln package --vulnerable --include-transitive 2>&1 | tee vulnerable.txt
           if grep -q '^ *>' vulnerable.txt; then
             echo "::error::Vulnerable NuGet packages found"
             exit 1
@@ -89,7 +89,7 @@ jobs:
       # The three packages (ADR 0005): metadata, SourceLink, symbols and package validation; the provider packages pin
       # the exact core version (ADR 0015). Not --no-build: pack rebuilds without the tests' InternalsVisibleTo (ADR 0016).
       - name: Pack
-        run: dotnet pack ESE.MessageQueue.sln --no-restore --configuration Release --output artifacts
+        run: dotnet pack ZedLabs.MessageQueue.sln --no-restore --configuration Release --output artifacts
 
       - name: Upload test results and coverage
         if: always()

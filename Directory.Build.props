@@ -31,15 +31,15 @@
     <VersionPrefix>1.0.0</VersionPrefix>
     <!-- Release blocker for 1.0.0 final: the Azure Service Bus integration specs have never run against a real broker (CHANGELOG). -->
     <VersionSuffix>rc.1</VersionSuffix>
-    <Authors>Eric Ewing</Authors>
-    <Company>Eric Ewing</Company>
-    <Copyright>Copyright (c) 2026 Eric Ewing</Copyright>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/ericsewing/MessageQueue</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/ericsewing/MessageQueue</RepositoryUrl>
+    <Authors>ZedLabs</Authors>
+    <Company>ZedLabs</Company>
+    <Copyright>Copyright 2026 ZedLabs</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/ZedLabs/MessageQueue</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ZedLabs/MessageQueue</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>messaging;message-queue;events;pubsub;retry;dead-letter;opentelemetry</PackageTags>
-    <PackageReleaseNotes>See https://github.com/ericsewing/MessageQueue/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>See https://github.com/ZedLabs/MessageQueue/blob/main/CHANGELOG.md</PackageReleaseNotes>
   </PropertyGroup>
 
 </Project>

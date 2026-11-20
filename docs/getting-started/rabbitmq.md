@@ -1,23 +1,23 @@
 # Getting started: RabbitMQ
 
-`ESE.MessageQueue.RabbitMQ` runs the shared pipeline on RabbitMQ 4.x with RabbitMQ.Client 7: durable quorum queues,
+`ZedLabs.MessageQueue.RabbitMQ` runs the shared pipeline on RabbitMQ 4.x with RabbitMQ.Client 7: durable quorum queues,
 publisher confirms, broker-side retry backoff and a dead-letter queue per queue
 ([ADRs 0006-0008](../adr/0006-rabbitmq-broker-side-backoff.md), [0022](../adr/0022-rabbitmq-client-certificates.md)).
 The integration suite runs against RabbitMQ 4.3.6.
 
-Every C# block on this page is compiled from `samples/ESE.MessageQueue.Samples/Docs/`, and the configuration examples
+Every C# block on this page is compiled from `samples/ZedLabs.MessageQueue.Samples/Docs/`, and the configuration examples
 are validated, by `Packaging/Given_the_documentation_snippets`.
 
 ## 1. Install
 
 ```bash
-dotnet add package ESE.MessageQueue.RabbitMQ --prerelease    # brings ESE.MessageQueue (same version)
+dotnet add package ZedLabs.MessageQueue.RabbitMQ --prerelease # brings ZedLabs.MessageQueue (same version)
 dotnet add package Microsoft.Extensions.Hosting
 dotnet add package OpenTelemetry.Extensions.Hosting    # only for the telemetry step: AddOpenTelemetry()
 ```
 
 The packages are versioned `1.0.0-rc.1` (pre-release); upgrade the core and provider packages together. If your feed
-does not have them yet, build them with `dotnet pack ESE.MessageQueue.sln -c Release -o artifacts`.
+does not have them yet, build them with `dotnet pack ZedLabs.MessageQueue.sln -c Release -o artifacts`.
 
 ## 2. A broker
 
@@ -57,8 +57,8 @@ public sealed record OrderPlaced(string OrderId, string CustomerId, decimal Amou
 
 <!-- snippet: processor -->
 ```csharp
-using ESE.MessageQueue.Abstractions;
-using ESE.MessageQueue.Processing;
+using ZedLabs.MessageQueue.Abstractions;
+using ZedLabs.MessageQueue.Processing;
 
 public sealed class OrderPlacedProcessor : IMessageProcessor<OrderPlaced>
 {
@@ -93,11 +93,11 @@ public sealed class OrderPlacedProcessor : IMessageProcessor<OrderPlaced>
 
 <!-- snippet: rabbitmq-registration -->
 ```csharp
-using ESE.MessageQueue.Extensions;
-using ESE.MessageQueue.HealthChecks;
-using ESE.MessageQueue.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using ZedLabs.MessageQueue.Extensions;
+using ZedLabs.MessageQueue.HealthChecks;
+using ZedLabs.MessageQueue.Hosting;
 
 public static class OrderMessaging
 {
@@ -185,10 +185,10 @@ every startup error are in the [configuration reference](../configuration.md#rab
 
 <!-- snippet: rabbitmq-program -->
 ```csharp
-using ESE.MessageQueue.Samples.Docs;
-using ESE.MessageQueue.Samples.Docs.RabbitMq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using ZedLabs.MessageQueue.Samples.Docs;
+using ZedLabs.MessageQueue.Samples.Docs.RabbitMq;
 
 var builder = Host.CreateApplicationBuilder(args);   // appsettings.json, environment variables, command line
 builder.Services.AddOrderMessaging(builder.Configuration);
@@ -209,7 +209,7 @@ few seconds more again.
 
 <!-- snippet: publisher -->
 ```csharp
-using ESE.MessageQueue.Abstractions;
+using ZedLabs.MessageQueue.Abstractions;
 
 public sealed class OrderService
 {
@@ -243,8 +243,8 @@ times faster per message on a loopback broker ([benchmarks](../benchmarks.md)).
   `QueueName`; quorum queues by default, the quorum dead-letter queue with `x-delivery-limit = -1`.
 - **Retries broker-side.** A retry is a confirmed copy in `{QueueName}.retry.{ms}`, a queue whose TTL dead-letters it
   back to the main queue; the original is then acknowledged. No handler slot is held while it waits.
-- **Dead-letters** a confirmed copy to `{QueueName}.deadletter` with the headers `x-ese-dead-letter-reason`,
-  `x-ese-dead-letter-detail` (an exception type, never its message) and `x-ese-dead-lettered-at`.
+- **Dead-letters** a confirmed copy to `{QueueName}.deadletter` with the headers `x-zedlabs-dead-letter-reason`,
+  `x-zedlabs-dead-letter-detail` (an exception type, never its message) and `x-zedlabs-dead-lettered-at`.
 - **Recovers connections** automatically (`NetworkRecoveryInterval`), redeclaring the topology.
 
 Details: [failure modes](../operations/failure-modes.md), [runbooks](../operations/runbooks.md#rabbitmq).
@@ -262,10 +262,10 @@ client certificate to a broker that requires one.
 
 <!-- snippet: telemetry -->
 ```csharp
-using ESE.MessageQueue.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using ZedLabs.MessageQueue.Extensions;
 
 public static class OrderTelemetry
 {
@@ -293,8 +293,8 @@ RabbitMQ spans and metrics use `messaging.system = rabbitmq` and the destination
 
 <!-- snippet: dead-letters -->
 ```csharp
-using ESE.MessageQueue.Abstractions;
 using Microsoft.Extensions.Logging;
+using ZedLabs.MessageQueue.Abstractions;
 
 // Run from an operator tool, an admin endpoint or a one-off job, not from the message handler.
 public sealed partial class OrderDeadLetters

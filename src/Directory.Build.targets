@@ -7,7 +7,7 @@
        exact core version they were built with. A ProjectReference packs as ">= version"; pin it to "[version]". -->
   <Target Name="PinCoreDependencyExactly" AfterTargets="_GetProjectReferenceVersions">
     <ItemGroup>
-      <_ProjectReferencesWithVersions Condition="'%(_ProjectReferencesWithVersions.Filename)' == 'ESE.MessageQueue'">
+      <_ProjectReferencesWithVersions Condition="'%(_ProjectReferencesWithVersions.Filename)' == 'ZedLabs.MessageQueue'">
         <ProjectVersion>[%(_ProjectReferencesWithVersions.ProjectVersion)]</ProjectVersion>
       </_ProjectReferencesWithVersions>
     </ItemGroup>

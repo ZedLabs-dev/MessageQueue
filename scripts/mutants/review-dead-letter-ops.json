@@ -7,217 +7,217 @@
     {
       "id": "X01",
       "name": "null reason not replayed by default",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "? letter.ReasonCode is null || !excludedByDefault.Contains(",
       "replace": "? letter.ReasonCode is not null && !excludedByDefault.Contains("
     },
     {
       "id": "X02",
       "name": "only MessageTooLarge excluded by default",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "[DeadLetterReasons.MessageTooLarge, DeadLetterReasons.DeserializationFailed];",
       "replace": "[DeadLetterReasons.MessageTooLarge];"
     },
     {
       "id": "X03",
       "name": "only DeserializationFailed excluded by default",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "[DeadLetterReasons.MessageTooLarge, DeadLetterReasons.DeserializationFailed];",
       "replace": "[DeadLetterReasons.DeserializationFailed];"
     },
     {
       "id": "X04",
       "name": "reason codes matched case-insensitively",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "reasonCodes.Contains(code, StringComparer.Ordinal)",
       "replace": "reasonCodes.Contains(code, StringComparer.OrdinalIgnoreCase)"
     },
     {
       "id": "X05",
       "name": "config not snapshotted",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "this.config = config with { };",
       "replace": "this.config = config;"
     },
     {
       "id": "X06",
       "name": "attempt 0 reported",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "metadata.DeliveryAttempt is >= 1 ?",
       "replace": "metadata.DeliveryAttempt is >= 0 ?"
     },
     {
       "id": "X07",
       "name": "attempt 1 hidden",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "metadata.DeliveryAttempt is >= 1 ?",
       "replace": "metadata.DeliveryAttempt is > 1 ?"
     },
     {
       "id": "X08",
       "name": "replays not counted on cancellation",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "            await ReturnHeldAsync(scan);\n            Count(replayed, purged: false);",
       "replace": "            await ReturnHeldAsync(scan);\n            if (!cancellationToken.IsCancellationRequested) Count(replayed, purged: false);"
     },
     {
       "id": "X09",
       "name": "purge not counted when cancelled (count only on success)",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "            Count(purged, purged: true);\n            gate.Release();",
       "replace": "            if (!cancellationToken.IsCancellationRequested) Count(purged, purged: true);\n            gate.Release();"
     },
     {
       "id": "X10",
       "name": "purge ignores cancellation between messages",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "            while (purged < options.MaxCount && examined < DeadLetterLimits.MaxScanCount)\n            {\n                cancellationToken.ThrowIfCancellationRequested();",
       "replace": "            while (purged < options.MaxCount && examined < DeadLetterLimits.MaxScanCount)\n            {"
     },
     {
       "id": "X11",
       "name": "purge has no scan cap",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "while (purged < options.MaxCount && examined < DeadLetterLimits.MaxScanCount)",
       "replace": "while (purged < options.MaxCount)"
     },
     {
       "id": "X12",
       "name": "purge skips the default replay exclusions",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "Selected(Snapshot(entry), options.ReasonCodes, [], options.Filter)",
       "replace": "Selected(Snapshot(entry), options.ReasonCodes, NotReplayedByDefault, options.Filter)"
     },
     {
       "id": "X13",
       "name": "a store's own timeout (OCE, token not cancelled) aborts the pass",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)\n                {\n                    throw;\n                }",
       "replace": "                catch (OperationCanceledException)\n                {\n                    throw;\n                }"
     },
     {
       "id": "X14",
       "name": "telemetry exception escapes",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "        catch (Exception ex)\n        {\n            DispatcherLog.TelemetryFailed(logger, config.QueueName, ex);\n        }",
       "replace": "        catch (Exception ex) when (ex is null)\n        {\n            DispatcherLog.TelemetryFailed(logger, config.QueueName, ex);\n        }"
     },
     {
       "id": "X15",
       "name": "blank reason code accepted",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "if (reasonCodes.Any(string.IsNullOrWhiteSpace))",
       "replace": "if (reasonCodes.Any(string.IsNullOrEmpty))"
     },
     {
       "id": "X16",
       "name": "purge MaxCount 0 accepted",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxCount, 1, nameof(options.MaxCount));\n        ValidateReasonCodes(options.ReasonCodes);\n        Require(DeadLetterOperations.Purge);",
       "replace": "        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxCount, 0, nameof(options.MaxCount));\n        ValidateReasonCodes(options.ReasonCodes);\n        Require(DeadLetterOperations.Purge);"
     },
     {
       "id": "X17",
       "name": "purge not refused when unsupported",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "        Require(DeadLetterOperations.Purge);",
       "replace": ""
     },
     {
       "id": "X18",
       "name": "replay not refused when unsupported",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "        Require(DeadLetterOperations.Replay);",
       "replace": ""
     },
     {
       "id": "X19",
       "name": "peek not refused when unsupported",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "        Require(DeadLetterOperations.Peek);",
       "replace": ""
     },
     {
       "id": "X20",
       "name": "header values not bounded in snapshot",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "                DeliveryText.TryAddHeader(headers, name, value);",
       "replace": "                headers[name] = value;"
     },
     {
       "id": "X21",
       "name": "failed replays reported past the cap",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "if (failures.Count < DeadLetterLimits.MaxReportedFailures)",
       "replace": "if (failures.Count <= DeadLetterLimits.MaxReportedFailures)"
     },
     {
       "id": "X22",
       "name": "telemetry counters swapped",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "            if (purged)\n                telemetry.RecordDeadLettersPurged(target, count);\n            else\n                telemetry.RecordDeadLettersReplayed(target, count);",
       "replace": "            if (!purged)\n                telemetry.RecordDeadLettersPurged(target, count);\n            else\n                telemetry.RecordDeadLettersReplayed(target, count);"
     },
     {
       "id": "X23",
       "name": "peek holds the gate across a failed open (no release)",
-      "file": "src/ESE.MessageQueue/Providers/DeadLetterQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/DeadLetterQueue.cs",
       "find": "            scan = await store.OpenScanAsync(browseOnly: true, cancellationToken);",
       "replace": "            scan = await store.OpenScanAsync(browseOnly: false, cancellationToken);"
     },
     {
       "id": "M01",
       "name": "DI: dead-letter queue not registered for provider queues",
-      "file": "src/ESE.MessageQueue/Providers/MessageQueueRegistration.cs",
+      "file": "src/ZedLabs.MessageQueue/Providers/MessageQueueRegistration.cs",
       "find": "        if (typeof(IDeadLetterQueue<T>).IsAssignableFrom(typeof(TQueue)))\n            services.AddSingleton(sp => (IDeadLetterQueue<T>)sp.GetRequiredService<TQueue>());",
       "replace": ""
     },
     {
       "id": "M02",
       "name": "DI: instance registration omits the dead-letter queue",
-      "file": "src/ESE.MessageQueue/Extensions/MessageQueueServiceCollectionExtensions.cs",
+      "file": "src/ZedLabs.MessageQueue/Extensions/MessageQueueServiceCollectionExtensions.cs",
       "find": "        services.AddSingleton<IDeadLetterQueue<T>>(queue);",
       "replace": ""
     },
     {
       "id": "M03",
       "name": "OTel: replay counter tagged as purge",
-      "file": "src/ESE.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
+      "file": "src/ZedLabs.MessageQueue/Telemetry/OpenTelemetry/OpenTelemetryProvider.cs",
       "find": "deadLettersReplayed.Add(count, Tags(target, \"replay\", null, consumer: true));",
       "replace": "deadLettersReplayed.Add(count, Tags(target, \"purge\", null, consumer: true));"
     },
     {
       "id": "M04",
       "name": "InMemory: disposed queue still opens a pass",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "                ObjectDisposedException.ThrowIf(owner.disposed == 1, owner);\n                pass = new Queue<StoredDeadLetter>(owner.deadLetters);",
       "replace": "                pass = new Queue<StoredDeadLetter>(owner.deadLetters);"
     },
     {
       "id": "M05",
       "name": "InMemory: purge of a dead letter Clear() removed counts as purged",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "                ThrowIfGone();\n                owner.deadLetters.Remove(stored);\n            }\n            return Task.CompletedTask;\n        }\n\n        // Clear()",
       "replace": "                owner.deadLetters.Remove(stored);\n            }\n            return Task.CompletedTask;\n        }\n\n        // Clear()"
     },
     {
       "id": "M06",
       "name": "InMemory: replay of a dead letter Clear() removed is queued anyway",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "                ThrowIfGone();\n                var context = stored.Letter.Context with { DeliveryAttempt = 1 };",
       "replace": "                var context = stored.Letter.Context with { DeliveryAttempt = 1 };"
     },
     {
       "id": "M07",
       "name": "InMemory: dead-letter time not reported",
-      "file": "src/ESE.MessageQueue/InMemory/InMemoryMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue/InMemory/InMemoryMessageQueue.cs",
       "find": "            DeadLetteredAt = stored.DeadLetteredAt,",
       "replace": ""
     },
     {
       "id": "RU01",
       "name": "replay not persistent",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
       "find": "        return new BasicProperties\n        {\n            Persistent = true,",
       "replace": "        return new BasicProperties\n        {\n            Persistent = false,",
       "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_dead_letter"
@@ -225,7 +225,7 @@
     {
       "id": "RU02",
       "name": "replay drops the publish timestamp",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
       "find": "            Timestamp = original.Timestamp,",
       "replace": "",
       "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_dead_letter"
@@ -233,7 +233,7 @@
     {
       "id": "RU03",
       "name": "replay drops the content type",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
       "find": "            ContentType = original.ContentType,",
       "replace": "",
       "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_dead_letter"
@@ -241,7 +241,7 @@
     {
       "id": "RU04",
       "name": "broker reason preferred over the library's",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
       "find": "ReasonCode = reason ?? brokerReason,",
       "replace": "ReasonCode = brokerReason ?? reason,",
       "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_dead_letter"
@@ -249,7 +249,7 @@
     {
       "id": "RU05",
       "name": "x-death time from the oldest entry",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
       "find": "&& entries.FirstOrDefault() is IDictionary<string, object?> death",
       "replace": "&& entries.LastOrDefault() is IDictionary<string, object?> death",
       "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_dead_letter"
@@ -257,7 +257,7 @@
     {
       "id": "RU06",
       "name": "library dead-letter time preferred less than x-death",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
       "find": "DeadLetteredAt = deadLetteredAt ?? brokerDeathTime,",
       "replace": "DeadLetteredAt = brokerDeathTime ?? deadLetteredAt,",
       "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_dead_letter"
@@ -265,7 +265,7 @@
     {
       "id": "RU07",
       "name": "reserved headers (traceparent) reported as application headers",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
       "find": "if (!PublishValidation.IsReserved(key) && Text(value) is { } text)",
       "replace": "if (Text(value) is { } text)",
       "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_dead_letter"
@@ -273,7 +273,7 @@
     {
       "id": "RI01",
       "name": "replay ack is multiple (acks skipped messages held before it)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
       "find": "                scan.ThrowIfUnusable();\n                await scan.channel.BasicAckAsync(handle.DeliveryTag, multiple: false, CancellationToken.None);\n                handle.Settled = true;\n            }\n\n            public async Task RemoveAsync",
       "replace": "                scan.ThrowIfUnusable();\n                await scan.channel.BasicAckAsync(handle.DeliveryTag, multiple: true, CancellationToken.None);\n                handle.Settled = true;\n            }\n\n            public async Task RemoveAsync",
       "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
@@ -281,7 +281,7 @@
     {
       "id": "RI02",
       "name": "purge ack is multiple (acks skipped messages held before it)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
       "find": "            public async Task RemoveAsync(CancellationToken cancellationToken)\n            {\n                scan.ThrowIfUnusable();\n                await scan.channel.BasicAckAsync(handle.DeliveryTag, multiple: false, CancellationToken.None);",
       "replace": "            public async Task RemoveAsync(CancellationToken cancellationToken)\n            {\n                scan.ThrowIfUnusable();\n                await scan.channel.BasicAckAsync(handle.DeliveryTag, multiple: true, CancellationToken.None);",
       "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
@@ -289,7 +289,7 @@
     {
       "id": "RI03",
       "name": "settled entries nacked again on dispose",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
       "find": "foreach (var handle in held.Where(h => !h.Settled))",
       "replace": "foreach (var handle in held)",
       "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
@@ -297,7 +297,7 @@
     {
       "id": "RI04",
       "name": "basic.get auto-acks (peek removes)",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
       "find": "autoAck: false",
       "replace": "autoAck: true",
       "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
@@ -305,7 +305,7 @@
     {
       "id": "RI05",
       "name": "replay published to the dead-letter queue itself",
-      "file": "src/ESE.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqDeadLetterStore.cs",
       "find": "scan.confirmed.PublishAsync(string.Empty, scan.store.queueName, mandatory: true",
       "replace": "scan.confirmed.PublishAsync(string.Empty, scan.store.deadLetterQueueName, mandatory: true",
       "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_dead_letter_queue"
@@ -313,7 +313,7 @@
     {
       "id": "AS01",
       "name": "transaction refusal: NotSupportedException not recognised",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusSettlement.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusSettlement.cs",
       "find": "exception is InvalidOperationException or NotSupportedException or System.Transactions.TransactionException;",
       "replace": "exception is InvalidOperationException or System.Transactions.TransactionException;",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -321,7 +321,7 @@
     {
       "id": "AS02",
       "name": "transaction refusal: TransactionException not recognised",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusSettlement.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusSettlement.cs",
       "find": "exception is InvalidOperationException or NotSupportedException or System.Transactions.TransactionException;",
       "replace": "exception is InvalidOperationException or NotSupportedException;",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -329,7 +329,7 @@
     {
       "id": "AS03",
       "name": "transaction refusal: InvalidOperationException not recognised",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusSettlement.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusSettlement.cs",
       "find": "exception is InvalidOperationException or NotSupportedException or System.Transactions.TransactionException;",
       "replace": "exception is NotSupportedException or System.Transactions.TransactionException;",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -337,7 +337,7 @@
     {
       "id": "AS04",
       "name": "broker calls not bounded by SendTimeout",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
       "find": "        timeout.CancelAfter(config.SendTimeout);",
       "replace": "",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -345,7 +345,7 @@
     {
       "id": "AS05",
       "name": "transaction does not flow across awaits",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
       "find": "new TransactionOptions { Timeout = config.SendTimeout }, TransactionScopeAsyncFlowOption.Enabled);",
       "replace": "new TransactionOptions { Timeout = config.SendTimeout }, TransactionScopeAsyncFlowOption.Suppress);",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -353,7 +353,7 @@
     {
       "id": "AS06",
       "name": "transaction joins the caller's ambient transaction",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
       "find": "new TransactionScope(TransactionScopeOption.RequiresNew,",
       "replace": "new TransactionScope(TransactionScopeOption.Required,",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -361,7 +361,7 @@
     {
       "id": "AS07",
       "name": "replayed entry not marked settled (abandoned after complete)",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
       "find": "            await store.ReplayAsync(receiver, Message, cancellationToken);\n            Settled = true;",
       "replace": "            await store.ReplayAsync(receiver, Message, cancellationToken);",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -369,7 +369,7 @@
     {
       "id": "AS08",
       "name": "purged entry not marked settled",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
       "find": "            await store.RemoveAsync(receiver, Message, cancellationToken);\n            Settled = true;",
       "replace": "            await store.RemoveAsync(receiver, Message, cancellationToken);",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -377,7 +377,7 @@
     {
       "id": "AS09",
       "name": "abandon failure (not lock lost) escapes dispose",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
       "find": "                catch (Exception ex)\n                {\n                    AzureServiceBusLog.DeadLetterAbandonFailed(store.logger, store.config.QueueName, ex);\n                }",
       "replace": "                catch (Exception ex) when (ex is null)\n                {\n                    AzureServiceBusLog.DeadLetterAbandonFailed(store.logger, store.config.QueueName, ex);\n                }",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -385,7 +385,7 @@
     {
       "id": "AS10",
       "name": "receiver not disposed after a pass",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusDeadLetterStore.cs",
       "find": "                await receiver.DisposeAsync();",
       "replace": "                await Task.CompletedTask;",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -393,7 +393,7 @@
     {
       "id": "AS11",
       "name": "peek after dispose allowed",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
       "find": "        ThrowIfDisposed();\n        return deadLetterQueue.PeekAsync(maxCount, cancellationToken);",
       "replace": "        return deadLetterQueue.PeekAsync(maxCount, cancellationToken);",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -401,7 +401,7 @@
     {
       "id": "AS12",
       "name": "purge after dispose allowed",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/AzureServiceBusMessageQueue.cs",
       "find": "        ThrowIfDisposed();\n        return deadLetterQueue.PurgeAsync(options, cancellationToken);",
       "replace": "        return deadLetterQueue.PurgeAsync(options, cancellationToken);",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -409,7 +409,7 @@
     {
       "id": "AS13",
       "name": "dead-letter time not recorded on Service Bus",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
       "find": "            [DeliveryCountProperty] = int.MaxValue,\n            [DeadLetteredAtProperty] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()",
       "replace": "            [DeliveryCountProperty] = int.MaxValue",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -417,7 +417,7 @@
     {
       "id": "AS14",
       "name": "replay copy carries no delivery-count marker (attempt not trusted)",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
       "find": "        copy.ApplicationProperties[DeliveryCountProperty] = 1;",
       "replace": "",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -425,7 +425,7 @@
     {
       "id": "AS15",
       "name": "broker dead-letter description reported only from library detail",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusMessages.cs",
       "find": " ?? NonEmpty(Text(properties.GetValueOrDefault(BrokerDeadLetterDescriptionProperty))),",
       "replace": ",",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -433,7 +433,7 @@
     {
       "id": "AS16",
       "name": "dead-letter receiver prefetches",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusTransport.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusTransport.cs",
       "find": "ReceiveMode = ServiceBusReceiveMode.PeekLock, PrefetchCount = 0 };",
       "replace": "ReceiveMode = ServiceBusReceiveMode.PeekLock, PrefetchCount = 50 };",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -441,7 +441,7 @@
     {
       "id": "AS17",
       "name": "dead-letter receiver reads the main queue",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusTransport.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusTransport.cs",
       "find": "new ServiceBusReceiverOptions { SubQueue = SubQueue.DeadLetter,",
       "replace": "new ServiceBusReceiverOptions { SubQueue = SubQueue.None,",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -449,7 +449,7 @@
     {
       "id": "AS18",
       "name": "dead-letter receiver in ReceiveAndDelete (receive removes)",
-      "file": "src/ESE.MessageQueue.AzureServiceBus/ServiceBusTransport.cs",
+      "file": "src/ZedLabs.MessageQueue.AzureServiceBus/ServiceBusTransport.cs",
       "find": "ReceiveMode = ServiceBusReceiveMode.PeekLock, PrefetchCount = 0 };",
       "replace": "ReceiveMode = ServiceBusReceiveMode.ReceiveAndDelete, PrefetchCount = 0 };",
       "filter": "Category=Unit&FullyQualifiedName~AzureServiceBus"
@@ -457,7 +457,7 @@
     {
       "id": "S01",
       "name": "sample code default replays",
-      "file": "samples/ESE.MessageQueue.Samples/SampleOptions.cs",
+      "file": "samples/ZedLabs.MessageQueue.Samples/SampleOptions.cs",
       "find": "public DeadLetterMode DeadLetters { get; set; } = DeadLetterMode.None;",
       "replace": "public DeadLetterMode DeadLetters { get; set; } = DeadLetterMode.Replay;",
       "filter": "Category=Unit&FullyQualifiedName~Samples"
@@ -465,7 +465,7 @@
     {
       "id": "S02",
       "name": "sample appsettings default replays",
-      "file": "samples/ESE.MessageQueue.Samples/appsettings.json",
+      "file": "samples/ZedLabs.MessageQueue.Samples/appsettings.json",
       "find": "\"DeadLetters\": \"Peek\",",
       "replace": "\"DeadLetters\": \"Replay\",",
       "filter": "Category=Unit&FullyQualifiedName~Samples"
@@ -473,7 +473,7 @@
     {
       "id": "S03",
       "name": "sample replays without the dry run",
-      "file": "samples/ESE.MessageQueue.Samples/DeadLetterInspector.cs",
+      "file": "samples/ZedLabs.MessageQueue.Samples/DeadLetterInspector.cs",
       "find": "{ MaxCount = 10, DryRun = true }",
       "replace": "{ MaxCount = 10, DryRun = false }",
       "filter": "Category=Unit&FullyQualifiedName~Samples"

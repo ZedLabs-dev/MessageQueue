@@ -1,7 +1,7 @@
 # Configuration reference
 
 Every setting of every provider, with its default, valid range and the error you get at startup when it is wrong.
-The tables are checked against the code by `tests/ESE.MessageQueue.Tests/Packaging/Given_the_configuration_reference`
+The tables are checked against the code by `tests/ZedLabs.MessageQueue.Tests/Packaging/Given_the_configuration_reference`
 (every setting listed, defaults as constructed, error texts as produced), and every JSON and environment-variable
 example on this page is bound and validated by `Given_the_documentation_snippets`.
 
@@ -160,7 +160,7 @@ local development, tests and single-process tools.
 
 ## RabbitMQ: `RabbitMqConfig`
 
-`Provider = RabbitMq`, package `ESE.MessageQueue.RabbitMQ`. Set **exactly one** endpoint form: `ConnectionString`, or
+`Provider = RabbitMq`, package `ZedLabs.MessageQueue.RabbitMQ`. Set **exactly one** endpoint form: `ConnectionString`, or
 `HostName` with the separate `Port`, `UserName`, `Password` and `VirtualHost`.
 
 | Setting | Type | Default | Valid values | Required | Notes |
@@ -226,7 +226,7 @@ Keys are `Tls:<Setting>` ([ADR 0008](adr/0008-rabbitmq-tls-and-consumer-shutdown
 
 ## Azure Service Bus: `AzureServiceBusConfig`
 
-`Provider = AzureServiceBus`, package `ESE.MessageQueue.AzureServiceBus`. Set **exactly one** of
+`Provider = AzureServiceBus`, package `ZedLabs.MessageQueue.AzureServiceBus`. Set **exactly one** of
 `FullyQualifiedNamespace` (Entra ID, recommended) and `ConnectionString` (shared access key).
 
 | Setting | Type | Default | Valid values | Required | Notes |
@@ -310,8 +310,8 @@ what to search for.
 | InMemory | `Retry:Strategy=Custom` | `Retry:Strategy Custom requires a CustomDelayCalculator` |
 | InMemory | `Retry:Strategy=2` | `Retry:Strategy '2' is not supported. Supported values: Fixed, Linear, Exponential, Custom` |
 | InMemory | `ShutdownTimeout=00:00:00` | `ShutdownTimeout must be > 0` |
-| InMemory | `RetryAttempts=3` | `'ErrorOnUnknownConfiguration' was set on the provided BinderOptions, but the following properties were not found on the instance of ESE.MessageQueue.InMemory.InMemoryConfig: 'RetryAttempts'` |
-| InMemory | `Retry:MaxRetry=3` | `the following properties were not found on the instance of ESE.MessageQueue.Retry.RetryPolicy: 'MaxRetry'` |
+| InMemory | `RetryAttempts=3` | `'ErrorOnUnknownConfiguration' was set on the provided BinderOptions, but the following properties were not found on the instance of ZedLabs.MessageQueue.InMemory.InMemoryConfig: 'RetryAttempts'` |
+| InMemory | `Retry:MaxRetry=3` | `the following properties were not found on the instance of ZedLabs.MessageQueue.Retry.RetryPolicy: 'MaxRetry'` |
 | RabbitMq | `ConnectionString=` | `ConnectionString (amqps://user:password@host/vhost) or HostName is required` |
 | RabbitMq | `HostName=rabbit.example.com` (next to a connection string) | `Set either ConnectionString or HostName, not both` |
 | RabbitMq | `ConnectionString=http://rabbit.example.com` | `ConnectionString must be an absolute amqp:// or amqps:// URI` |
@@ -354,7 +354,7 @@ what to search for.
 | AzureServiceBus | `MaxAutoLockRenewalDuration=-00:00:01` | `MaxAutoLockRenewalDuration must be >= 0` |
 | AzureServiceBus | `PrefetchCount=-1` | `The field PrefetchCount must be between 0 and 2147483647.` |
 | AzureServiceBus | `MaxBatchSize=0` | `The field MaxBatchSize must be between 1 and 2147483647.` |
-| AzureServiceBus | `EnablePartitioning=true` | `the following properties were not found on the instance of ESE.MessageQueue.AzureServiceBus.AzureServiceBusConfig: 'EnablePartitioning'` |
+| AzureServiceBus | `EnablePartitioning=true` | `the following properties were not found on the instance of ZedLabs.MessageQueue.AzureServiceBus.AzureServiceBusConfig: 'EnablePartitioning'` |
 
 A queue whose JSON metadata lacks the message type fails with
 `JsonTypeInfoResolver has no JSON metadata for <type>: add [JsonSerializable(typeof(<type>))] to its JsonSerializerContext`.

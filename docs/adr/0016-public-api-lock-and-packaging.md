@@ -1,6 +1,6 @@
 # 0016. Public API lock, documentation and packaging
 
-- Status: Accepted (2026-10-17)
+- Status: Accepted (2026-10-17); amended 2026-11-20 (ZedLabs rebrand, Apache-2.0, one-time Shipped baseline rewrite)
 - Context: OPTIMIZATION-PLAN §6.2, §6.4, Phase 7; ADR 0015
 
 ## Decision
@@ -19,9 +19,10 @@
   already use `init`.
 - **Docs:** `GenerateDocumentationFile` with CS1591 as an error on the packages, except the options files listed in
   `.editorconfig` (CLAUDE.md "Code conventions").
-- **Packaging:** metadata in `Directory.Build.props` (Authors Eric Ewing, MIT, repository, tags, release notes link);
-  a README per package; deterministic CI builds, embedded untracked sources, `.snupkg` symbols, SourceLink. The SDK
-  already bundles SourceLink; the explicit `Microsoft.SourceLink.GitHub` reference pins it under CPM.
+- **Packaging:** metadata in `Directory.Build.props` (Authors and Company ZedLabs, Apache-2.0, repository, tags,
+  release notes link; until the 2026-11-20 amendment below: Eric Ewing and MIT); a README, `LICENSE` and `NOTICE` per
+  package; deterministic CI builds, embedded untracked sources, `.snupkg` symbols, SourceLink. The SDK already bundles
+  SourceLink; the explicit `Microsoft.SourceLink.GitHub` reference pins it under CPM.
 - **Version** `1.0.0-rc.1`: 1.0.0 is blocked until the ASB integration specs run on a real namespace (CHANGELOG).
   `EnablePackageValidation` checks each package alone; set `PackageValidationBaselineVersion` after 1.0.0 ships.
 - **Release:** `.github/workflows/release.yml` on `v*` tags reruns `ci.yml` (now `workflow_call`), checks the tag
@@ -37,3 +38,22 @@
 ## Consequences
 
 - Every public change is visible in a reviewed text diff; accidental exposure fails the build.
+
+## Amendment (2026-11-20): ZedLabs rebrand and relicensing
+
+The repository moved to the ZedLabs organization (https://github.com/ZedLabs/MessageQueue) before any package was
+published. The owner decided:
+
+- **Names:** package IDs, assemblies, namespaces, project folders and the solution were renamed from `ESE.MessageQueue*`
+  to `ZedLabs.MessageQueue*`; the ActivitySource and Meter from `ESE.MessageQueue` to `ZedLabs.MessageQueue`; metric and
+  tag names from `ese.messagequeue.*` to `zedlabs.messagequeue.*`; library-owned headers and application properties from
+  `x-ese-*` to `x-zedlabs-*`; the in-memory `messaging.system` from `ese.inmemory` to `zedlabs.inmemory`. The full map
+  is in the CHANGELOG ("Breaking: ZedLabs rebrand").
+- **License:** Apache-2.0 replaces MIT (`LICENSE` holds the full Apache License 2.0 text, `NOTICE` the attribution);
+  Authors, Company and copyright holder are ZedLabs. Both files are packed into every package, and
+  `Packaging/Given_the_packed_packages` packs each package and checks its nuspec (license expression, authors,
+  copyright, project and repository URL) and the packed `LICENSE` and `NOTICE`.
+- **One-time exception to "Shipped changes only in `/release`":** every entry of `PublicAPI.Shipped.txt` names the
+  old namespaces, so the rename rewrote the Shipped baselines in place (same entries, new namespaces) and
+  `PublicAPI.Unshipped.txt` the same way, keeping each `*REMOVED*` line matched to its Shipped entry. Nothing had been
+  published, so no consumer compiled against the old baseline. The rule applies again from here on.

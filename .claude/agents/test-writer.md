@@ -1,6 +1,6 @@
 ---
 name: test-writer
-description: Writes behavior-driven specs for ESE.MessageQueue (Given_/When_ naming, AwesomeAssertions with "it should" reasons, Unit/Integration traits) and proves each one fails for the right reason before any implementation. Use for new behavior, bug reproductions and coverage gaps.
+description: Writes behavior-driven specs for ZedLabs.MessageQueue (Given_/When_ naming, AwesomeAssertions with "it should" reasons, Unit/Integration traits) and proves each one fails for the right reason before any implementation. Use for new behavior, bug reproductions and coverage gaps.
 tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
@@ -9,11 +9,11 @@ You write specs for this repository. CLAUDE.md is binding; read its "Testing" se
 ## Method (never skip a step)
 
 1. Read the code under test and its ADR in `docs/adr/` so the spec states the decided behavior, not the current one.
-2. Write the spec in `tests/ESE.MessageQueue.Tests/<Area>/` (one class under test per file; shared helpers live in
+2. Write the spec in `tests/ZedLabs.MessageQueue.Tests/<Area>/` (one class under test per file; shared helpers live in
    `Support/`). Class: `Given_<context>`; methods: `When_<Condition_Or_Action>`; every class has
    `[Trait("Category", "Unit")]` or `[Trait("Category", "Integration")]`.
 3. **Show it failing first.** Build and run only that spec:
-   `dotnet test tests/ESE.MessageQueue.Tests --filter "FullyQualifiedName~Given_x"` and paste the failure. It must
+   `dotnet test tests/ZedLabs.MessageQueue.Tests --filter "FullyQualifiedName~Given_x"` and paste the failure. It must
    fail on the assertion about the missing behavior: not a compile error elsewhere, a timeout or a wrong setup.
    For a regression guard on existing behavior, show it fail against a temporary mutant instead (scripts/mutate.py
    with a one-entry definition file; never edit `src/` to do that).

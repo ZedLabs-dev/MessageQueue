@@ -1,24 +1,24 @@
 # Getting started: Azure Service Bus
 
-`ESE.MessageQueue.AzureServiceBus` runs the shared pipeline on Azure Service Bus (Azure.Messaging.ServiceBus 7): a
+`ZedLabs.MessageQueue.AzureServiceBus` runs the shared pipeline on Azure Service Bus (Azure.Messaging.ServiceBus 7): a
 queue, or a topic with one subscription, authenticated with Entra ID (recommended) or a connection string
 ([ADRs 0009-0012](../adr/0009-azure-service-bus-backoff-and-attempt-counting.md)). The provider's integration specs
 have **not yet run against a real namespace**; that is the release blocker for 1.0.0 (see the
 [release checklist](../release-checklist.md)). Its behavior is covered by unit specs over the SDK seams.
 
-Every C# block on this page is compiled from `samples/ESE.MessageQueue.Samples/Docs/`, and the configuration examples
+Every C# block on this page is compiled from `samples/ZedLabs.MessageQueue.Samples/Docs/`, and the configuration examples
 are validated, by `Packaging/Given_the_documentation_snippets`.
 
 ## 1. Install
 
 ```bash
-dotnet add package ESE.MessageQueue.AzureServiceBus --prerelease    # brings ESE.MessageQueue (same version)
+dotnet add package ZedLabs.MessageQueue.AzureServiceBus --prerelease # brings ZedLabs.MessageQueue (same version)
 dotnet add package Microsoft.Extensions.Hosting
 dotnet add package OpenTelemetry.Extensions.Hosting    # only for the telemetry step: AddOpenTelemetry()
 ```
 
 The packages are versioned `1.0.0-rc.1` (pre-release); upgrade the core and provider packages together. If your feed
-does not have them yet, build them with `dotnet pack ESE.MessageQueue.sln -c Release -o artifacts`.
+does not have them yet, build them with `dotnet pack ZedLabs.MessageQueue.sln -c Release -o artifacts`.
 
 ## 2. Entities and permissions
 
@@ -55,8 +55,8 @@ public sealed record OrderPlaced(string OrderId, string CustomerId, decimal Amou
 
 <!-- snippet: processor -->
 ```csharp
-using ESE.MessageQueue.Abstractions;
-using ESE.MessageQueue.Processing;
+using ZedLabs.MessageQueue.Abstractions;
+using ZedLabs.MessageQueue.Processing;
 
 public sealed class OrderPlacedProcessor : IMessageProcessor<OrderPlaced>
 {
@@ -93,11 +93,11 @@ public sealed class OrderPlacedProcessor : IMessageProcessor<OrderPlaced>
 ```csharp
 using Azure.Core;
 using Azure.Identity;
-using ESE.MessageQueue.Extensions;
-using ESE.MessageQueue.HealthChecks;
-using ESE.MessageQueue.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using ZedLabs.MessageQueue.Extensions;
+using ZedLabs.MessageQueue.HealthChecks;
+using ZedLabs.MessageQueue.Hosting;
 
 public static class OrderMessaging
 {
@@ -204,10 +204,10 @@ and startup error is in the [configuration reference](../configuration.md#azure-
 
 <!-- snippet: azureservicebus-program -->
 ```csharp
-using ESE.MessageQueue.Samples.Docs;
-using ESE.MessageQueue.Samples.Docs.AzureServiceBus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using ZedLabs.MessageQueue.Samples.Docs;
+using ZedLabs.MessageQueue.Samples.Docs.AzureServiceBus;
 
 var builder = Host.CreateApplicationBuilder(args);   // appsettings.json, environment variables, command line
 builder.Services.AddOrderMessaging(builder.Configuration);
@@ -226,7 +226,7 @@ after another: with several queues, it needs the sum of their timeouts.
 
 <!-- snippet: publisher -->
 ```csharp
-using ESE.MessageQueue.Abstractions;
+using ZedLabs.MessageQueue.Abstractions;
 
 public sealed class OrderService
 {
@@ -255,14 +255,14 @@ messages, split by the entity's byte limit. Published messages carry `Subject` =
 
 - **Connects on first use.** The client is created with the queue; the hosted service starts the processor during
   host start. Authentication and entity errors then surface as processor errors (log event 3009, metric
-  `ese.messagequeue.transport.errors`) while the SDK keeps retrying; the health check reports them. (This follows the
+  `zedlabs.messagequeue.transport.errors`) while the SDK keeps retrying; the health check reports them. (This follows the
   SDK's processor model and the provider's unit specs; it has not yet been observed against a real namespace.)
 - **Queue retries** schedule a copy (`ScheduledEnqueueTime = now + delay`) and complete the original in one
   transaction (`TransactionalRetries`). Entities that refuse transactions (partitioned, Basic tier, emulator) fall back
   to send-then-complete after warning 3014.
 - **Dead-letters** with the broker's dead-letter operation, reason = the library's reason code and the properties
-  `x-ese-dead-letter-reason`, `x-ese-dead-letter-detail` (an exception type, never its message), `x-ese-dead-lettered-at`
-  and `x-ese-dead-letter-attempt`.
+  `x-zedlabs-dead-letter-reason`, `x-zedlabs-dead-letter-detail` (an exception type, never its message), `x-zedlabs-dead-lettered-at`
+  and `x-zedlabs-dead-letter-attempt`.
 - **Lock renewal**: the processor renews each message's lock for up to `MaxAutoLockRenewalDuration`; a handler that
   runs longer loses the lock and the message is redelivered (warning 3008).
 
@@ -279,10 +279,10 @@ Results carry no namespace and no exception text; the exception goes to the log 
 
 <!-- snippet: telemetry -->
 ```csharp
-using ESE.MessageQueue.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using ZedLabs.MessageQueue.Extensions;
 
 public static class OrderTelemetry
 {
@@ -310,8 +310,8 @@ Service Bus spans and metrics use `messaging.system = servicebus`, the queue (or
 
 <!-- snippet: dead-letters -->
 ```csharp
-using ESE.MessageQueue.Abstractions;
 using Microsoft.Extensions.Logging;
+using ZedLabs.MessageQueue.Abstractions;
 
 // Run from an operator tool, an admin endpoint or a one-off job, not from the message handler.
 public sealed partial class OrderDeadLetters

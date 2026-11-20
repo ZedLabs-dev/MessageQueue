@@ -2,6 +2,8 @@
 
 - Status: Accepted (2026-10-22)
 - Context: PRODUCTION-READINESS-PLAN "drain and replay dead-letter queues"; ADRs 0004, 0006, 0009, 0015, 0021
+- Renamed 2026-11-20 (ADR 0016 amendment): the headers were `x-ese-*` when this was decided; they are now
+  `x-zedlabs-*`.
 
 ## Decision
 
@@ -25,12 +27,12 @@
   `delivery-limit: -1` policy. Main and retry queues keep their limits (the main one ends in the dead-letter queue,
   retry queues have no consumers). Queue depth is no bound (it lags after nacks). No dead-letter queue: `None`.
 - **Service Bus:** a PeekLock receiver per pass on `$DeadLetterQueue`; peeks browse. A replay is a retry copy (ADR
-  0009): new broker id (duplicate detection must not drop it), original in `x-ese-message-id`, attempt 1, dead-letter
+  0009): new broker id (duplicate detection must not drop it), original in `x-zedlabs-message-id`, attempt 1, dead-letter
   properties stripped (any case); send and complete in one `RequiresNew` transaction, else send first. Only a refusal
   (`InvalidOperationException`, `NotSupportedException`, `TransactionException`, but not disposed, aborted or in-doubt)
   switches to send-first. Receives wait 1 s; a repeated sequence number or 1000 held messages (the SDK settles by
   message, body included) ends the pass. Subscriptions: peek and purge only (a resend reaches every subscription).
-- Dead letters record `x-ese-dead-lettered-at` (both brokers) and `x-ese-dead-letter-attempt` (Service Bus).
+- Dead letters record `x-zedlabs-dead-lettered-at` (both brokers) and `x-zedlabs-dead-letter-attempt` (Service Bus).
 
 ## Consequences
 

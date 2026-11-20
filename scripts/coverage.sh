@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Line-coverage report and gate for the shipped packages: ESE.MessageQueue, ESE.MessageQueue.RabbitMQ and
-# ESE.MessageQueue.AzureServiceBus (samples, tests and benchmarks are excluded).
+# Line-coverage report and gate for the shipped packages: ZedLabs.MessageQueue, ZedLabs.MessageQueue.RabbitMQ and
+# ZedLabs.MessageQueue.AzureServiceBus (samples, tests and benchmarks are excluded).
 #
 #   scripts/coverage.sh                 # run the full suite with coverage, report, enforce the gate
 #   scripts/coverage.sh --skip-tests    # only merge existing TestResults/**/coverage.cobertura.xml (CI)
@@ -16,13 +16,13 @@ THRESHOLD="${COVERAGE_THRESHOLD:-89}"
 ASSEMBLY_FLOOR="${COVERAGE_ASSEMBLY_FLOOR:-87}"
 RESULTS_DIR="${RESULTS_DIR:-TestResults}"
 REPORT_DIR="$RESULTS_DIR/coverage-report"
-ASSEMBLIES=(ESE.MessageQueue ESE.MessageQueue.RabbitMQ ESE.MessageQueue.AzureServiceBus)
+ASSEMBLIES=(ZedLabs.MessageQueue ZedLabs.MessageQueue.RabbitMQ ZedLabs.MessageQueue.AzureServiceBus)
 
 cd "$(dirname "$0")/.."
 
 if [[ "${1:-}" != "--skip-tests" ]]; then
   rm -rf "$RESULTS_DIR"
-  dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m --collect:"XPlat Code Coverage" --results-directory "$RESULTS_DIR"
+  dotnet test ZedLabs.MessageQueue.sln --blame-hang-timeout 2m --collect:"XPlat Code Coverage" --results-directory "$RESULTS_DIR"
 fi
 
 filters="$(printf '+%s;' "${ASSEMBLIES[@]}")"

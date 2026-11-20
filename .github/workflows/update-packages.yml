@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   update:
-    if: github.repository == 'ericsewing/MessageQueue'
+    if: github.repository == 'ZedLabs/MessageQueue'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -68,7 +68,7 @@ jobs:
             and why, gate results) to update-packages-summary.md in the repository root.
           claude_args: >-
             --max-turns 120
-            --allowedTools "Read,Edit,Write,Glob,Grep,WebFetch(domain:nuget.org),WebFetch(domain:api.nuget.org),WebFetch(domain:github.com),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet list ESE.MessageQueue.sln package:*),Bash(dotnet format:*),Bash(dotnet add src/ESE.MessageQueue/ESE.MessageQueue.csproj package:*),Bash(dotnet add src/ESE.MessageQueue.RabbitMQ/ESE.MessageQueue.RabbitMQ.csproj package:*),Bash(dotnet add src/ESE.MessageQueue.AzureServiceBus/ESE.MessageQueue.AzureServiceBus.csproj package:*),Bash(dotnet add tests/ESE.MessageQueue.Tests/ESE.MessageQueue.Tests.csproj package:*),Bash(scripts/coverage.sh:*),Bash(git status:*),Bash(git diff:*)"
+            --allowedTools "Read,Edit,Write,Glob,Grep,WebFetch(domain:nuget.org),WebFetch(domain:api.nuget.org),WebFetch(domain:github.com),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet list ZedLabs.MessageQueue.sln package:*),Bash(dotnet format:*),Bash(dotnet add src/ZedLabs.MessageQueue/ZedLabs.MessageQueue.csproj package:*),Bash(dotnet add src/ZedLabs.MessageQueue.RabbitMQ/ZedLabs.MessageQueue.RabbitMQ.csproj package:*),Bash(dotnet add src/ZedLabs.MessageQueue.AzureServiceBus/ZedLabs.MessageQueue.AzureServiceBus.csproj package:*),Bash(dotnet add tests/ZedLabs.MessageQueue.Tests/ZedLabs.MessageQueue.Tests.csproj package:*),Bash(scripts/coverage.sh:*),Bash(git status:*),Bash(git diff:*)"
 
       - name: Collect the changes
         id: diff

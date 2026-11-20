@@ -24,7 +24,7 @@ wait behind long ones. The delayed-message-exchange plugin is not in the stock i
   A refused copy (queue deleted) redeclares the queue, retry or dead-letter, and is published once more. If that
   fails too, or the confirm timed out (the copy may exist: at-least-once), the delivery is requeued after a per-message
   backoff (100 ms, doubling, at most 30 s, cut short by unsubscribe), and the error log is throttled.
-  `DeadLetterAsync` works the same way towards the DLQ, adding `x-ese-dead-letter-reason`/`-detail` (exception type).
+  `DeadLetterAsync` works the same way towards the DLQ, adding `x-zedlabs-dead-letter-reason`/`-detail` (exception type).
 - **Attempt** = `x-delivery-attempt` + (redelivered ? max(1, `x-delivery-count`) : 0). The library's header counts
   only when `x-first-death-queue` names one of this queue's retry queues, `x-delivery-count` only on redeliveries from
   quorum queues. Accepted risk: a forged `x-first-death-queue` changes only the forger's own message's attempt.

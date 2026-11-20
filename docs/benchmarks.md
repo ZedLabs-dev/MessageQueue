@@ -1,13 +1,13 @@
 # Benchmarks
 
-`benchmarks/ESE.MessageQueue.Benchmarks` (BenchmarkDotNet, `[MemoryDiagnoser]`; ADR 0014). It is not a test project,
+`benchmarks/ZedLabs.MessageQueue.Benchmarks` (BenchmarkDotNet, `[MemoryDiagnoser]`; ADR 0014). It is not a test project,
 so `dotnet test` never runs it; CI only builds it. Run it in Release:
 
 ```bash
-dotnet run -c Release --project benchmarks/ESE.MessageQueue.Benchmarks -- --filter '*'                 # release-grade (default job, ~5 min)
-dotnet run -c Release --project benchmarks/ESE.MessageQueue.Benchmarks -- --filter '*' --job short     # quick look
-dotnet run -c Release --project benchmarks/ESE.MessageQueue.Benchmarks -- --filter '*Serializer*'      # one class
-MQ_BENCH_RABBITMQ=amqp://user:pass@host:5672/ dotnet run -c Release --project benchmarks/ESE.MessageQueue.Benchmarks -- --filter '*RabbitMq*'
+dotnet run -c Release --project benchmarks/ZedLabs.MessageQueue.Benchmarks -- --filter '*'             # release-grade (default job, ~5 min)
+dotnet run -c Release --project benchmarks/ZedLabs.MessageQueue.Benchmarks -- --filter '*' --job short # quick look
+dotnet run -c Release --project benchmarks/ZedLabs.MessageQueue.Benchmarks -- --filter '*Serializer*'  # one class
+MQ_BENCH_RABBITMQ=amqp://user:pass@host:5672/ dotnet run -c Release --project benchmarks/ZedLabs.MessageQueue.Benchmarks -- --filter '*RabbitMq*'
 ```
 
 Without `MQ_BENCH_RABBITMQ`, `Program` starts the RabbitMQ image pinned in `docker/test-broker/Dockerfile` (tag and

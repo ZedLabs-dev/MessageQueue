@@ -1,4 +1,4 @@
-# ESE.MessageQueue
+# ZedLabs.MessageQueue
 
 Provider-agnostic event messaging library for .NET 10. Applications code against `IMessageQueue<T>`;
 RabbitMQ, Azure Service Bus and an in-memory queue are interchangeable implementations.
@@ -7,20 +7,20 @@ Roadmap: `OPTIMIZATION-PLAN.md` (phased work), `PRODUCTION-READINESS-PLAN.md` (b
 ## Commands
 
 ```bash
-dotnet restore ESE.MessageQueue.sln --locked-mode          # CI restore; lock files must not drift
-dotnet build ESE.MessageQueue.sln -warnaserror              # warnings are errors (also via Directory.Build.props)
-dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m                             # full suite (RabbitMQ via Testcontainers; needs Docker)
-dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Unit      # fast loop: no Docker, no broker
-dotnet test ESE.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Integration
+dotnet restore ZedLabs.MessageQueue.sln --locked-mode      # CI restore; lock files must not drift
+dotnet build ZedLabs.MessageQueue.sln -warnaserror          # warnings are errors (also via Directory.Build.props)
+dotnet test ZedLabs.MessageQueue.sln --blame-hang-timeout 2m                         # full suite (RabbitMQ via Testcontainers; needs Docker)
+dotnet test ZedLabs.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Unit  # fast loop: no Docker, no broker
+dotnet test ZedLabs.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Integration
 scripts/coverage.sh                                         # full suite + coverage report + gates (TestResults/coverage-report/index.html)
-dotnet format ESE.MessageQueue.sln                          # apply .editorconfig style
-dotnet format ESE.MessageQueue.sln --verify-no-changes      # what CI runs
-dotnet list ESE.MessageQueue.sln package --vulnerable --include-transitive   # must report none
-dotnet pack ESE.MessageQueue.sln -c Release -o artifacts    # the three packages + .snupkg symbols
+dotnet format ZedLabs.MessageQueue.sln                      # apply .editorconfig style
+dotnet format ZedLabs.MessageQueue.sln --verify-no-changes  # what CI runs
+dotnet list ZedLabs.MessageQueue.sln package --vulnerable --include-transitive # must report none
+dotnet pack ZedLabs.MessageQueue.sln -c Release -o artifacts # the three packages + .snupkg symbols
 scripts/mutate.py scripts/mutants/<set>.json [ids]          # mutation testing in a scratch copy (never the working tree)
 
-dotnet run --project samples/ESE.MessageQueue.Samples                         # sample worker, in-memory (append `-- --environment RabbitMq|AzureServiceBus`)
-dotnet run -c Release --project benchmarks/ESE.MessageQueue.Benchmarks -- --filter '*' --job short   # docs/benchmarks.md
+dotnet run --project samples/ZedLabs.MessageQueue.Samples                     # sample worker, in-memory (append `-- --environment RabbitMq|AzureServiceBus`)
+dotnet run -c Release --project benchmarks/ZedLabs.MessageQueue.Benchmarks -- --filter '*' --job short # docs/benchmarks.md
 
 cp docker/.env.example docker/.env                          # once; .env is git-ignored
 docker compose -f docker/docker-compose.dev.yml up -d --wait                       # RabbitMQ 4.x
@@ -33,11 +33,11 @@ The compose file is for manual experiments only; the tests do not use it (see Te
 
 | Path | Contents |
 |---|---|
-| `src/ESE.MessageQueue` | Core package, no broker SDK. `Abstractions/` (`IMessageQueue<T>` = `IMessagePublisher<T>` + `IMessageSubscriber<T>` + `Capabilities`, `MessageContext`, `MessageResult`, `PublishOptions`), `Providers/` (public provider SPI: `IMessageQueueProvider`, `MessageQueueRegistration<T>`, `MessageDispatcher<T>`, `IDeliveryActions`, `PublishTelemetry`, `PublishValidation`, `MessageSerializer`, `MessageQueueConfigValidator<T>`), `Processing/` (internal consumer helpers `HandlerScope`, `TransportBackoff`, `LogThrottle`, `BackgroundWork`; `DeadLetterReasons`, `IMessageProcessor<T>`), `Configuration/`, `Extensions/` (`AddMessageQueue<T>`, `AddMessageQueueProvider`, `AddInMemoryMessageQueue<T>`), `Retry/`, `Hosting/` (`MessageQueueHostedService<T>`, DI scope per message), `Telemetry/` (`ITelemetryProvider`, `OpenTelemetryProvider`, W3C `TraceContext`; ADR 0013), `HealthChecks/` (generic check), `InMemory/` (built-in provider, ADR 0003) |
-| `src/ESE.MessageQueue.RabbitMQ` | RabbitMQ.Client 7 provider: lazy connect, `PublisherPool`, per-delay `RetryQueues`, TLS rules, health check, `AddRabbitMqProvider()` (ADRs 0006-0008) |
-| `src/ESE.MessageQueue.AzureServiceBus` | Service Bus provider: SDK seams in `ServiceBusTransport.cs`, scheduled-copy retries, Entra ID, peek health check, `AddAzureServiceBusProvider()` (ADRs 0009-0012) |
-| `tests/ESE.MessageQueue.Tests` | One test project for all three packages (ADR 0015) |
-| `samples/` | `ESE.MessageQueue.Samples` (worker; the only OpenTelemetry exporter reference, ADR 0014) and `ESE.MessageQueue.Samples.LoopbackProvider` (a provider built on the public SPI only, no InternalsVisibleTo) |
+| `src/ZedLabs.MessageQueue` | Core package, no broker SDK. `Abstractions/` (`IMessageQueue<T>` = `IMessagePublisher<T>` + `IMessageSubscriber<T>` + `Capabilities`, `MessageContext`, `MessageResult`, `PublishOptions`), `Providers/` (public provider SPI: `IMessageQueueProvider`, `MessageQueueRegistration<T>`, `MessageDispatcher<T>`, `IDeliveryActions`, `PublishTelemetry`, `PublishValidation`, `MessageSerializer`, `MessageQueueConfigValidator<T>`), `Processing/` (internal consumer helpers `HandlerScope`, `TransportBackoff`, `LogThrottle`, `BackgroundWork`; `DeadLetterReasons`, `IMessageProcessor<T>`), `Configuration/`, `Extensions/` (`AddMessageQueue<T>`, `AddMessageQueueProvider`, `AddInMemoryMessageQueue<T>`), `Retry/`, `Hosting/` (`MessageQueueHostedService<T>`, DI scope per message), `Telemetry/` (`ITelemetryProvider`, `OpenTelemetryProvider`, W3C `TraceContext`; ADR 0013), `HealthChecks/` (generic check), `InMemory/` (built-in provider, ADR 0003) |
+| `src/ZedLabs.MessageQueue.RabbitMQ` | RabbitMQ.Client 7 provider: lazy connect, `PublisherPool`, per-delay `RetryQueues`, TLS rules, health check, `AddRabbitMqProvider()` (ADRs 0006-0008) |
+| `src/ZedLabs.MessageQueue.AzureServiceBus` | Service Bus provider: SDK seams in `ServiceBusTransport.cs`, scheduled-copy retries, Entra ID, peek health check, `AddAzureServiceBusProvider()` (ADRs 0009-0012) |
+| `tests/ZedLabs.MessageQueue.Tests` | One test project for all three packages (ADR 0015) |
+| `samples/` | `ZedLabs.MessageQueue.Samples` (worker; the only OpenTelemetry exporter reference, ADR 0014) and `ZedLabs.MessageQueue.Samples.LoopbackProvider` (a provider built on the public SPI only, no InternalsVisibleTo) |
 | `benchmarks/` | BenchmarkDotNet; never run by `dotnet test`, CI only builds it |
 | `docker/` | Dev compose file, `.env.example`, ASB emulator config |
 | `docs/` | `README.md` (index), `getting-started/` (one guide per provider), `configuration.md` (settings reference), `operations/` (failure modes, monitoring, alerts, runbooks), `release-checklist.md`, `production-readiness-status.md` (tracking view of PRODUCTION-READINESS-PLAN), `adr/` (decisions: read before changing retry, config, dispatcher, packaging), API docs, `benchmarks.md` |
@@ -79,7 +79,7 @@ The compose file is for manual experiments only; the tests do not use it (see Te
 5. No `// Arrange` / `// Act` / `// Assert` comments.
 6. Every test class has `[Trait("Category","Unit")]` or `[Trait("Category","Integration")]`. Unit tests must not
    need a broker, Docker or the network.
-7. Layout: one folder per area in `tests/ESE.MessageQueue.Tests` (`Serialization/`, `Retry/`, `Telemetry/`,
+7. Layout: one folder per area in `tests/ZedLabs.MessageQueue.Tests` (`Serialization/`, `Retry/`, `Telemetry/`,
    `HealthChecks/`, `InMemory/`, `RabbitMQ/`, `AzureServiceBus/`, `Configuration/`, `Processing/`, `Providers/`,
    `Hosting/`, `Abstractions/`, `Packaging/`, `Samples/`), one class under test per file. Shared fixtures and helpers live in `Support/` (`SpanCapture` / `MetricCapture` listen to one
    ActivitySource / Meter: give each test its own source name).
@@ -128,7 +128,7 @@ The compose file is for manual experiments only; the tests do not use it (see Te
   `Directory.Packages.props`; `PackageReference` has no `Version`. Commit the updated `packages.lock.json`.
 - Docs are specs too: changing a setting, default, startup message, `[LoggerMessage]` or metric fails
   `Packaging/Given_the_configuration_reference` / `Given_the_monitoring_reference` until `docs/configuration.md` or
-  `docs/operations/monitoring.md` follows. Guide code lives in `samples/ESE.MessageQueue.Samples/Docs/`
+  `docs/operations/monitoring.md` follows. Guide code lives in `samples/ZedLabs.MessageQueue.Samples/Docs/`
   (`#region snippet:<name>`), copied verbatim into `docs/getting-started/` (`Given_the_documentation_snippets`).
 - **Never** suppress NU19xx (NuGet audit) warnings. Fix the vulnerable dependency instead.
 - **Never** blanket-disable analyzers. Deferring a rule needs an `.editorconfig` entry with a comment naming the phase.
@@ -146,8 +146,8 @@ The compose file is for manual experiments only; the tests do not use it (see Te
 ## Definition of done
 
 - [ ] Specs written first and observed failing; now green.
-- [ ] `dotnet build ESE.MessageQueue.sln -warnaserror` is clean.
-- [ ] `dotnet format ESE.MessageQueue.sln --verify-no-changes` passes.
+- [ ] `dotnet build ZedLabs.MessageQueue.sln -warnaserror` is clean.
+- [ ] `dotnet format ZedLabs.MessageQueue.sln --verify-no-changes` passes.
 - [ ] `dotnet test` reports 0 failed and **0 vacuous passes**; skips appear as skips.
 - [ ] `scripts/coverage.sh` passes: combined line coverage of the three packages at or above the gate (89%) and each
       package at or above its floor (87%); never lower either.

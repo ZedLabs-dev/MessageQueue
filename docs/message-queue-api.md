@@ -5,7 +5,7 @@ and an in-memory provider are interchangeable, chosen by configuration.
 
 ## Library Overview
 
-**Packages:** `ESE.MessageQueue` (core, in-memory provider), `ESE.MessageQueue.RabbitMQ`, `ESE.MessageQueue.AzureServiceBus`
+**Packages:** `ZedLabs.MessageQueue` (core, in-memory provider), `ZedLabs.MessageQueue.RabbitMQ`, `ZedLabs.MessageQueue.AzureServiceBus`
 (ADR 0005, ADR 0015). The core package references no broker SDK.
 **Target:** .NET 10
 **Design records:** `docs/adr/` (retry semantics, configuration, in-memory guarantees, consumer pipeline)
@@ -22,8 +22,8 @@ and an in-memory provider are interchangeable, chosen by configuration.
 ### Basic Configuration
 
 ```csharp
-using ESE.MessageQueue.Extensions;
-using ESE.MessageQueue.Hosting;
+using ZedLabs.MessageQueue.Extensions;
+using ZedLabs.MessageQueue.Hosting;
 
 services.AddRabbitMqProvider();                                            // per broker package; InMemory is built in
 services.AddMessageQueue<OrderCreated>(configuration);                     // binds the "MessageQueue" section
@@ -201,7 +201,7 @@ throw `NotSupportedException`. An operator how-to is in [dead-letter-operations.
 | Azure Service Bus (topic subscription) | peek, purge | the subscription's `$DeadLetterQueue` | not supported: a resend to the topic would reach every subscription |
 | In-memory | all | `DeadLetters` | back on the in-process queue |
 
-Metrics: `ese.messagequeue.dead_letters.replayed` and `ese.messagequeue.dead_letters.purged` (tags: system,
+Metrics: `zedlabs.messagequeue.dead_letters.replayed` and `zedlabs.messagequeue.dead_letters.purged` (tags: system,
 destination, operation, message type). Log events 1201-1205 (core), 2012 (RabbitMQ), 3018-3019 (Service Bus).
 
 ### `PublishOptions` Record
@@ -323,8 +323,8 @@ The default waits 2 + 4 + 8 + 16 + 30 ≈ 60 s across five retries, then dead-le
   are rounded to two significant digits. Retry queues are created on first use; classic ones expire when unused for
   max(1 h, 4 x TTL), quorum ones never do (clean them up with an operator policy if needed). A deleted retry or dead-letter queue is declared again; persistent broker failures requeue the
   delivery after a growing backoff.
-- **Dead letters** are published to the dead-letter queue with `x-ese-dead-letter-reason` (a `DeadLetterReasons`
-  code) and, for exceptions, `x-ese-dead-letter-detail` (the exception type). Then the original is acked.
+- **Dead letters** are published to the dead-letter queue with `x-zedlabs-dead-letter-reason` (a `DeadLetterReasons`
+  code) and, for exceptions, `x-zedlabs-dead-letter-detail` (the exception type). Then the original is acked.
 - **Attempts** come from the library's `x-delivery-attempt` header (honoured only on messages coming back from the
   queue's retry queues) plus broker redeliveries: the redelivered flag adds 1, and on quorum queues
   `x-delivery-count` adds every crash. A process that crashes mid-handler uses up an attempt.
@@ -406,7 +406,7 @@ services.AddOpenTelemetry()                                    // in the host, n
 
 Without a registered `ITelemetryProvider` the queues use `NullTelemetryProvider` (no spans, no metrics, no
 propagation). `AddMessageQueueTelemetry<TProvider>()` registers a custom implementation; directly constructed queues
-take one as a constructor argument. `samples/ESE.MessageQueue.Samples` shows the full wiring with a console exporter.
+take one as a constructor argument. `samples/ZedLabs.MessageQueue.Samples` shows the full wiring with a console exporter.
 
 - **Destination** (the same on publish and consume, so the two join): the queue (in-memory, Service Bus queue), the
   topic (Service Bus subscription mode, plus `messaging.destination.subscription.name` on consume), or
@@ -418,12 +418,12 @@ take one as a constructor argument. `samples/ESE.MessageQueue.Samples` shows the
   any case, as strings or UTF-8 bytes, and on Service Bus the SDK's `Diagnostic-Id` is used when `traceparent` is absent.
 - **Consume:** one `Consumer` span per delivery (`process {destination}`), a child of the publish span, so publisher and
   consumer share one trace ID across RabbitMQ, Azure Service Bus and the in-memory queue. Retries keep the original
-  trace: every attempt is a child of the same publish span (`ese.messagequeue.delivery_attempt` tells them apart).
+  trace: every attempt is a child of the same publish span (`zedlabs.messagequeue.delivery_attempt` tells them apart).
   The span is `Activity.Current` while your handler runs, so its own spans nest under it. A message without valid
   trace headers starts a new trace. It never joins whatever span was current when you subscribed.
 - **Outcome:** every delivery that is not acknowledged gets Error status and the same `error.type` as the metrics
-  (a `DeadLetterReasons` code, `Retry`, or the exception type), plus `ese.messagequeue.retry.next_attempt` /
-  `ese.messagequeue.retry.delay_ms` on retries, `ese.messagequeue.dead_letter.reason` on dead letters, and an
+  (a `DeadLetterReasons` code, `Retry`, or the exception type), plus `zedlabs.messagequeue.retry.next_attempt` /
+  `zedlabs.messagequeue.retry.delay_ms` on retries, `zedlabs.messagequeue.dead_letter.reason` on dead letters, and an
   `exception` event when the handler throws. Spans record the exception type only; pass
   `recordExceptionDetails: true` to also record messages and stack traces (truncated to 4096 characters).
 - **Bounded values (S6, ADR 0021):** every value the library writes from caller-, publisher- or exception-derived text
@@ -434,8 +434,8 @@ take one as a constructor argument. `samples/ESE.MessageQueue.Samples` shows the
   `tracestate` at most 512 characters and 32 members). Invalid values are ignored, never thrown, and never stop a
   message. The sampled and random (level 2) flags are kept; an unsampled publisher stays unsampled.
 - **Metrics** (OpenTelemetry messaging semantic conventions where they define one). Every metric is tagged with
-  `messaging.system` (`rabbitmq`, `servicebus` or `ese.inmemory`), `messaging.destination.name`,
-  `messaging.operation.name` and `ese.messagequeue.message_type`, plus `error.type` when the operation did not succeed
+  `messaging.system` (`rabbitmq`, `servicebus` or `zedlabs.inmemory`), `messaging.destination.name`,
+  `messaging.operation.name` and `zedlabs.messagequeue.message_type`, plus `error.type` when the operation did not succeed
   and the subscription on consumer metrics. Nothing per message (no ids) is used as a metric tag.
 
 | Instrument | Type | Meaning |
@@ -444,11 +444,11 @@ take one as a constructor argument. `samples/ESE.MessageQueue.Samples` shows the
 | `messaging.client.operation.duration` | histogram `s` | duration of each publish call |
 | `messaging.client.consumed.messages` | counter `{message}` | deliveries handed to the pipeline; `error.type` = reason code, `Retry` or exception type unless acknowledged |
 | `messaging.process.duration` | histogram `s` | receipt to settlement, per delivery |
-| `ese.messagequeue.messages.retried` | counter `{message}` | deliveries rescheduled for a retry |
-| `ese.messagequeue.messages.dead_lettered` | counter `{message}` | dead-lettered deliveries, tagged `ese.messagequeue.dead_letter.reason` |
-| `ese.messagequeue.transport.errors` | counter `{error}` | Broker errors outside a delivery: Service Bus processor errors (`error.type` = failure reason or exception type); RabbitMQ `ConnectionFailed`, `ConnectionShutdown`, `RecoveryFailed`, `ChannelShutdown`, `ConsumerCancelled` (ADR 0027) |
-| `ese.messagequeue.dead_letters.replayed` | counter `{message}` | dead letters moved back to their queue |
-| `ese.messagequeue.dead_letters.purged` | counter `{message}` | dead letters deleted |
+| `zedlabs.messagequeue.messages.retried` | counter `{message}` | deliveries rescheduled for a retry |
+| `zedlabs.messagequeue.messages.dead_lettered` | counter `{message}` | dead-lettered deliveries, tagged `zedlabs.messagequeue.dead_letter.reason` |
+| `zedlabs.messagequeue.transport.errors` | counter `{error}` | Broker errors outside a delivery: Service Bus processor errors (`error.type` = failure reason or exception type); RabbitMQ `ConnectionFailed`, `ConnectionShutdown`, `RecoveryFailed`, `ChannelShutdown`, `ConsumerCancelled` (ADR 0027) |
+| `zedlabs.messagequeue.dead_letters.replayed` | counter `{message}` | dead letters moved back to their queue |
+| `zedlabs.messagequeue.dead_letters.purged` | counter `{message}` | dead letters deleted |
 
 Spans, attributes, every log event and the health checks: [monitoring.md](operations/monitoring.md).
 

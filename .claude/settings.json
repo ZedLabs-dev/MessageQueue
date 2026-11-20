@@ -9,7 +9,7 @@
       "Bash(dotnet format:*)",
       "Bash(dotnet restore:*)",
       "Bash(dotnet list package:*)",
-      "Bash(dotnet list ESE.MessageQueue.sln package:*)",
+      "Bash(dotnet list ZedLabs.MessageQueue.sln package:*)",
       "Bash(docker compose -f docker/docker-compose.dev.yml up:*)",
       "Bash(docker compose -f docker/docker-compose.dev.yml ps:*)",
       "Bash(docker compose -f docker/docker-compose.dev.yml logs:*)",
@@ -25,7 +25,7 @@
       "Bash(dotnet tool restore)",
       "Bash(scripts/coverage.sh:*)",
       "Bash(scripts/mutate.py:*)",
-      "Bash(dotnet list ESE.MessageQueue.sln package --outdated:*)"
+      "Bash(dotnet list ZedLabs.MessageQueue.sln package --outdated:*)"
     ],
     "deny": [
       "Bash(docker compose -f docker/docker-compose.dev.yml down -v:*)",

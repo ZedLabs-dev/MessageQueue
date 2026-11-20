@@ -1,11 +1,11 @@
 # Runbooks
 
-Standard procedures for operating applications built on ESE.MessageQueue. Each starts from what you see (an
+Standard procedures for operating applications built on ZedLabs.MessageQueue. Each starts from what you see (an
 [alert](alerts.md), a [log event](monitoring.md#log-events), a health check) and ends with a verified fix. Background:
 [failure modes](failure-modes.md), [configuration reference](../configuration.md).
 
 Commands assume a queue named `order-placed` in RabbitMQ virtual host `orders`, or a Service Bus namespace `contoso`
-in resource group `my-rg`. All library log categories start with `ESE.MessageQueue`.
+in resource group `my-rg`. All library log categories start with `ZedLabs.MessageQueue`.
 
 ## First look
 
@@ -27,7 +27,7 @@ in resource group `my-rg`. All library log categories start with `ESE.MessageQue
 
 ### RabbitMQ
 
-`ese.messagequeue.transport.errors` says what kind of trouble it is: `ConnectionFailed` (cannot connect: the table
+`zedlabs.messagequeue.transport.errors` says what kind of trouble it is: `ConnectionFailed` (cannot connect: the table
 below), `ConnectionShutdown` and `RecoveryFailed` (an established connection was lost and does not come back: broker
 restart, network, missed heartbeats), `ChannelShutdown` (the consumer channel was closed by a channel error such as
 `consumer_timeout`: a handler held a delivery too long), `ConsumerCancelled` (the queue was deleted under the consumer:
@@ -45,12 +45,12 @@ redeclare it by restarting the application). Event 2003 carries the client's exc
 While the connection is down, deliveries in flight are requeued by the broker and redelivered after recovery, and
 publishes throw `MessageQueueException`. The client reconnects every `NetworkRecoveryInterval` (10 s) by itself; a
 process that failed at startup must be restarted (your orchestrator does this). After the fix, confirm:
-`rabbitmqctl list_connections -p orders name user state` shows connections named `ESE.MessageQueue:order-placed` in
+`rabbitmqctl list_connections -p orders name user state` shows connections named `ZedLabs.MessageQueue:order-placed` in
 state `running`, and `rabbitmqctl list_consumers -p orders` shows the consumer on `order-placed`.
 
 ### Azure Service Bus
 
-Event 3009 names the error source and exception type; `ese.messagequeue.transport.errors` carries the reason:
+Event 3009 names the error source and exception type; `zedlabs.messagequeue.transport.errors` carries the reason:
 
 | `error.type` / exception | Cause | Fix |
 |---|---|---|
@@ -134,7 +134,7 @@ has the API details.
    idempotent handlers absorb.
 5. **Purge** what you decided to drop: `PurgeAsync(new() { MaxCount = ..., ReasonCodes = [...], Filter = ... })`.
    Purging is permanent and always bounded by `MaxCount`; peek (and keep what you need for an audit) first. Event 1202
-   and `ese.messagequeue.dead_letters.purged` record it.
+   and `zedlabs.messagequeue.dead_letters.purged` record it.
 
 Provider notes:
 
@@ -340,7 +340,7 @@ rabbitmq-queues quorum_status order-placed --vhost orders
 rabbitmq-diagnostics check_if_node_is_quorum_critical
 ```
 
-- **Connections** are named `ESE.MessageQueue:<QueueName>`: one connection per queue per instance.
+- **Connections** are named `ZedLabs.MessageQueue:<QueueName>`: one connection per queue per instance.
 - **Quorum queues** need a majority of their replicas online; a node maintenance window that loses quorum stops the
   queue. Check `check_if_node_is_quorum_critical` before taking a node down.
 - **Delivery limit.** RabbitMQ 4 quorum queues dead-letter (or drop, without a dead-letter exchange) a message
@@ -358,7 +358,7 @@ rabbitmq-diagnostics check_if_node_is_quorum_critical
   queues, add `"delivery-limit": -1` to that policy's definition instead.
 - **Inspecting a dead letter by hand:** `rabbitmqadmin` or the management UI "Get messages" with requeue. On a quorum
   queue that counts as a delivery and moves the message to the back; prefer `IDeadLetterQueue<T>.PeekAsync`. The
-  library's headers say why: `x-ese-dead-letter-reason`, `x-ese-dead-letter-detail`, `x-ese-dead-lettered-at`,
+  library's headers say why: `x-zedlabs-dead-letter-reason`, `x-zedlabs-dead-letter-detail`, `x-zedlabs-dead-lettered-at`,
   `x-delivery-attempt`.
 - **Resource alarms** (memory or disk) block publishers: `PublishAsync` waits and then fails after `ConfirmTimeout`.
   `rabbitmq-diagnostics alarms` lists them.
@@ -378,8 +378,8 @@ az role assignment list --assignee "$APP_PRINCIPAL_ID" --all -o table
 ```
 
 - **Service Bus Explorer** (the entity's page in the Azure portal) peeks active and dead-lettered messages, with the
-  library's properties (`x-ese-dead-letter-reason`, `x-ese-dead-letter-detail`, `x-ese-dead-lettered-at`,
-  `x-ese-dead-letter-attempt`) and the broker's `DeadLetterReason`.
+  library's properties (`x-zedlabs-dead-letter-reason`, `x-zedlabs-dead-letter-detail`, `x-zedlabs-dead-lettered-at`,
+  `x-zedlabs-dead-letter-attempt`) and the broker's `DeadLetterReason`.
 - **`MaxDeliveryCount`.** On a queue, library retries are scheduled copies, so `MaxDeliveryCount` only counts
   deliveries that ended without settlement (crashes, lock loss, shutdown hand-backs, settlement failures); the default
   10 is fine. On a **topic subscription** every retry is a redelivery of the same message: keep `MaxDeliveryCount`

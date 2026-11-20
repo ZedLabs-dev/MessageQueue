@@ -5,7 +5,7 @@
 
 ## Context
 
-`ese.messagequeue.transport.errors` was recorded by Service Bus only. On RabbitMQ a lost connection, a failing
+`zedlabs.messagequeue.transport.errors` was recorded by Service Bus only. On RabbitMQ a lost connection, a failing
 reconnect, a consumer channel closed by `consumer_timeout` or a consumer cancelled because its queue was deleted
 showed only in logs or the health check, so one alert rule could not cover both brokers. Separately, publishing wrote
 no log line at all, and the readiness review left open whether it should.
