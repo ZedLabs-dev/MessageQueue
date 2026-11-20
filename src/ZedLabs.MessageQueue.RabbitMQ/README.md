@@ -20,4 +20,4 @@ services.AddHealthChecks().AddRabbitMqHealthCheck<OrderCreated>();
 { "MessageQueue": { "Provider": "RabbitMq", "ConnectionString": "amqps://broker.example.com", "QueueName": "orders" } }
 ```
 
-Settings, behavior and decision records: https://github.com/ZedLabs/MessageQueue
+Settings, behavior and decision records: https://github.com/ZedLabs-dev/MessageQueue

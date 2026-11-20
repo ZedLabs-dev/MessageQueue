@@ -35,11 +35,11 @@
     <Company>ZedLabs</Company>
     <Copyright>Copyright 2026 ZedLabs</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/ZedLabs/MessageQueue</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/ZedLabs/MessageQueue</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/ZedLabs-dev/MessageQueue</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ZedLabs-dev/MessageQueue</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>messaging;message-queue;events;pubsub;retry;dead-letter;opentelemetry</PackageTags>
-    <PackageReleaseNotes>See https://github.com/ZedLabs/MessageQueue/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>See https://github.com/ZedLabs-dev/MessageQueue/blob/main/CHANGELOG.md</PackageReleaseNotes>
   </PropertyGroup>
 
 </Project>

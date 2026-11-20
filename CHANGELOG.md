@@ -16,7 +16,7 @@ resolved.
 
 ### ZedLabs rebrand and Apache-2.0 relicensing (ADR 0016 amended)
 
-The repository moved to https://github.com/ZedLabs/MessageQueue. Nothing had been published, so the old names were
+The repository moved to https://github.com/ZedLabs-dev/MessageQueue. Nothing had been published, so the old names were
 never on NuGet; this section is the map for anyone who built from source.
 
 #### Breaking: ZedLabs rebrand
@@ -42,7 +42,7 @@ never on NuGet; this section is the map for anyone who built from source.
 #### Changed
 - `LICENSE` holds the full Apache License 2.0 text; a new `NOTICE` file; both are packed into every package. Package
   metadata: `PackageLicenseExpression` Apache-2.0, Authors and Company ZedLabs, `RepositoryUrl` and
-  `PackageProjectUrl` https://github.com/ZedLabs/MessageQueue.
+  `PackageProjectUrl` https://github.com/ZedLabs-dev/MessageQueue.
 - **One-time exception to the API lock rule:** `PublicAPI.Shipped.txt` of each package was rewritten with the renamed
   entries (and `PublicAPI.Unshipped.txt` to match) outside `/release`, because every Shipped entry named the old
   namespaces and nothing had shipped (ADR 0016 amendment).

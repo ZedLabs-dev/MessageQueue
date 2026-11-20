@@ -19,4 +19,4 @@ services.AddHealthChecks().AddAzureServiceBusHealthCheck<OrderCreated>();
 ```
 
 This is a release candidate: the integration specs have not yet run against a real Service Bus namespace.
-Settings, behavior and decision records: https://github.com/ZedLabs/MessageQueue
+Settings, behavior and decision records: https://github.com/ZedLabs-dev/MessageQueue

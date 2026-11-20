@@ -28,7 +28,7 @@ see `Capabilities.DeadLetterOperations`).
 
 Writing a provider for another broker: implement `IMessageQueueProvider` and hand every delivery to
 `MessageDispatcher<T>` with an `IDeliveryActions` (namespace `ZedLabs.MessageQueue.Providers`). See
-[ADR 0015](https://github.com/ZedLabs/MessageQueue/blob/main/docs/adr/0015-provider-spi-and-package-split.md) and
-the [loopback sample provider](https://github.com/ZedLabs/MessageQueue/tree/main/samples/ZedLabs.MessageQueue.Samples.LoopbackProvider).
+[ADR 0015](https://github.com/ZedLabs-dev/MessageQueue/blob/main/docs/adr/0015-provider-spi-and-package-split.md) and
+the [loopback sample provider](https://github.com/ZedLabs-dev/MessageQueue/tree/main/samples/ZedLabs.MessageQueue.Samples.LoopbackProvider).
 
-Documentation, decision records and the changelog: https://github.com/ZedLabs/MessageQueue
+Documentation, decision records and the changelog: https://github.com/ZedLabs-dev/MessageQueue

@@ -41,7 +41,7 @@
 
 ## Amendment (2026-11-20): ZedLabs rebrand and relicensing
 
-The repository moved to the ZedLabs organization (https://github.com/ZedLabs/MessageQueue) before any package was
+The repository moved to the ZedLabs organization (https://github.com/ZedLabs-dev/MessageQueue) before any package was
 published. The owner decided:
 
 - **Names:** package IDs, assemblies, namespaces, project folders and the solution were renamed from `ESE.MessageQueue*`

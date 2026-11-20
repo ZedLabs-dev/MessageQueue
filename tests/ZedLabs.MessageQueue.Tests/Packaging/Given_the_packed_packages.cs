@@ -11,7 +11,7 @@ namespace ZedLabs.MessageQueue.Tests.Packaging;
 [Trait("Category", "Unit")]
 public class Given_the_packed_packages
 {
-    const string RepositoryUrl = "https://github.com/ZedLabs/MessageQueue";
+    const string RepositoryUrl = "https://github.com/ZedLabs-dev/MessageQueue";
 
     public static TheoryData<string> Packages() => ["ZedLabs.MessageQueue", "ZedLabs.MessageQueue.RabbitMQ", "ZedLabs.MessageQueue.AzureServiceBus"];
 
@@ -67,7 +67,7 @@ public class Given_the_packed_packages
             Value("authors").Should().Be("ZedLabs", "it should name ZedLabs as the author");
             Value("copyright").Should().Be("Copyright 2026 ZedLabs", "it should name ZedLabs as the copyright holder");
             Value("projectUrl").Should().Be(RepositoryUrl, "it should link the ZedLabs repository as the project page");
-            ((string?)repository.Attribute("url")).Should().Be(RepositoryUrl, "it should point the repository metadata at ZedLabs/MessageQueue");
+            ((string?)repository.Attribute("url")).Should().Be(RepositoryUrl, "it should point the repository metadata at ZedLabs-dev/MessageQueue");
             archive.Entries.Select(e => e.FullName).Should().Contain(["LICENSE", "NOTICE"], "it should pack the license and notice files");
         }
         finally
