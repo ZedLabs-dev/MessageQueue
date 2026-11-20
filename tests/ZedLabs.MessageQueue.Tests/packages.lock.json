@@ -638,7 +638,7 @@
         "type": "Project",
         "dependencies": {
           "RabbitMQ.Client": "[7.2.2, )",
-          "System.Threading.RateLimiting": "[10.0.13, )",
+          "System.Threading.RateLimiting": "[11.0.0, )",
           "ZedLabs.MessageQueue": "[1.0.0-rc.1, )"
         }
       },
@@ -833,9 +833,9 @@
       },
       "System.Threading.RateLimiting": {
         "type": "CentralTransitive",
-        "requested": "[10.0.13, )",
-        "resolved": "10.0.13",
-        "contentHash": "3+orva+l3D+EdXYQOJm9zKWgwSxf4/EieVZ0D+uQRjMOUaJMoNIkc/Wu7abCAK5VnAeStZoLcibFYQrmYdsJ0g=="
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "/XV8cRRUkl+uyvVdPBCo+p/QUSMFI7JdPHgpeWvnVmh/Ao/TRn7gSjo1XS0qJGGhd7Pkjn/9ePSNXtKQN0kutA=="
       }
     }
   }
