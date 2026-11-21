@@ -271,6 +271,11 @@ public sealed class Given_a_running_azure_service_bus(ServiceBusEmulatorFixture 
         await queue.PublishAsync(message, new PublishOptions { MessageId = message.Id }, TestContext.Current.CancellationToken);
         await Wait.UntilAsync(() => handled.Count == 1, TimeSpan.FromSeconds(30));
         Volatile.Write(ref accept, true);
+        // The handler runs before the dead-letter settlement reaches the broker: replay only once it is there.
+        await Wait.UntilAsync(async () => (await queue.PeekAsync(100, TestContext.Current.CancellationToken))
+            .Any(l => l.MessageId == message.Id), TimeSpan.FromSeconds(30));
+        (await queue.PeekAsync(100, TestContext.Current.CancellationToken)).Should().Contain(l => l.MessageId == message.Id,
+            "it should dead-letter the message the handler rejected");
 
         var result = await queue.ReplayAsync(new DeadLetterReplayOptions<TestMessage>
         {
@@ -279,6 +284,7 @@ public sealed class Given_a_running_azure_service_bus(ServiceBusEmulatorFixture 
         }, TestContext.Current.CancellationToken);
         await Wait.UntilAsync(() => handled.Count == 2, TimeSpan.FromSeconds(30));
 
+        result.Failures.Should().BeEmpty("it should replay without errors");
         result.Replayed.Should().Be(1, "it should replay the dead letter");
         handled.Last().MessageId.Should().Be(message.Id, "it should deliver the replay under the original message id");
         handled.Last().DeliveryAttempt.Should().Be(1, "it should deliver the replay as a first attempt");
