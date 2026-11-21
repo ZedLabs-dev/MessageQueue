@@ -12,11 +12,13 @@ using ZedLabs.MessageQueue.Retry;
 
 namespace ZedLabs.MessageQueue.Tests.AzureServiceBus;
 
-// Runs only when MQ_ASB_CONNECTION_STRING is set; otherwise every test is reported as skipped.
+// Runs against MQ_ASB_CONNECTION_STRING, or the emulator when MQ_ASB_ACCEPT_EULA=Y (ServiceBusEmulatorFixture);
+// otherwise every test is reported as skipped.
 // All tests share one predeclared queue (the emulator cannot create entities), so each test tags its
 // messages with a unique run id and ignores messages left behind by other tests.
 [Trait("Category", "Integration")]
-public sealed class Given_a_running_azure_service_bus : IAsyncLifetime
+[Collection(AzureServiceBusCollection.Name)]
+public sealed class Given_a_running_azure_service_bus(ServiceBusEmulatorFixture bus) : IAsyncLifetime
 {
     readonly string runId = Guid.NewGuid().ToString("N");
     readonly List<AzureServiceBusMessageQueue<TestMessage>> queues = [];
@@ -26,7 +28,7 @@ public sealed class Given_a_running_azure_service_bus : IAsyncLifetime
     {
         config = new AzureServiceBusConfig
         {
-            ConnectionString = AzureServiceBusEnvironment.RequireConnectionString(),
+            ConnectionString = bus.RequireConnectionString(),
             QueueName = AzureServiceBusEnvironment.QueueName,
             Retry = new RetryPolicy { MaxRetries = 2, InitialDelay = TimeSpan.FromMilliseconds(20), UseJitter = false },
             EnableDeadLetterQueue = true,

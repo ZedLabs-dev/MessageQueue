@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests
+
+- The Azure Service Bus integration specs can run against the Service Bus emulator, which
+  `Support/ServiceBusEmulatorFixture` starts with Testcontainers once the owner sets `MQ_ASB_ACCEPT_EULA=Y` (accepting
+  the licences of the emulator and its SQL Server). Images are pinned in `docker/test-servicebus/Dockerfile`, where
+  Dependabot bumps them. All 11 specs passed against emulator 2.0.1 on 2026-11-21. The 1.0.0 release blocker stays open
+  until they pass against a real namespace, because the emulator cannot exercise `TransactionalRetries`.
+
 ## [1.0.0-rc.1] - 2026-11-20
 
 The first release of ZedLabs.MessageQueue, a release candidate for 1.0.0: provider-agnostic event messaging for

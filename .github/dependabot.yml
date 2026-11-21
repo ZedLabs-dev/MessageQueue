@@ -47,3 +47,12 @@ updates:
     groups:
       docker:
         patterns: ["*"]
+
+  # The Testcontainers images for the Azure Service Bus emulator tests (read from this Dockerfile at run time).
+  - package-ecosystem: docker
+    directory: /docker/test-servicebus
+    schedule:
+      interval: weekly
+    groups:
+      docker:
+        patterns: ["*"]

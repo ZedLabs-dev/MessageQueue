@@ -102,8 +102,10 @@ The compose file is for manual experiments only; the tests do not use it (see Te
   deletes them (and their dead-letter queues, lazily created `{queue}.retry.*` queues and exchanges) in the test
   class's `IAsyncLifetime.DisposeAsync`. RabbitMQ queues connect lazily: call `InitializeAsync` before asserting on
   topology.
-- **Azure Service Bus:** integration tests run only when `MQ_ASB_CONNECTION_STRING` is set (a real namespace, or the
-  emulator from the compose file after the owner accepts its EULA). They use the predeclared queue
+- **Azure Service Bus:** integration tests run against `MQ_ASB_CONNECTION_STRING` (a real namespace), or, when the owner
+  sets `MQ_ASB_ACCEPT_EULA=Y` (accepting the licences of the emulator and its SQL Server), against the emulator that
+  `Support/ServiceBusEmulatorFixture` starts with Testcontainers (images pinned in `docker/test-servicebus/Dockerfile`).
+  Never set `MQ_ASB_ACCEPT_EULA` on the owner's behalf. They use the predeclared queue
   `integration-test-queue` and `integration-test-topic`/`integration-test-subscription` from
   `docker/servicebus-emulator-config.json` (`MQ_ASB_QUEUE_NAME`, `MQ_ASB_TOPIC_NAME`, `MQ_ASB_SUBSCRIPTION_NAME`
   override them; `MQ_ASB_TRANSACTIONAL_RETRIES=false` for entities without transactions).
@@ -111,7 +113,7 @@ The compose file is for manual experiments only; the tests do not use it (see Te
   `Support/FakeServiceBus` (async sends and settlements that enlist in the ambient transaction, a processor stop that
   waits for running handlers, deliveries that refuse a second settlement, like the SDK) and `ServiceBusModelFactory` messages. Never accept the emulator's EULA on the owner's behalf.
 - **Skips are skips:** no Docker means the RabbitMQ tests report **Skipped** (`Assert.SkipWhen` in the test class's
-  `InitializeAsync`); no `MQ_ASB_CONNECTION_STRING` means the ASB tests report **Skipped**. `MQ_REQUIRE_DOCKER=true` (or `1`;
+  `InitializeAsync`); no `MQ_ASB_CONNECTION_STRING` and no `MQ_ASB_ACCEPT_EULA=Y` means the ASB tests report **Skipped**. `MQ_REQUIRE_DOCKER=true` (or `1`;
   set in CI) turns missing Docker into a failure. Only Testcontainers' `DockerUnavailableException` is turned into a
   skip; any other container start failure fails the tests.
 - **Coverage:** coverlet.collector writes Cobertura; `scripts/coverage.sh` merges every

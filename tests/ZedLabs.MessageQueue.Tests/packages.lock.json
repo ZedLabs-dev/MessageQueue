@@ -72,6 +72,16 @@
           "Testcontainers": "4.16.0"
         }
       },
+      "Testcontainers.ServiceBus": {
+        "type": "Direct",
+        "requested": "[4.16.0, )",
+        "resolved": "4.16.0",
+        "contentHash": "+/J+aXtHZCZW+58jg0ZtCxyr5+VMS2kZZNMuWoCJeJKfc/e7C6YbKi/jXevR6E0cd73jFK1K4BGXoaYwNvtPIw==",
+        "dependencies": {
+          "Testcontainers": "4.16.0",
+          "Testcontainers.MsSql": "4.16.0"
+        }
+      },
       "xunit.runner.visualstudio": {
         "type": "Direct",
         "requested": "[4.0.1, )",
@@ -542,6 +552,14 @@
           "Microsoft.Extensions.Logging.Abstractions": "8.0.3",
           "SSH.NET": "2026.0.0",
           "SharpZipLib": "1.4.2"
+        }
+      },
+      "Testcontainers.MsSql": {
+        "type": "Transitive",
+        "resolved": "4.16.0",
+        "contentHash": "UVLYLyq9CDSfLZUeu+CyDmwV7wo2LMNlpBLP8ZO9HG42WT3KTMI/p7qYesiCAZmo6GUeWH/Z6SOIw66Y4qnWuw==",
+        "dependencies": {
+          "Testcontainers": "4.16.0"
         }
       },
       "xunit.analyzers": {

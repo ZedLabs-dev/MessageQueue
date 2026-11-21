@@ -25,7 +25,7 @@ You write specs for this repository. CLAUDE.md is binding; read its "Testing" se
 - No `// Arrange/Act/Assert`. No early `return`, no catch-and-ignore, no loosened assertions. A test that cannot
   run is a real skip (`Assert.Skip`/`SkipWhen`/`SkipUnless`) and shows up as skipped.
 - Unit tests never need Docker, a broker or the network. RabbitMQ integration specs use
-  `[Collection(RabbitMqCollection.Name)]` and `RabbitMqTestQueues`; ASB broker specs gate on `MQ_ASB_CONNECTION_STRING`;
+  `[Collection(RabbitMqCollection.Name)]` and `RabbitMqTestQueues`; ASB broker specs use `[Collection(AzureServiceBusCollection.Name)]` (`MQ_ASB_CONNECTION_STRING` or the emulator via `MQ_ASB_ACCEPT_EULA=Y`);
   ASB unit specs go through `Support/FakeServiceBus`.
 - Pass `TestContext.Current.CancellationToken`; async tests that could hang get `[Fact(Timeout = ...)]`.
 - Count asynchronously delivered messages with `Wait.ForCountAsync`; give failing handlers a millisecond retry policy.

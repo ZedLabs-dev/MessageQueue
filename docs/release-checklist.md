@@ -34,12 +34,13 @@ Optional for performance-sensitive changes: the benchmarks with the default job
 ### Azure Service Bus suite
 
 The Service Bus integration specs talk to a real namespace (or the local emulator). They skip without
-`MQ_ASB_CONNECTION_STRING`, so a green run without it proves nothing about Service Bus: check the test report shows
-them **passed**.
+`MQ_ASB_CONNECTION_STRING` or `MQ_ASB_ACCEPT_EULA=Y`, so a green run without one of them proves nothing about Service
+Bus: check the test report shows them **passed**.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `MQ_ASB_CONNECTION_STRING` | (unset: the specs skip) | a connection string with Send and Listen on the entities below (Manage is not needed) |
+| `MQ_ASB_ACCEPT_EULA` | (unset) | `Y` (or `true`, `1`) accepts the licences of the Service Bus emulator and SQL Server and, when no connection string is set, starts both with Testcontainers (needs Docker). Only the person accepting the licences may set it |
 | `MQ_ASB_QUEUE_NAME` | `integration-test-queue` | queue for the queue-mode specs |
 | `MQ_ASB_TOPIC_NAME` | `integration-test-topic` | topic for the subscription-mode specs |
 | `MQ_ASB_SUBSCRIPTION_NAME` | `integration-test-subscription` | its subscription |
@@ -54,9 +55,16 @@ export MQ_ASB_CONNECTION_STRING='Endpoint=sb://<namespace>.servicebus.windows.ne
 MQ_REQUIRE_DOCKER=true dotnet test ZedLabs.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Integration
 ```
 
-In CI, set the repository secret `MQ_ASB_CONNECTION_STRING`; `ci.yml` passes it to the integration step. The emulator
-(`docker compose -f docker/docker-compose.dev.yml --profile servicebus up -d`) is for development runs; it needs
-`ACCEPT_EULA=Y` in `docker/.env`, which only the person accepting the license may set.
+In CI, set the repository secret `MQ_ASB_CONNECTION_STRING`; `ci.yml` passes it to the integration step.
+
+For development runs, the specs start the emulator themselves (images pinned in `docker/test-servicebus/Dockerfile`,
+entities from `docker/servicebus-emulator-config.json`). Pull the two images first: a first-time pull inside the run
+can outlast the hang timeout. On Apple Silicon, SQL Server runs under Rosetta. An emulator run does not replace the
+release run against a namespace, since the emulator cannot exercise `TransactionalRetries`:
+
+```bash
+MQ_ASB_ACCEPT_EULA=Y dotnet test ZedLabs.MessageQueue.sln --blame-hang-timeout 5m --filter "Category=Integration&FullyQualifiedName~AzureServiceBus"
+```
 
 ### Mutation sets
 

@@ -1,7 +1,7 @@
 namespace ZedLabs.MessageQueue.Tests;
 
-// Azure Service Bus integration tests run only against a namespace the owner provides: a real one,
-// or the local emulator (whose EULA must be accepted by a person, see docker/docker-compose.dev.yml).
+// Settings of the Azure Service Bus integration tests. ServiceBusTestTarget decides which Service Bus they run against:
+// a namespace the owner provides, or the emulator once the owner accepts its licence (MQ_ASB_ACCEPT_EULA).
 static class AzureServiceBusEnvironment
 {
     public const string ConnectionStringVariable = "MQ_ASB_CONNECTION_STRING";
@@ -15,8 +15,6 @@ static class AzureServiceBusEnvironment
     const string DefaultTopicName = "integration-test-topic";
     const string DefaultSubscriptionName = "integration-test-subscription";
 
-    public static string? ConnectionString => NullIfEmpty(Environment.GetEnvironmentVariable(ConnectionStringVariable));
-
     public static string QueueName => NullIfEmpty(Environment.GetEnvironmentVariable(QueueNameVariable)) ?? DefaultQueueName;
 
     public static string TopicName => NullIfEmpty(Environment.GetEnvironmentVariable(TopicNameVariable)) ?? DefaultTopicName;
@@ -27,15 +25,6 @@ static class AzureServiceBusEnvironment
     // (the provider falls back on its own anyway, after one refused attempt and a warning).
     public static bool TransactionalRetries =>
         !bool.TryParse(Environment.GetEnvironmentVariable(TransactionalRetriesVariable), out var value) || value;
-
-    public static string RequireConnectionString()
-    {
-        var connectionString = ConnectionString;
-        Assert.SkipWhen(connectionString is null,
-            $"{ConnectionStringVariable} is not set. Point it at an Azure Service Bus namespace or a running emulator " +
-            $"that has the queue '{QueueName}' ({QueueNameVariable} overrides the name).");
-        return connectionString!;
-    }
 
     static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 }
