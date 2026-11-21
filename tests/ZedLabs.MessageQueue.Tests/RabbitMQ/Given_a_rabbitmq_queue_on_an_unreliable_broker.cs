@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
 using System.Text;
 using AwesomeAssertions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using ZedLabs.MessageQueue.Abstractions;
 using ZedLabs.MessageQueue.Exceptions;
+using ZedLabs.MessageQueue.HealthChecks;
 using ZedLabs.MessageQueue.Processing;
 using ZedLabs.MessageQueue.Providers;
 using ZedLabs.MessageQueue.Serialization;
@@ -55,6 +57,34 @@ public sealed class Given_a_rabbitmq_queue_on_an_unreliable_broker : IAsyncLifet
 
         closed.Should().BePositive("it should have had its connection closed by the broker");
         received.Should().Contain("after", "it should recover the connection and both publish and consume again");
+    }
+
+    [Fact(Timeout = 90_000)]
+    public async Task When_The_Broker_Closes_The_Connection_The_Health_Check_Recovers()
+    {
+        var telemetry = new TestTelemetryProvider();
+        var config = queues.NewConfig("recovery-health-test") with { NetworkRecoveryInterval = TimeSpan.FromMilliseconds(500) };
+        var queue = queues.Create(config, telemetry);
+        var check = new RabbitMqHealthCheck(queue);
+        var context = new HealthCheckContext { Registration = new HealthCheckRegistration("rabbitmq", check, null, null) };
+        var received = new ConcurrentQueue<string>();
+        await queue.SubscribeAsync((message, _, _) =>
+        {
+            received.Enqueue(message.Id);
+            return Task.FromResult(MessageResult.Acknowledge);
+        }, TestContext.Current.CancellationToken);
+
+        await broker.CloseConnectionsAsync($"ZedLabs.MessageQueue:{config.QueueName}");
+        // Once the lost connection is counted, the connection reads closed: the next Healthy comes after recovery.
+        await Wait.UntilAsync(() => !telemetry.TransportErrors.IsEmpty, Wait.DeliveryTimeout);
+        await Wait.UntilAsync(async () => (await check.CheckHealthAsync(context, TestContext.Current.CancellationToken)).Status == HealthStatus.Healthy,
+            TimeSpan.FromSeconds(30));
+        var result = await check.CheckHealthAsync(context, TestContext.Current.CancellationToken);
+        await PublishUntilAcceptedAsync(queue, new TestMessage("after", "x"));
+        await Wait.UntilAsync(() => received.Contains("after"), TimeSpan.FromSeconds(30));
+
+        result.Status.Should().Be(HealthStatus.Healthy, "it should report the subscription healthy again once recovery registered its consumer");
+        received.Should().Contain("after", "it should deliver a message published after recovery to the recovered consumer");
     }
 
     [Fact(Timeout = 90_000)]

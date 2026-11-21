@@ -14,6 +14,18 @@ resolved.
   EULA is the owner's to accept). They skip without `MQ_ASB_CONNECTION_STRING`; the provider is verified only through
   its unit specs over the SDK seams. Run `Category=Integration` with a namespace or the emulator, then remove this item.
 
+### RabbitMQ health check right after subscribing
+
+#### Fixed
+- RabbitMQ: a health probe right after `SubscribeAsync` could report Unhealthy. RabbitMQ.Client 7 completes
+  `BasicConsumeAsync` once the broker's `basic.consume-ok` arrived, but sets the consumer's `IsRunning` only when its
+  dispatcher hands consume-ok to the consumer, later; the probe read `IsRunning`. The subscription's consumer now
+  counts as running from the consumer tag `BasicConsumeAsync` returns until the broker cancels it (automatic recovery
+  registers it again), its own cancel is confirmed or its channel shuts down. With `MaxConcurrentCalls` above 1 the
+  client handles consume-ok and cancels on several dispatcher workers, in any order: a late consume-ok no longer
+  revives a consumer the broker cancelled, which still reports Unhealthy.
+  `Given_a_rabbitmq_queue.When_The_Consumer_Is_Cancelled_By_The_Broker` failed intermittently in CI.
+
 ### ZedLabs rebrand and Apache-2.0 relicensing (ADR 0016 amended)
 
 The repository moved to https://github.com/ZedLabs-dev/MessageQueue. Nothing had been published, so the old names were

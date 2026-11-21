@@ -110,6 +110,9 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
 
     internal Action<BasicDeliverEventArgs>? ReadFault { get; set; }
 
+    // Test seam: holds the client's dispatch of consume-ok to the consumer of the next subscription.
+    internal Func<Task>? ConsumeOkHold { get; set; }
+
     // Test seam: the dead-letter store behind the IDeadLetterQueue<T> methods.
     internal IDeadLetterStore DeadLetterStore => deadLetterStore;
 
@@ -127,7 +130,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         var current = await ConnectAsync(cancellationToken);
         if (!current.Amqp.IsOpen)
             return false;
-        return Volatile.Read(ref subscription) is not { } active || (active.Channel.IsOpen && active.Consumer.IsRunning);
+        return Volatile.Read(ref subscription) is not { } active || active.Consumer.IsHealthy;
     }
 
     async ValueTask<Connection> ConnectAsync(CancellationToken cancellationToken)
@@ -490,11 +493,11 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
                     cancellationToken);
                 await channel.BasicQosAsync(prefetchSize: 0, prefetchCount: (ushort)config.PrefetchCount, global: false, cancellationToken);
 
-                var consumer = new SubscriptionConsumer(channel, OnConsumerCancelledByBrokerAsync);
+                var consumer = new RabbitMqConsumer(channel, OnConsumerCancelledByBrokerAsync) { BeforeConsumeOk = ConsumeOkHold };
                 WatchConsumerChannel(channel, current.Amqp);
                 var started = new Subscription(channel, consumer, new MessageDispatcher<T>(config, publishTarget, handler, telemetry, logger));
                 consumer.ReceivedAsync += (_, delivery) => OnReceivedAsync(started, delivery);
-                started.ConsumerTag = await channel.BasicConsumeAsync(queueName, autoAck: false, consumer, cancellationToken);
+                started.ConsumerTag = await consumer.StartAsync(queueName, cancellationToken);
                 Volatile.Write(ref subscription, started);
                 LatestSubscriptionChannel = channel;
             }
@@ -1067,20 +1070,9 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         }
     }
 
-    // basic.cancel from the broker (for example, its queue was deleted) arrives here only;
-    // the client's own cancel and channel closes take other paths.
-    sealed class SubscriptionConsumer(IChannel channel, Func<Task> cancelledByBroker) : AsyncEventingBasicConsumer(channel)
-    {
-        public override async Task HandleBasicCancelAsync(string consumerTag, CancellationToken cancellationToken = default)
-        {
-            await cancelledByBroker();
-            await base.HandleBasicCancelAsync(consumerTag, cancellationToken);
-        }
-    }
-
     sealed class Subscription
     {
-        public Subscription(IChannel channel, AsyncEventingBasicConsumer consumer, MessageDispatcher<T> dispatcher)
+        public Subscription(IChannel channel, RabbitMqConsumer consumer, MessageDispatcher<T> dispatcher)
         {
             Channel = channel;
             Consumer = consumer;
@@ -1088,7 +1080,7 @@ public sealed class RabbitMqMessageQueue<T> : IMessageQueue<T>, IDeadLetterQueue
         }
 
         public IChannel Channel { get; }
-        public AsyncEventingBasicConsumer Consumer { get; }
+        public RabbitMqConsumer Consumer { get; }
         public MessageDispatcher<T> Dispatcher { get; }
         public CancellationTokenSource Stopping { get; } = new();
         public ConcurrentDictionary<long, Task> InFlight { get; } = new();

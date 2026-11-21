@@ -138,10 +138,67 @@ public sealed class Given_a_rabbitmq_queue : IAsyncLifetime
             .Be(HealthStatus.Healthy, "it should report a running consumer as healthy");
 
         await broker.DeleteQueuesAndExchangesAsync([config.QueueName], []);
-        await Task.Delay(500, TestContext.Current.CancellationToken);
+        await Wait.UntilAsync(async () => (await check.CheckHealthAsync(context, TestContext.Current.CancellationToken)).Status == HealthStatus.Unhealthy,
+            Wait.DeliveryTimeout);
         var result = await check.CheckHealthAsync(context, TestContext.Current.CancellationToken);
 
         result.Status.Should().Be(HealthStatus.Unhealthy, "it should notice that the broker cancelled the subscription's consumer");
+    }
+
+    // RabbitMQ.Client 7 dispatches consume-ok to the consumer after BasicConsumeAsync returned; a probe right after
+    // subscribing must not land in that window.
+    [Fact(Timeout = 120_000)]
+    public async Task When_Probing_Right_After_Subscribing()
+    {
+        var config = queues.NewConfig("probe-after-subscribe-test");
+        var queue = queues.Create(config);
+        var check = new RabbitMqHealthCheck(queue);
+        var context = new HealthCheckContext { Registration = new HealthCheckRegistration("rabbitmq", check, null, null) };
+        var statuses = new List<HealthStatus>();
+
+        for (var i = 0; i < 50; i++)
+        {
+            await queue.SubscribeAsync(_ => Task.FromResult(true), TestContext.Current.CancellationToken);
+            statuses.Add((await check.CheckHealthAsync(context, TestContext.Current.CancellationToken)).Status);
+            await queue.UnsubscribeAsync(TestContext.Current.CancellationToken);
+        }
+
+        statuses.Should().AllBeEquivalentTo(HealthStatus.Healthy, "it should report a subscription healthy as soon as SubscribeAsync returned");
+    }
+
+    // Deterministic form of the race above: the client's dispatch of consume-ok is held until after the probe.
+    [Fact(Timeout = 60_000)]
+    public async Task When_Probing_Before_The_Client_Dispatched_Consume_Ok()
+    {
+        var config = queues.NewConfig("probe-before-consume-ok-test");
+        var queue = queues.Create(config);
+        var check = new RabbitMqHealthCheck(queue);
+        var context = new HealthCheckContext { Registration = new HealthCheckRegistration("rabbitmq", check, null, null) };
+        var consumeOk = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        queue.ConsumeOkHold = () => consumeOk.Task;
+        await queue.SubscribeAsync(_ => Task.FromResult(true), TestContext.Current.CancellationToken);
+
+        var result = await check.CheckHealthAsync(context, TestContext.Current.CancellationToken);
+        consumeOk.SetResult();
+
+        result.Status.Should().Be(HealthStatus.Healthy, "it should report the consumer healthy once the broker returned its tag");
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task When_The_Broker_Closes_The_Consumer_Channel()
+    {
+        var config = queues.NewConfig("consumer-channel-closed-test");
+        var queue = queues.Create(config);
+        var check = new RabbitMqHealthCheck(queue);
+        var context = new HealthCheckContext { Registration = new HealthCheckRegistration("rabbitmq", check, null, null) };
+        await queue.SubscribeAsync(_ => Task.FromResult(true), TestContext.Current.CancellationToken);
+
+        // A channel error (404 on a passive declare) makes the broker close the consumer channel; the connection stays.
+        var declare = () => queue.LatestSubscriptionChannel!.QueueDeclarePassiveAsync($"missing-{Guid.NewGuid():N}", TestContext.Current.CancellationToken);
+        await declare.Should().ThrowAsync<Exception>();
+        var result = await check.CheckHealthAsync(context, TestContext.Current.CancellationToken);
+
+        result.Status.Should().Be(HealthStatus.Unhealthy, "it should report a subscription whose consumer channel the broker closed");
     }
 
     [Fact(Timeout = 60_000)]

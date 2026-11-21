@@ -1,0 +1,180 @@
+{
+  "description": "RabbitMQ health check and its consumer state: registered from the tag BasicConsumeAsync returns; a broker cancel or own cancel-ok ends it and a late consume-ok (several dispatcher workers) never revives it; a channel shutdown ends it until recovery's consume-ok; the probe reads the consumer's own state and its channel.",
+  "defaults": {
+    "filter": "Category=Unit&FullyQualifiedName~Given_a_rabbitmq_consumer"
+  },
+  "mutants": [
+    {
+      "id": "H1",
+      "name": "the returned tag does not mark the consumer registered",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "        Interlocked.CompareExchange(ref state, Registered, Pending);\n        return tag;",
+      "replace": "        return tag;"
+    },
+    {
+      "id": "H2",
+      "name": "the returned tag overwrites a cancel handled before it",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "        Interlocked.CompareExchange(ref state, Registered, Pending);\n        return tag;",
+      "replace": "        Volatile.Write(ref state, Registered);\n        return tag;"
+    },
+    {
+      "id": "H3",
+      "name": "consume-ok after a shutdown (recovery) does not register the consumer again",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "        if (Interlocked.CompareExchange(ref state, Registered, Pending) != Pending)\n            Interlocked.CompareExchange(ref state, Registered, ShutDown);\n",
+      "replace": "        Interlocked.CompareExchange(ref state, Registered, Pending);\n"
+    },
+    {
+      "id": "H4",
+      "name": "a cancel does not end the consumer",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "        if (Interlocked.CompareExchange(ref state, Cancelled, Registered) != Registered)\n            Interlocked.CompareExchange(ref state, Cancelled, Pending);\n",
+      "replace": ""
+    },
+    {
+      "id": "H5",
+      "name": "the broker's cancel is not reported",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "            await cancelledByBroker();\n",
+      "replace": ""
+    },
+    {
+      "id": "H6",
+      "name": "the health probe reads the client's IsRunning again",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "|| active.Consumer.IsHealthy;",
+      "replace": "|| (active.Channel.IsOpen && active.Consumer.IsRunning);",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_queue.When_Probing_Before_The_Client_Dispatched_Consume_Ok"
+    },
+    {
+      "id": "H6b",
+      "name": "the consumer's health reads the client's IsRunning",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "public bool IsHealthy => Channel.IsOpen && IsConsuming;",
+      "replace": "public bool IsHealthy => Channel.IsOpen && IsRunning;"
+    },
+    {
+      "id": "H7",
+      "name": "the health probe ignores the consumer",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "|| active.Consumer.IsHealthy;",
+      "replace": "|| active.Channel.IsOpen;",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_queue.When_The_Consumer_Is_Cancelled_By_The_Broker"
+    },
+    {
+      "id": "O1",
+      "name": "consume-ok registers the consumer unconditionally (revives a cancelled one)",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "        if (Interlocked.CompareExchange(ref state, Registered, Pending) != Pending)\n            Interlocked.CompareExchange(ref state, Registered, ShutDown);\n",
+      "replace": "        Volatile.Write(ref state, Registered);\n"
+    },
+    {
+      "id": "O2",
+      "name": "consume-ok re-registers from Cancelled instead of ShutDown",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "            Interlocked.CompareExchange(ref state, Registered, ShutDown);\n",
+      "replace": "            Interlocked.CompareExchange(ref state, Registered, Cancelled);\n"
+    },
+    {
+      "id": "O3",
+      "name": "a stale cancel after a shutdown makes the consumer unrecoverable",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "        if (Interlocked.CompareExchange(ref state, Cancelled, Registered) != Registered)\n            Interlocked.CompareExchange(ref state, Cancelled, Pending);\n",
+      "replace": "        Volatile.Write(ref state, Cancelled);\n"
+    },
+    {
+      "id": "O4",
+      "name": "the channel's shutdown event is not watched",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "        channel.ChannelShutdownAsync += (_, _) =>\n        {\n            Volatile.Write(ref state, ShutDown);\n            return Task.CompletedTask;\n        };\n",
+      "replace": ""
+    },
+    {
+      "id": "O5",
+      "name": "a throwing cancel callback skips the end of the consumer",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "        try\n        {\n            await cancelledByBroker();\n        }\n        finally\n        {\n            await base.HandleBasicCancelAsync(consumerTag, cancellationToken);\n        }\n",
+      "replace": "        await cancelledByBroker();\n        await base.HandleBasicCancelAsync(consumerTag, cancellationToken);\n"
+    },
+    {
+      "id": "O6",
+      "name": "a dispatched channel shutdown leaves the consumer cancelled, not recoverable",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "        await base.HandleChannelShutdownAsync(channel, reason);\n        Volatile.Write(ref state, ShutDown);\n",
+      "replace": "        await base.HandleChannelShutdownAsync(channel, reason);\n"
+    },
+    {
+      "id": "O7",
+      "name": "own cancel-ok and channel shutdown counted as broker cancels",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "            Interlocked.CompareExchange(ref state, Cancelled, Pending);\n        await base.OnCancelAsync(consumerTags, cancellationToken);",
+      "replace": "            Interlocked.CompareExchange(ref state, Cancelled, Pending);\n        await cancelledByBroker();\n        await base.OnCancelAsync(consumerTags, cancellationToken);"
+    },
+    {
+      "id": "X2",
+      "name": "broker cancel counted twice",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "            await cancelledByBroker();\n",
+      "replace": "            await cancelledByBroker();\n            await cancelledByBroker();\n"
+    },
+    {
+      "id": "X3",
+      "name": "a consumer that never started counts as consuming",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "Volatile.Read(ref state) == Registered;",
+      "replace": "Volatile.Read(ref state) != Cancelled;"
+    },
+    {
+      "id": "X4",
+      "name": "an ended consumer counts as consuming",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "Volatile.Read(ref state) == Registered;",
+      "replace": "Volatile.Read(ref state) != Pending;"
+    },
+    {
+      "id": "X5",
+      "name": "the broker cancel never reaches OnCancelAsync",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "            await base.HandleBasicCancelAsync(consumerTag, cancellationToken);\n",
+      "replace": ""
+    },
+    {
+      "id": "X6",
+      "name": "the health check ignores the consumer channel",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "public bool IsHealthy => Channel.IsOpen && IsConsuming;",
+      "replace": "public bool IsHealthy => IsConsuming;"
+    },
+    {
+      "id": "X7",
+      "name": "the health probe ignores the subscription entirely",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqMessageQueue.cs",
+      "find": "return Volatile.Read(ref subscription) is not { } active || active.Consumer.IsHealthy;",
+      "replace": "return true;",
+      "filter": "Category=Integration&FullyQualifiedName~Given_a_rabbitmq_queue."
+    },
+    {
+      "id": "X9",
+      "name": "recovery never heals the health check (against a real broker)",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "        if (Interlocked.CompareExchange(ref state, Registered, Pending) != Pending)\n            Interlocked.CompareExchange(ref state, Registered, ShutDown);\n",
+      "replace": "        Interlocked.CompareExchange(ref state, Registered, Pending);\n",
+      "filter": "Category=Integration&FullyQualifiedName~on_an_unreliable_broker.When_The_Broker_Closes_The_Connection_The_Health_Check_Recovers"
+    },
+    {
+      "id": "X10",
+      "name": "the subscribing token is not passed to BasicConsumeAsync",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "BasicConsumeAsync(queue, autoAck: false, this, cancellationToken);",
+      "replace": "BasicConsumeAsync(queue, autoAck: false, this, CancellationToken.None);"
+    },
+    {
+      "id": "X11",
+      "name": "the consumer acknowledges automatically",
+      "file": "src/ZedLabs.MessageQueue.RabbitMQ/RabbitMqConsumer.cs",
+      "find": "BasicConsumeAsync(queue, autoAck: false, this, cancellationToken);",
+      "replace": "BasicConsumeAsync(queue, autoAck: true, this, cancellationToken);"
+    }
+  ]
+}
