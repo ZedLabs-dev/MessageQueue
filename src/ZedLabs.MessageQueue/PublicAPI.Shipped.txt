@@ -1,4 +1,80 @@
 #nullable enable
+ZedLabs.MessageQueue.Abstractions.DeadLetterLimits
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.BodyLength.get -> int
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.BodyLength.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.CorrelationId.get -> string?
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.CorrelationId.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.DeadLetterMessage() -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.DeadLetteredAt.get -> System.DateTimeOffset?
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.DeadLetteredAt.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.DeliveryAttempt.get -> int?
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.DeliveryAttempt.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.EnqueuedAt.get -> System.DateTimeOffset?
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.EnqueuedAt.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.Headers.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.Headers.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.Message.get -> T?
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.Message.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.MessageId.get -> string!
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.MessageId.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.ReasonCode.get -> string?
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.ReasonCode.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.ReasonDetail.get -> string?
+ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T>.ReasonDetail.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterOperations
+ZedLabs.MessageQueue.Abstractions.DeadLetterOperations.All = ZedLabs.MessageQueue.Abstractions.DeadLetterOperations.Peek | ZedLabs.MessageQueue.Abstractions.DeadLetterOperations.Replay | ZedLabs.MessageQueue.Abstractions.DeadLetterOperations.Purge -> ZedLabs.MessageQueue.Abstractions.DeadLetterOperations
+ZedLabs.MessageQueue.Abstractions.DeadLetterOperations.None = 0 -> ZedLabs.MessageQueue.Abstractions.DeadLetterOperations
+ZedLabs.MessageQueue.Abstractions.DeadLetterOperations.Peek = 1 -> ZedLabs.MessageQueue.Abstractions.DeadLetterOperations
+ZedLabs.MessageQueue.Abstractions.DeadLetterOperations.Purge = 4 -> ZedLabs.MessageQueue.Abstractions.DeadLetterOperations
+ZedLabs.MessageQueue.Abstractions.DeadLetterOperations.Replay = 2 -> ZedLabs.MessageQueue.Abstractions.DeadLetterOperations
+ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T>
+ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T>.DeadLetterPurgeOptions() -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T>.Filter.get -> System.Func<ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T!>!, bool>?
+ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T>.Filter.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T>.MaxCount.get -> int
+ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T>.MaxCount.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T>.ReasonCodes.get -> System.Collections.Generic.IReadOnlyCollection<string!>?
+ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T>.ReasonCodes.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.<Clone>$() -> ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure!
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.DeadLetterReplayFailure(string! MessageId, string! Error) -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.Deconstruct(out string! MessageId, out string! Error) -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.Equals(ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure? other) -> bool
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.Error.get -> string!
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.Error.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.MessageId.get -> string!
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.MessageId.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T>
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T>.DeadLetterReplayOptions() -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T>.DryRun.get -> bool
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T>.DryRun.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T>.Filter.get -> System.Func<ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T!>!, bool>?
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T>.Filter.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T>.MaxCount.get -> int
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T>.MaxCount.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T>.ReasonCodes.get -> System.Collections.Generic.IReadOnlyCollection<string!>?
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T>.ReasonCodes.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.<Clone>$() -> ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult!
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.DeadLetterReplayResult() -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.DryRun.get -> bool
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.DryRun.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.Equals(ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult? other) -> bool
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.Failed.get -> int
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.Failed.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.Failures.get -> System.Collections.Generic.IReadOnlyList<ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure!>!
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.Failures.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.Matched.get -> int
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.Matched.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.Replayed.get -> int
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.Replayed.init -> void
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.Skipped.get -> int
+ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.Skipped.init -> void
+ZedLabs.MessageQueue.Abstractions.IDeadLetterQueue<T>
+ZedLabs.MessageQueue.Abstractions.IDeadLetterQueue<T>.PeekAsync(int maxCount, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T!>!>!>!
+ZedLabs.MessageQueue.Abstractions.IDeadLetterQueue<T>.PurgeAsync(ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+ZedLabs.MessageQueue.Abstractions.IDeadLetterQueue<T>.ReplayAsync(ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult!>!
 ZedLabs.MessageQueue.Abstractions.IMessagePublisher<T>
 ZedLabs.MessageQueue.Abstractions.IMessagePublisher<T>.PublishAsync(System.Collections.Generic.IEnumerable<T!>! messages, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 ZedLabs.MessageQueue.Abstractions.IMessagePublisher<T>.PublishAsync(T! message, ZedLabs.MessageQueue.Abstractions.PublishOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -27,6 +103,8 @@ ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities
 ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities.<Clone>$() -> ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities!
 ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities.DeadLetter.get -> bool
 ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities.DeadLetter.init -> void
+ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities.DeadLetterOperations.get -> ZedLabs.MessageQueue.Abstractions.DeadLetterOperations
+ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities.DeadLetterOperations.init -> void
 ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities.Deconstruct(out bool Durable, out bool DeadLetter, out bool DelayedRedelivery) -> void
 ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities.DelayedRedelivery.get -> bool
 ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities.DelayedRedelivery.init -> void
@@ -51,6 +129,8 @@ ZedLabs.MessageQueue.Abstractions.PublishOptions.PublishOptions() -> void
 ZedLabs.MessageQueue.Configuration.MessageQueueConfig
 ZedLabs.MessageQueue.Configuration.MessageQueueConfig.EnableDeadLetterQueue.get -> bool
 ZedLabs.MessageQueue.Configuration.MessageQueueConfig.EnableDeadLetterQueue.set -> void
+ZedLabs.MessageQueue.Configuration.MessageQueueConfig.JsonTypeInfoResolver.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver?
+ZedLabs.MessageQueue.Configuration.MessageQueueConfig.JsonTypeInfoResolver.set -> void
 ZedLabs.MessageQueue.Configuration.MessageQueueConfig.MaxConcurrentCalls.get -> int
 ZedLabs.MessageQueue.Configuration.MessageQueueConfig.MaxConcurrentCalls.set -> void
 ZedLabs.MessageQueue.Configuration.MessageQueueConfig.MaxMessageSizeBytes.get -> int
@@ -59,6 +139,8 @@ ZedLabs.MessageQueue.Configuration.MessageQueueConfig.MessageQueueConfig() -> vo
 ZedLabs.MessageQueue.Configuration.MessageQueueConfig.MessageQueueConfig(ZedLabs.MessageQueue.Configuration.MessageQueueConfig! original) -> void
 ZedLabs.MessageQueue.Configuration.MessageQueueConfig.QueueName.get -> string!
 ZedLabs.MessageQueue.Configuration.MessageQueueConfig.QueueName.set -> void
+ZedLabs.MessageQueue.Configuration.MessageQueueConfig.RequireDelayedRedelivery.get -> bool
+ZedLabs.MessageQueue.Configuration.MessageQueueConfig.RequireDelayedRedelivery.set -> void
 ZedLabs.MessageQueue.Configuration.MessageQueueConfig.Retry.get -> ZedLabs.MessageQueue.Retry.RetryPolicy!
 ZedLabs.MessageQueue.Configuration.MessageQueueConfig.Retry.set -> void
 ZedLabs.MessageQueue.Configuration.MessageQueueConfig.SerializationFormat.get -> ZedLabs.MessageQueue.Serialization.SerializationFormat
@@ -89,6 +171,7 @@ ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.Context.init -> void
 ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.Deconstruct(out T? Message, out System.ReadOnlyMemory<byte> Body, out ZedLabs.MessageQueue.Abstractions.MessageContext! Context, out string! Reason, out string? Detail) -> void
 ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.Detail.get -> string?
 ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.Detail.init -> void
+ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.Equals(ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T!>? other) -> bool
 ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.InMemoryDeadLetter(T? Message, System.ReadOnlyMemory<byte> Body, ZedLabs.MessageQueue.Abstractions.MessageContext! Context, string! Reason, string? Detail) -> void
 ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.Message.get -> T?
 ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.Message.init -> void
@@ -102,12 +185,15 @@ ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.Dispose() -> void
 ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.DisposeAsync() -> System.Threading.Tasks.ValueTask
 ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.InMemoryMessageQueue(ZedLabs.MessageQueue.InMemory.InMemoryConfig? config = null, ZedLabs.MessageQueue.Telemetry.ITelemetryProvider? telemetry = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
 ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.IsSubscribed.get -> bool
+ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.PeekAsync(int maxCount, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T!>!>!>!
 ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.PendingCount.get -> int
 ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.ProcessedMessages.get -> System.Collections.Generic.IReadOnlyList<T!>!
 ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.PublishAsync(System.Collections.Generic.IEnumerable<T!>! messages, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.PublishAsync(T! message, ZedLabs.MessageQueue.Abstractions.PublishOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.PublishAsync(T! message, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.PublishedMessages.get -> System.Collections.Generic.IReadOnlyList<T!>!
+ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.PurgeAsync(ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.ReplayAsync(ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult!>!
 ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.SubscribeAsync(System.Func<T!, ZedLabs.MessageQueue.Abstractions.MessageContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task<ZedLabs.MessageQueue.Abstractions.MessageResult>!>! handler, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.SubscribeAsync(System.Func<T!, System.Threading.Tasks.Task<bool>!>! handler, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.UnsubscribeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -115,6 +201,31 @@ ZedLabs.MessageQueue.InMemory.InMemoryMessageQueue<T>.WaitForIdleAsync(System.Th
 ZedLabs.MessageQueue.Processing.DeadLetterReasons
 ZedLabs.MessageQueue.Processing.IMessageProcessor<T>
 ZedLabs.MessageQueue.Processing.IMessageProcessor<T>.ProcessAsync(T! message, ZedLabs.MessageQueue.Abstractions.MessageContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<ZedLabs.MessageQueue.Abstractions.MessageResult>!
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.<Clone>$() -> ZedLabs.MessageQueue.Providers.DeadLetterMetadata!
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.CorrelationId.get -> string?
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.CorrelationId.init -> void
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.DeadLetterMetadata() -> void
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.DeadLetteredAt.get -> System.DateTimeOffset?
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.DeadLetteredAt.init -> void
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.DeliveryAttempt.get -> int?
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.DeliveryAttempt.init -> void
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.EnqueuedAt.get -> System.DateTimeOffset?
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.EnqueuedAt.init -> void
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.Equals(ZedLabs.MessageQueue.Providers.DeadLetterMetadata? other) -> bool
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.Headers.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.Headers.init -> void
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.MessageId.get -> string!
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.MessageId.init -> void
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.ReasonCode.get -> string?
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.ReasonCode.init -> void
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.ReasonDetail.get -> string?
+ZedLabs.MessageQueue.Providers.DeadLetterMetadata.ReasonDetail.init -> void
+ZedLabs.MessageQueue.Providers.DeadLetterQueue<T>
+ZedLabs.MessageQueue.Providers.DeadLetterQueue<T>.DeadLetterQueue(ZedLabs.MessageQueue.Providers.IDeadLetterStore! store, ZedLabs.MessageQueue.Configuration.MessageQueueConfig! config, ZedLabs.MessageQueue.Telemetry.TelemetryTarget! target, ZedLabs.MessageQueue.Telemetry.ITelemetryProvider? telemetry = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+ZedLabs.MessageQueue.Providers.DeadLetterQueue<T>.PeekAsync(int maxCount, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T!>!>!>!
+ZedLabs.MessageQueue.Providers.DeadLetterQueue<T>.PurgeAsync(ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+ZedLabs.MessageQueue.Providers.DeadLetterQueue<T>.ReplayAsync(ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult!>!
 ZedLabs.MessageQueue.Providers.DeadLetterReason
 ZedLabs.MessageQueue.Providers.DeadLetterReason.Code.get -> string!
 ZedLabs.MessageQueue.Providers.DeadLetterReason.DeadLetterReason() -> void
@@ -126,6 +237,16 @@ ZedLabs.MessageQueue.Providers.DispatchOutcome.Completed = 0 -> ZedLabs.MessageQ
 ZedLabs.MessageQueue.Providers.DispatchOutcome.DeadLettered = 2 -> ZedLabs.MessageQueue.Providers.DispatchOutcome
 ZedLabs.MessageQueue.Providers.DispatchOutcome.Dropped = 3 -> ZedLabs.MessageQueue.Providers.DispatchOutcome
 ZedLabs.MessageQueue.Providers.DispatchOutcome.Rescheduled = 1 -> ZedLabs.MessageQueue.Providers.DispatchOutcome
+ZedLabs.MessageQueue.Providers.IDeadLetterEntry
+ZedLabs.MessageQueue.Providers.IDeadLetterEntry.Body.get -> System.ReadOnlyMemory<byte>
+ZedLabs.MessageQueue.Providers.IDeadLetterEntry.Metadata.get -> ZedLabs.MessageQueue.Providers.DeadLetterMetadata!
+ZedLabs.MessageQueue.Providers.IDeadLetterEntry.RemoveAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.Providers.IDeadLetterEntry.ReplayAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZedLabs.MessageQueue.Providers.IDeadLetterScan
+ZedLabs.MessageQueue.Providers.IDeadLetterScan.NextAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<ZedLabs.MessageQueue.Providers.IDeadLetterEntry?>!
+ZedLabs.MessageQueue.Providers.IDeadLetterStore
+ZedLabs.MessageQueue.Providers.IDeadLetterStore.OpenScanAsync(bool browseOnly, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<ZedLabs.MessageQueue.Providers.IDeadLetterScan!>!
+ZedLabs.MessageQueue.Providers.IDeadLetterStore.Operations.get -> ZedLabs.MessageQueue.Abstractions.DeadLetterOperations
 ZedLabs.MessageQueue.Providers.IDeliveryActions
 ZedLabs.MessageQueue.Providers.IDeliveryActions.CompleteAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 ZedLabs.MessageQueue.Providers.IDeliveryActions.DeadLetterAsync(ZedLabs.MessageQueue.Providers.DeadLetterReason reason, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
@@ -191,6 +312,8 @@ ZedLabs.MessageQueue.Serialization.SerializationFormat.MessagePack = 1 -> ZedLab
 ZedLabs.MessageQueue.Telemetry.ITelemetryProvider
 ZedLabs.MessageQueue.Telemetry.ITelemetryProvider.ExtractTraceContext(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! headers) -> ZedLabs.MessageQueue.Telemetry.TraceContext?
 ZedLabs.MessageQueue.Telemetry.ITelemetryProvider.InjectTraceContext(System.Collections.Generic.IDictionary<string!, string!>! headers) -> void
+ZedLabs.MessageQueue.Telemetry.ITelemetryProvider.RecordDeadLettersPurged(ZedLabs.MessageQueue.Telemetry.TelemetryTarget! target, int count) -> void
+ZedLabs.MessageQueue.Telemetry.ITelemetryProvider.RecordDeadLettersReplayed(ZedLabs.MessageQueue.Telemetry.TelemetryTarget! target, int count) -> void
 ZedLabs.MessageQueue.Telemetry.ITelemetryProvider.RecordMessageConsumed(ZedLabs.MessageQueue.Telemetry.TelemetryTarget! target, System.TimeSpan duration, string? errorType) -> void
 ZedLabs.MessageQueue.Telemetry.ITelemetryProvider.RecordMessageDeadLettered(ZedLabs.MessageQueue.Telemetry.TelemetryTarget! target, string! reason) -> void
 ZedLabs.MessageQueue.Telemetry.ITelemetryProvider.RecordMessagePublished(ZedLabs.MessageQueue.Telemetry.TelemetryTarget! target, int messageCount, System.TimeSpan duration, string? errorType) -> void
@@ -212,6 +335,8 @@ ZedLabs.MessageQueue.Telemetry.OpenTelemetry.OpenTelemetryProvider.Dispose() -> 
 ZedLabs.MessageQueue.Telemetry.OpenTelemetry.OpenTelemetryProvider.ExtractTraceContext(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! headers) -> ZedLabs.MessageQueue.Telemetry.TraceContext?
 ZedLabs.MessageQueue.Telemetry.OpenTelemetry.OpenTelemetryProvider.InjectTraceContext(System.Collections.Generic.IDictionary<string!, string!>! headers) -> void
 ZedLabs.MessageQueue.Telemetry.OpenTelemetry.OpenTelemetryProvider.OpenTelemetryProvider(string! sourceName, bool recordExceptionDetails = false) -> void
+ZedLabs.MessageQueue.Telemetry.OpenTelemetry.OpenTelemetryProvider.RecordDeadLettersPurged(ZedLabs.MessageQueue.Telemetry.TelemetryTarget! target, int count) -> void
+ZedLabs.MessageQueue.Telemetry.OpenTelemetry.OpenTelemetryProvider.RecordDeadLettersReplayed(ZedLabs.MessageQueue.Telemetry.TelemetryTarget! target, int count) -> void
 ZedLabs.MessageQueue.Telemetry.OpenTelemetry.OpenTelemetryProvider.RecordMessageConsumed(ZedLabs.MessageQueue.Telemetry.TelemetryTarget! target, System.TimeSpan duration, string? errorType) -> void
 ZedLabs.MessageQueue.Telemetry.OpenTelemetry.OpenTelemetryProvider.RecordMessageDeadLettered(ZedLabs.MessageQueue.Telemetry.TelemetryTarget! target, string! reason) -> void
 ZedLabs.MessageQueue.Telemetry.OpenTelemetry.OpenTelemetryProvider.RecordMessagePublished(ZedLabs.MessageQueue.Telemetry.TelemetryTarget! target, int messageCount, System.TimeSpan duration, string? errorType) -> void
@@ -265,6 +390,9 @@ ZedLabs.MessageQueue.Telemetry.TraceHeaders
 abstract ZedLabs.MessageQueue.Configuration.MessageQueueConfig.<Clone>$() -> ZedLabs.MessageQueue.Configuration.MessageQueueConfig!
 abstract ZedLabs.MessageQueue.Configuration.MessageQueueConfig.Provider.get -> string!
 abstract ZedLabs.MessageQueue.Providers.MessageQueueConfigValidator<TConfig>.ValidateProvider(TConfig! options, System.Collections.Generic.ICollection<string!>! errors) -> void
+const ZedLabs.MessageQueue.Abstractions.DeadLetterLimits.MaxPeekCount = 1000 -> int
+const ZedLabs.MessageQueue.Abstractions.DeadLetterLimits.MaxReportedFailures = 100 -> int
+const ZedLabs.MessageQueue.Abstractions.DeadLetterLimits.MaxScanCount = 10000 -> int
 const ZedLabs.MessageQueue.Abstractions.PublishOptions.MaxHeaderNameLength = 128 -> int
 const ZedLabs.MessageQueue.Abstractions.PublishOptions.MaxHeaderValueLength = 4096 -> int
 const ZedLabs.MessageQueue.Abstractions.PublishOptions.MaxHeaders = 64 -> int
@@ -286,6 +414,12 @@ const ZedLabs.MessageQueue.Telemetry.TraceContext.MaxTraceParentLength = 256 -> 
 const ZedLabs.MessageQueue.Telemetry.TraceContext.MaxTraceStateLength = 512 -> int
 const ZedLabs.MessageQueue.Telemetry.TraceHeaders.TraceParent = "traceparent" -> string!
 const ZedLabs.MessageQueue.Telemetry.TraceHeaders.TraceState = "tracestate" -> string!
+override ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.Equals(object? obj) -> bool
+override ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.GetHashCode() -> int
+override ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.ToString() -> string!
+override ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.Equals(object? obj) -> bool
+override ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.GetHashCode() -> int
+override ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.ToString() -> string!
 override ZedLabs.MessageQueue.Abstractions.MessageContext.Equals(object? obj) -> bool
 override ZedLabs.MessageQueue.Abstractions.MessageContext.GetHashCode() -> int
 override ZedLabs.MessageQueue.Abstractions.MessageContext.ToString() -> string!
@@ -308,7 +442,12 @@ override ZedLabs.MessageQueue.InMemory.InMemoryConfig.ToString() -> string!
 override ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.Equals(object? obj) -> bool
 override ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.GetHashCode() -> int
 override ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.ToString() -> string!
+override ZedLabs.MessageQueue.Providers.DeadLetterMetadata.Equals(object? obj) -> bool
+override ZedLabs.MessageQueue.Providers.DeadLetterMetadata.GetHashCode() -> int
+override ZedLabs.MessageQueue.Providers.DeadLetterMetadata.ToString() -> string!
+override ZedLabs.MessageQueue.Providers.DeadLetterReason.Equals(object? obj) -> bool
 override ZedLabs.MessageQueue.Providers.DeadLetterReason.GetHashCode() -> int
+override ZedLabs.MessageQueue.Providers.DeadLetterReason.ToString() -> string!
 override ZedLabs.MessageQueue.Retry.RetryPolicy.Equals(object? obj) -> bool
 override ZedLabs.MessageQueue.Retry.RetryPolicy.GetHashCode() -> int
 override ZedLabs.MessageQueue.Retry.RetryPolicy.ToString() -> string!
@@ -319,6 +458,10 @@ override ZedLabs.MessageQueue.Telemetry.TraceContext.Equals(object? obj) -> bool
 override ZedLabs.MessageQueue.Telemetry.TraceContext.GetHashCode() -> int
 override ZedLabs.MessageQueue.Telemetry.TraceContext.ToString() -> string!
 override sealed ZedLabs.MessageQueue.InMemory.InMemoryConfig.Equals(ZedLabs.MessageQueue.Configuration.MessageQueueConfig? other) -> bool
+static ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.operator !=(ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure? left, ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure? right) -> bool
+static ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure.operator ==(ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure? left, ZedLabs.MessageQueue.Abstractions.DeadLetterReplayFailure? right) -> bool
+static ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.operator !=(ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult? left, ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult? right) -> bool
+static ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult.operator ==(ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult? left, ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult? right) -> bool
 static ZedLabs.MessageQueue.Abstractions.MessageContext.operator !=(ZedLabs.MessageQueue.Abstractions.MessageContext? left, ZedLabs.MessageQueue.Abstractions.MessageContext? right) -> bool
 static ZedLabs.MessageQueue.Abstractions.MessageContext.operator ==(ZedLabs.MessageQueue.Abstractions.MessageContext? left, ZedLabs.MessageQueue.Abstractions.MessageContext? right) -> bool
 static ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities.operator !=(ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities? left, ZedLabs.MessageQueue.Abstractions.MessageQueueCapabilities? right) -> bool
@@ -331,22 +474,30 @@ static ZedLabs.MessageQueue.Extensions.MessageQueueServiceCollectionExtensions.A
 static ZedLabs.MessageQueue.Extensions.MessageQueueServiceCollectionExtensions.AddInMemoryMessageQueue<T>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<ZedLabs.MessageQueue.InMemory.InMemoryConfig!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static ZedLabs.MessageQueue.Extensions.MessageQueueServiceCollectionExtensions.AddMessageProcessor<T, TProcessor>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static ZedLabs.MessageQueue.Extensions.MessageQueueServiceCollectionExtensions.AddMessageQueue<T>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! configurationSection = "MessageQueue") -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static ZedLabs.MessageQueue.Extensions.MessageQueueServiceCollectionExtensions.AddMessageQueueJsonMetadata<T>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver! jsonTypeInfoResolver) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static ZedLabs.MessageQueue.Extensions.MessageQueueServiceCollectionExtensions.AddMessageQueueProvider(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, ZedLabs.MessageQueue.Providers.IMessageQueueProvider! provider) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static ZedLabs.MessageQueue.Extensions.MessageQueueServiceCollectionExtensions.AddMessageQueueTelemetry(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! sourceName = "ZedLabs.MessageQueue", bool recordExceptionDetails = false) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static ZedLabs.MessageQueue.Extensions.MessageQueueServiceCollectionExtensions.AddMessageQueueTelemetry<TProvider>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static ZedLabs.MessageQueue.HealthChecks.MessageQueueHealthCheckExtensions.AddMessageQueueHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! name, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<bool>!>! connectivityCheck, Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
 static ZedLabs.MessageQueue.InMemory.InMemoryConfig.operator !=(ZedLabs.MessageQueue.InMemory.InMemoryConfig? left, ZedLabs.MessageQueue.InMemory.InMemoryConfig? right) -> bool
 static ZedLabs.MessageQueue.InMemory.InMemoryConfig.operator ==(ZedLabs.MessageQueue.InMemory.InMemoryConfig? left, ZedLabs.MessageQueue.InMemory.InMemoryConfig? right) -> bool
+static ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.operator !=(ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T!>? left, ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T!>? right) -> bool
+static ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.operator ==(ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T!>? left, ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T!>? right) -> bool
+static ZedLabs.MessageQueue.Providers.DeadLetterMetadata.operator !=(ZedLabs.MessageQueue.Providers.DeadLetterMetadata? left, ZedLabs.MessageQueue.Providers.DeadLetterMetadata? right) -> bool
+static ZedLabs.MessageQueue.Providers.DeadLetterMetadata.operator ==(ZedLabs.MessageQueue.Providers.DeadLetterMetadata? left, ZedLabs.MessageQueue.Providers.DeadLetterMetadata? right) -> bool
 static ZedLabs.MessageQueue.Providers.DeadLetterReason.operator !=(ZedLabs.MessageQueue.Providers.DeadLetterReason left, ZedLabs.MessageQueue.Providers.DeadLetterReason right) -> bool
 static ZedLabs.MessageQueue.Providers.DeadLetterReason.operator ==(ZedLabs.MessageQueue.Providers.DeadLetterReason left, ZedLabs.MessageQueue.Providers.DeadLetterReason right) -> bool
 static ZedLabs.MessageQueue.Providers.MessageContextExtensions.WithTraceHeaders(this ZedLabs.MessageQueue.Abstractions.MessageContext! context, string? traceParent, string? traceState) -> ZedLabs.MessageQueue.Abstractions.MessageContext!
 static ZedLabs.MessageQueue.Providers.MessageSerializer.Deserialize<T>(System.ReadOnlyMemory<byte> data, ZedLabs.MessageQueue.Serialization.SerializationFormat format) -> T?
+static ZedLabs.MessageQueue.Providers.MessageSerializer.Deserialize<T>(System.ReadOnlyMemory<byte> data, ZedLabs.MessageQueue.Serialization.SerializationFormat format, System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? jsonTypeInfoResolver) -> T?
 static ZedLabs.MessageQueue.Providers.MessageSerializer.GetContentType(ZedLabs.MessageQueue.Serialization.SerializationFormat format) -> string!
 static ZedLabs.MessageQueue.Providers.MessageSerializer.Serialize<T>(T! message, ZedLabs.MessageQueue.Serialization.SerializationFormat format) -> byte[]!
+static ZedLabs.MessageQueue.Providers.MessageSerializer.Serialize<T>(T! message, ZedLabs.MessageQueue.Serialization.SerializationFormat format, System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? jsonTypeInfoResolver) -> byte[]!
 static ZedLabs.MessageQueue.Providers.PublishTelemetry.Start(ZedLabs.MessageQueue.Telemetry.ITelemetryProvider! telemetry, ZedLabs.MessageQueue.Telemetry.TelemetryTarget! target, int messageCount, Microsoft.Extensions.Logging.ILogger! logger, string? messageId = null) -> ZedLabs.MessageQueue.Providers.PublishTelemetry!
 static ZedLabs.MessageQueue.Providers.PublishValidation.IsReserved(string! name) -> bool
 static ZedLabs.MessageQueue.Providers.PublishValidation.Validate<T>(System.Collections.Generic.IEnumerable<T!>! messages) -> void
 static ZedLabs.MessageQueue.Providers.PublishValidation.Validate<T>(T! message, ZedLabs.MessageQueue.Abstractions.PublishOptions! options) -> void
+static ZedLabs.MessageQueue.Providers.PublishValidation.ValidateBodySize(int bodyLength, int maxMessageSizeBytes, string! destination, int? batchIndex = null) -> void
 static ZedLabs.MessageQueue.Retry.RetryPolicy.Aggressive.get -> ZedLabs.MessageQueue.Retry.RetryPolicy!
 static ZedLabs.MessageQueue.Retry.RetryPolicy.Default.get -> ZedLabs.MessageQueue.Retry.RetryPolicy!
 static ZedLabs.MessageQueue.Retry.RetryPolicy.None.get -> ZedLabs.MessageQueue.Retry.RetryPolicy!
@@ -369,9 +520,3 @@ virtual ZedLabs.MessageQueue.Telemetry.TelemetryActivity.Dispose(bool disposing)
 virtual ZedLabs.MessageQueue.Telemetry.TelemetryActivity.SetError(System.Exception! exception) -> void
 virtual ZedLabs.MessageQueue.Telemetry.TelemetryActivity.SetErrorType(string! errorType) -> void
 virtual ZedLabs.MessageQueue.Telemetry.TelemetryActivity.SetTag(string! name, object? value) -> void
-~ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.<Clone>$() -> ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>!
-~ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.Equals(ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>? other) -> bool
-~override ZedLabs.MessageQueue.Providers.DeadLetterReason.Equals(object obj) -> bool
-~override ZedLabs.MessageQueue.Providers.DeadLetterReason.ToString() -> string
-~static ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.operator !=(ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>? left, ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>? right) -> bool
-~static ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>.operator ==(ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>? left, ZedLabs.MessageQueue.InMemory.InMemoryDeadLetter<T>? right) -> bool

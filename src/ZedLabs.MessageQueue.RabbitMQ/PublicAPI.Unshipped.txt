@@ -1,19 +1,1 @@
 #nullable enable
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.CaCertificatePath.get -> string!
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.CaCertificatePath.set -> void
-static ZedLabs.MessageQueue.HealthChecks.RabbitMqHealthCheckExtensions.AddRabbitMqHealthCheck(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! connectionString, ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig! tls, string! name = "rabbitmq", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.TimeSpan? timeout = null, bool? requireTls = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateKeyPath.get -> string!
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateKeyPath.set -> void
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificatePassword.get -> string!
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificatePassword.set -> void
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificatePath.get -> string!
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificatePath.set -> void
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateStoreLocation.get -> System.Security.Cryptography.X509Certificates.StoreLocation
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateStoreLocation.set -> void
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateStoreName.get -> System.Security.Cryptography.X509Certificates.StoreName
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateStoreName.set -> void
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateThumbprint.get -> string!
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqTlsConfig.ClientCertificateThumbprint.set -> void
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.PeekAsync(int maxCount, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<ZedLabs.MessageQueue.Abstractions.DeadLetterMessage<T!>!>!>!
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.PurgeAsync(ZedLabs.MessageQueue.Abstractions.DeadLetterPurgeOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-ZedLabs.MessageQueue.RabbitMQ.RabbitMqMessageQueue<T>.ReplayAsync(ZedLabs.MessageQueue.Abstractions.DeadLetterReplayOptions<T!>! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZedLabs.MessageQueue.Abstractions.DeadLetterReplayResult!>!

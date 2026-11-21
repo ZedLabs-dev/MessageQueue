@@ -6,13 +6,191 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Version 1.0.0-rc.1 (Directory.Build.props). Not to be released as 1.0.0 final until the release blockers below are
-resolved.
+## [1.0.0-rc.1] - 2026-11-20
+
+The first release of ZedLabs.MessageQueue, a release candidate for 1.0.0: provider-agnostic event messaging for
+.NET 10, published by ZedLabs under the Apache-2.0 license. Applications code against `IMessageQueue<T>`
+(`IMessagePublisher<T>` + `IMessageSubscriber<T>`); RabbitMQ, Azure Service Bus and an in-memory queue are
+interchangeable providers chosen in configuration. Every provider runs deliveries through one pipeline: size limit,
+deserialization, the handler, then retry with real backoff and dead-lettering. The public API is locked for 1.0.0;
+one release blocker remains open (below).
+
+### Packages
+
+| Package | Contents |
+|---|---|
+| `ZedLabs.MessageQueue` | Abstractions, the delivery pipeline, hosting, configuration and validation, telemetry, health checks, dead-letter operations, the in-memory provider and the public provider SPI. No broker SDK. |
+| `ZedLabs.MessageQueue.RabbitMQ` | RabbitMQ provider on RabbitMQ.Client 7.2.2. |
+| `ZedLabs.MessageQueue.AzureServiceBus` | Azure Service Bus provider on Azure.Messaging.ServiceBus 7.21.0 and Azure.Identity 1.21.0. |
+
+- All three target `net10.0` only (ADR 0024).
+- The provider packages depend on exactly `[1.0.0-rc.1]` of `ZedLabs.MessageQueue`, because they share its
+  internals, so upgrade all `ZedLabs.MessageQueue*` packages together.
+- Every package ships with SourceLink, a deterministic build, a `.snupkg` symbol package, a README, `LICENSE` and
+  `NOTICE`.
 
 ### Release blockers for 1.0.0
-- **The Azure Service Bus integration specs have never run against a real broker** (no namespace, and the emulator's
-  EULA is the owner's to accept). They skip without `MQ_ASB_CONNECTION_STRING`; the provider is verified only through
-  its unit specs over the SDK seams. Run `Category=Integration` with a namespace or the emulator, then remove this item.
+
+These apply to 1.0.0 final only. This release candidate ships with them open.
+
+- **Open: the Azure Service Bus integration specs have never run against a real broker.** Running them needs a
+  namespace, or the emulator, whose EULA is the owner's to accept. Without `MQ_ASB_CONNECTION_STRING` they skip, so
+  the provider is verified only by its unit specs over the SDK seams. To close this, run `Category=Integration` with a
+  namespace or the emulator, then remove this item.
+
+### Features
+
+- **One API, three providers.**
+  - Register brokers before `AddMessageQueue<T>(configuration)` with `services.AddRabbitMqProvider()` or
+    `services.AddAzureServiceBusProvider()`. `InMemory` is built in, and the `Provider` setting selects one.
+  - A container can hold one queue per message type, each with its own section and provider.
+  - `IMessagePublisher<T>`, `IMessageSubscriber<T>` and `IDeadLetterQueue<T>` are registered next to
+    `IMessageQueue<T>`.
+  - `Capabilities` reports what a queue supports: durable, dead letter, delayed redelivery and dead-letter
+    operations.
+- **Publishing.**
+  - Publish one message or a batch, optionally with `PublishOptions`:
+    - a message id, the portable idempotency key (default: a version 7 GUID)
+    - a correlation id
+    - up to 64 string headers
+  - Arguments are validated the same way on every provider.
+  - A message whose serialized body exceeds `MaxMessageSizeBytes` (default 1 MB) is refused before anything is sent
+    (ADR 0026).
+- **Consuming.**
+  - Implement `IMessageProcessor<T>` and register `AddMessageProcessor<T, TProcessor>()` with
+    `MessageQueueHostedService<T>`. The service subscribes at host start, creates a DI scope per message and drains
+    on stop.
+  - Or call `SubscribeAsync` with a handler that returns `MessageResult.Acknowledge`, `Retry` or `DeadLetter`.
+  - Handlers receive a `MessageContext`: message id, correlation id, 1-based `DeliveryAttempt`, read-only
+    `Headers`, timestamp.
+  - Concurrency is bounded by `MaxConcurrentCalls` (default 10).
+  - Shutdown is bounded by `ShutdownTimeout` (default 25 s, below the host's default 30 s). Startup warning 5005
+    flags a value that is not below the host's (ADR 0025).
+- **Retry and dead-lettering** (ADRs 0001, 0004, 0006, 0009).
+  - `RetryPolicy` defaults to 5 retries, exponential from 2 s, multiplier 2, at most 30 s, with 10% jitter.
+  - Backoff happens on the broker:
+    - RabbitMQ: per-delay retry queues.
+    - Service Bus queues: scheduled copies, transactional by default.
+    - Service Bus topic subscriptions: the retry waits under the message lock.
+  - Dead letters carry a reason code and the exception type, never exception text.
+  - `RequireDelayedRedelivery` fails startup when a provider cannot honor the backoff (ADR 0020).
+- **Dead-letter operations** (ADR 0023).
+  - `IDeadLetterQueue<T>` has three operations:
+    - `PeekAsync`: read-only snapshots.
+    - `ReplayAsync`: back to the queue as a first delivery with the same message id and trace; at-least-once;
+      `DryRun`.
+    - `PurgeAsync`: an explicit `MaxCount`, no purge-all.
+  - Replay and purge select by reason code and filter.
+  - All providers support them (Service Bus topic subscriptions: peek and purge only).
+  - Telemetry counts replays and purges; operator guide: `docs/dead-letter-operations.md`.
+- **Serialization.**
+  - JSON (System.Text.Json: camelCase, depth 64, strict UTF-8).
+  - MessagePack with `MessagePackSecurity.UntrustedData` (ADR 0018).
+  - Optional source-generated JSON metadata through `AddMessageQueueJsonMetadata<T>(context)`, with no reflection
+    fallback (ADR 0019).
+- **Configuration** (ADRs 0002, 0015).
+  - Binding is strict: unknown keys and numeric enum values fail at startup.
+  - Every setting is validated with `ValidateOnStart`.
+  - Provider settings live on `RabbitMqConfig`, `AzureServiceBusConfig` and `InMemoryConfig`.
+  - Every setting, default and startup error is listed in `docs/configuration.md`.
+- **RabbitMQ.**
+  - Connects lazily (`InitializeAsync`, `RabbitMqMessageQueue.CreateAsync`), with reconnect backoff (ADR 0007).
+  - Publisher confirms and a publisher channel pool.
+  - Quorum or classic queues, with `PrefetchCount` applied to both.
+  - TLS is required for any non-loopback host (`RequireTls`), with server-name and policy-error rules.
+  - Mutual TLS (PFX, PEM or the certificate store) and a private CA trust anchor (`Tls:CaCertificatePath`)
+    (ADRs 0008, 0022).
+- **Azure Service Bus.**
+  - Queues and topic subscriptions.
+  - Authentication by Entra ID (`FullyQualifiedNamespace` with a passed, registered or `DefaultAzureCredential`) or
+    by connection string.
+  - Batches are split by size.
+  - Every message is settled exactly once; shutdown is bounded (ADRs 0009-0012).
+- **Telemetry** (`AddMessageQueueTelemetry`, ADR 0013).
+  - Spans and metrics follow the OpenTelemetry messaging semantic conventions.
+  - W3C trace context runs from publisher to consumer on every provider.
+  - The `zedlabs.messagequeue.*` counters cover retries, dead letters, transport errors and dead-letter
+    operations.
+  - The default ActivitySource and Meter are named `ZedLabs.MessageQueue`.
+  - Logging uses source-generated `LoggerMessage` with documented event ids.
+- **Health checks.**
+  - `AddMessageQueueHealthCheck`.
+  - `AddRabbitMqHealthCheck`: the queue's own connection or a standalone connection string with TLS settings.
+  - `AddAzureServiceBusHealthCheck`: peek, Listen rights.
+  - The opt-in `AddAzureServiceBusMetricsHealthCheck`.
+  - Results never carry exception text; failures are logged as event 6001.
+- **Provider SPI** (ADR 0015).
+  - Build a third-party provider on public types alone: `IMessageQueueProvider`, `MessageQueueRegistration<T>`,
+    `MessageDispatcher<T>`, `IDeliveryActions`, `PublishValidation`, `MessageSerializer`, and the dead-letter store
+    interfaces.
+  - `samples/ZedLabs.MessageQueue.Samples.LoopbackProvider` is an example.
+- **Hardening.**
+  - No passwords, keys or SAS tokens in exceptions, logs, health results or `ToString()`.
+  - Consumed ids, headers, reason details and tags are bounded (ADR 0021).
+  - A throwing telemetry or logging provider never fails a publish or a delivery.
+
+### Documentation
+
+- Getting-started guides per provider (`docs/getting-started/`).
+- The configuration reference (`docs/configuration.md`).
+- Operations (`docs/operations/`): failure modes, monitoring, alerts and runbooks.
+- Dead-letter operations, the API references, benchmarks (`docs/benchmarks.md`) and the design records
+  (`docs/adr/`).
+
+### Changes since the pre-release development history
+
+Nothing was published before this release. If you built the library from source before 1.0.0-rc.1, these are the
+changes to act on. The full development log, kept further down in `CHANGELOG.md`, has every item with its design
+record.
+
+- **Rebrand.**
+  - `ESE.MessageQueue*` became `ZedLabs.MessageQueue*`: package ids, assemblies, namespaces and the solution.
+  - The default ActivitySource and Meter are `ZedLabs.MessageQueue`.
+  - Metric and tag names use the `zedlabs.messagequeue.*` prefix (Prometheus: `zedlabs_messagequeue_*`).
+  - The in-memory `messaging.system` is `zedlabs.inmemory`.
+  - Library headers are named `x-zedlabs-*`. Drain retry and dead-letter queues written with the old `x-ese-*`
+    headers first.
+  - The license is Apache-2.0 instead of MIT.
+- **Package split.**
+  - Broker providers are separate packages and are registered before `AddMessageQueue<T>`.
+  - The core no longer brings RabbitMQ.Client or Azure SDKs.
+  - `MessageQueueConfig.Provider` is a string, and the `MessageQueueProvider` enum is gone.
+- **Reshaped API.**
+  - `IMessageQueue<T>` composes publisher and subscriber and adds `Capabilities`.
+  - The rich handler and `IMessageProcessor<T>.ProcessAsync` take a `CancellationToken`.
+  - `MessageContext` is a sealed record with `DeliveryAttempt` and read-only `Headers`.
+  - `ITelemetryProvider` is built around `TelemetryTarget`.
+  - `RetryPolicy.MaxAttempts` became `MaxRetries`, which counts retries after the first attempt.
+  - `RetryAttempts`/`RetryDelay` became `Retry`.
+  - `ConnectionString` and `DeadLetterQueueName` moved to the provider configs.
+  - `DeadLetterReason` is a struct with a constructor.
+  - `InMemoryDeadLetter<T>` is a sealed class (`with` no longer compiles).
+  - The in-memory queue moved to `ZedLabs.MessageQueue.InMemory` and delivers on its own; use `WaitForIdleAsync`.
+  - Renamed: `MessageQueueServiceCollectionExtensions`, `MessageQueueHealthCheckExtensions`, and the per-provider
+    health check extension classes.
+  - Several types became internal, removed or sealed; the full log lists them.
+- **Removed settings** (they now fail at startup as unknown keys):
+  - Service Bus: `SenderPoolSize`, `MaxConcurrentSends`, `EnablePartitioning`, `RequiresDuplicateDetection`,
+    `DuplicateDetectionHistoryTimeWindow`, `BatchFlushInterval`.
+  - RabbitMQ: `EnableClusterMode`.
+- **Changed behavior.**
+  - The retry defaults above.
+  - `ShutdownTimeout` is 25 s.
+  - Oversized publishes, bad correlation ids and unsupported RabbitMQ `ExchangeType` values are refused.
+  - RabbitMQ requires TLS for remote hosts.
+  - Retries wait on the broker rather than in process.
+  - Dead letters carry reason headers.
+  - Health results attach no exception.
+  - Metric names follow the semantic conventions.
+  - `TraceContext` parsing follows strict W3C rules.
+  - RabbitMQ.Client is 7.x (async-only).
+  - The target is .NET 10.
+
+## [Pre-release development history]
+
+Not released. This is the development log from before 1.0.0-rc.1, kept for anyone who built from source, newest
+first. Some entries were later superseded (the MIT license, the 30 s `ShutdownTimeout`, earlier coverage gates and
+paths); where they disagree with 1.0.0-rc.1 above, the 1.0.0-rc.1 section is current.
 
 ### RabbitMQ health check right after subscribing
 
