@@ -55,7 +55,9 @@ export MQ_ASB_CONNECTION_STRING='Endpoint=sb://<namespace>.servicebus.windows.ne
 MQ_REQUIRE_DOCKER=true dotnet test ZedLabs.MessageQueue.sln --blame-hang-timeout 2m --filter Category=Integration
 ```
 
-In CI, set the repository secret `MQ_ASB_CONNECTION_STRING`; `ci.yml` passes it to the integration step.
+In CI, set the repository secret `MQ_ASB_CONNECTION_STRING`; `ci.yml` passes it to the integration step. To run the
+specs against the emulator in CI instead, the owner sets the repository variable `MQ_ASB_ACCEPT_EULA` to `Y`
+(Settings, Secrets and variables, Actions, Variables); `ci.yml` then pulls the images and passes it to the same step.
 
 For development runs, the specs start the emulator themselves (images pinned in `docker/test-servicebus/Dockerfile`,
 entities from `docker/servicebus-emulator-config.json`). Pull the two images first: a first-time pull inside the run

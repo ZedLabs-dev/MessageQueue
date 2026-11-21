@@ -56,13 +56,25 @@ jobs:
           --results-directory TestResults
           --logger "trx;LogFileName=unit.trx"
 
+      # Only when the owner set the repository variable MQ_ASB_ACCEPT_EULA (accepting the licences of the Service Bus
+      # emulator and SQL Server): pull the pinned images before the tests, so the download does not count against
+      # the hang timeout.
+      - name: Pull Service Bus emulator images
+        if: vars.MQ_ASB_ACCEPT_EULA != ''
+        run: |
+          for image in $(awk 'toupper($1) == "FROM" { print $2 }' docker/test-servicebus/Dockerfile); do
+            docker pull --quiet "$image"
+          done
+
       # RabbitMQ runs in a Testcontainers container (Docker is preinstalled on ubuntu runners).
       # MQ_REQUIRE_DOCKER turns "Docker unavailable" into a failure instead of a skip.
-      # Azure Service Bus tests skip unless the MQ_ASB_CONNECTION_STRING secret is configured.
+      # Azure Service Bus tests run against the MQ_ASB_CONNECTION_STRING secret when it is configured, else against the
+      # emulator when the MQ_ASB_ACCEPT_EULA variable is Y, and skip otherwise.
       - name: Integration tests
         env:
           MQ_REQUIRE_DOCKER: 'true'
           MQ_ASB_CONNECTION_STRING: ${{ secrets.MQ_ASB_CONNECTION_STRING }}
+          MQ_ASB_ACCEPT_EULA: ${{ vars.MQ_ASB_ACCEPT_EULA }}
         run: >
           dotnet test ZedLabs.MessageQueue.sln --no-build --configuration Release
           --filter Category=Integration
