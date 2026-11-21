@@ -50,10 +50,10 @@ public sealed class RabbitMqMutualTlsBrokerFixture : IAsyncLifetime
                 .WithUsername(UserName)
                 .WithPassword(Password)
                 .WithPortBinding(TlsPort, true)
-                .WithResourceMapping(File.ReadAllBytes(Authority.CaPemPath), $"{CertificateFolder}/ca.crt")
-                .WithResourceMapping(File.ReadAllBytes(Authority.ServerCertificatePemPath), $"{CertificateFolder}/server.crt")
-                .WithResourceMapping(File.ReadAllBytes(Authority.ServerKeyPemPath), $"{CertificateFolder}/server.key")
-                .WithResourceMapping(Encoding.UTF8.GetBytes(TlsConfig), "/etc/rabbitmq/conf.d/90-mutual-tls.conf")
+                .WithResourceMapping(File.ReadAllBytes(Authority.CaPemPath), FilePath.Of($"{CertificateFolder}/ca.crt"))
+                .WithResourceMapping(File.ReadAllBytes(Authority.ServerCertificatePemPath), FilePath.Of($"{CertificateFolder}/server.crt"))
+                .WithResourceMapping(File.ReadAllBytes(Authority.ServerKeyPemPath), FilePath.Of($"{CertificateFolder}/server.key"))
+                .WithResourceMapping(Encoding.UTF8.GetBytes(TlsConfig), FilePath.Of("/etc/rabbitmq/conf.d/90-mutual-tls.conf"))
                 .Build();
             await container.StartAsync();
         }

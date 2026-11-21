@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Dependencies
+
+- Microsoft.Extensions.* and System.Threading.RateLimiting 10.0.13 → 10.0.15 (the packages' minimum dependency
+  versions), Microsoft.SourceLink.GitHub 10.0.404. The library stays on the 10.0.x line while it targets .NET 10.
+- Samples, benchmarks and tests: OpenTelemetry 1.21.0, Testcontainers 4.17.0 (the mutual TLS fixture moves off the
+  `WithResourceMapping(byte[], string, ...)` overload it obsoleted), xunit.v3 4.0.3, Microsoft.NET.Test.Sdk 18.12.0,
+  coverlet.collector 10.1.1, ReportGenerator 5.6.1.
+
 ### Tests
 
 - The Azure Service Bus integration specs can run against the Service Bus emulator, which
